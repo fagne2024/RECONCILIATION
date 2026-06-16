@@ -5,45 +5,51 @@ import { Observable } from 'rxjs';
 @Injectable({ providedIn: 'root' })
 export class OperationServiceApi {
   private apiUrl = '/api/reconciliation';
+  static readonly RECONCILIATION_MODULE = 'Reconciliation';
+
   constructor(private http: HttpClient) {}
 
   private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
     return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
   }
 
-  markOk(key: string): Observable<{ success: boolean }> {
-    const params = new HttpParams().set('key', key);
-    return this.http.post<{ success: boolean }>(`${this.apiUrl}/mark-ok`, null, { params });
+  private reconciliationHeaders(): HttpHeaders {
+    return this.buildContextHeaders(OperationServiceApi.RECONCILIATION_MODULE)!;
   }
 
-  getOkKeys(moduleContext?: string): Observable<string[]> {
+  markOk(key: string): Observable<{ success: boolean }> {
+    const params = new HttpParams().set('key', key);
+    return this.http.post<{ success: boolean }>(`${this.apiUrl}/mark-ok`, null, { params, headers: this.reconciliationHeaders() });
+  }
+
+  getOkKeys(moduleContext: string = OperationServiceApi.RECONCILIATION_MODULE): Observable<string[]> {
     return this.http.get<string[]>(`${this.apiUrl}/ok-keys`, { headers: this.buildContextHeaders(moduleContext) });
   }
 
   unmarkOk(key: string): Observable<{ success: boolean }> {
     const params = new HttpParams().set('key', key);
-    return this.http.delete<{ success: boolean }>(`${this.apiUrl}/mark-ok`, { params });
+    return this.http.delete<{ success: boolean }>(`${this.apiUrl}/mark-ok`, { params, headers: this.reconciliationHeaders() });
   }
 
   saveReconStatus(key: string, status: 'OK' | 'KO'): Observable<{ success: boolean }> {
     const params = new HttpParams().set('key', key).set('status', status);
-    return this.http.post<{ success: boolean }>(`${this.apiUrl}/status`, null, { params });
+    return this.http.post<{ success: boolean }>(`${this.apiUrl}/status`, null, { params, headers: this.reconciliationHeaders() });
   }
 
-  listReconStatus(moduleContext?: string): Observable<Record<string, 'OK' | 'KO'>> {
+  listReconStatus(moduleContext: string = OperationServiceApi.RECONCILIATION_MODULE): Observable<Record<string, 'OK' | 'KO'>> {
     return this.http.get<Record<string, 'OK' | 'KO'>>(`${this.apiUrl}/status`, { headers: this.buildContextHeaders(moduleContext) });
   }
 
   markOkBulk(keys: string[]): Observable<{ success: boolean; created: number }> {
-    return this.http.post<{ success: boolean; created: number }>(`${this.apiUrl}/mark-ok/bulk`, { keys: keys || [] });
+    return this.http.post<{ success: boolean; created: number }>(`${this.apiUrl}/mark-ok/bulk`, { keys: keys || [] }, { headers: this.reconciliationHeaders() });
   }
 
   unmarkOkBulk(keys: string[]): Observable<{ success: boolean; deleted: number }> {
-    return this.http.post<{ success: boolean; deleted: number }>(`${this.apiUrl}/unmark-ok/bulk`, { keys: keys || [] });
+    return this.http.post<{ success: boolean; deleted: number }>(`${this.apiUrl}/unmark-ok/bulk`, { keys: keys || [] }, { headers: this.reconciliationHeaders() });
   }
 
   saveReconStatusBulk(entries: Array<{ key: string; status: 'OK' | 'KO' }>): Observable<{ success: boolean; saved: number }> {
-    return this.http.post<{ success: boolean; saved: number }>(`${this.apiUrl}/status/bulk`, { entries: entries || [] });
+    return this.http.post<{ success: boolean; saved: number }>(`${this.apiUrl}/status/bulk`, { entries: entries || [] }, { headers: this.reconciliationHeaders() });
   }
 }
 

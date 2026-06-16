@@ -164,7 +164,7 @@ export class MagicReconciliationService {
   ): Promise<MagicReconciliationResult> {
     onProgress?.({ step: `Analyse de ${partnerFileName}...` });
 
-    const models = await this.autoProcessingService.getAllModels('Réconciliation');
+    const models = await this.autoProcessingService.getAllModels(AutoProcessingService.RECONCILIATION_MODULE);
     const boModel = this.findModelForFile(models, boFileName, 'bo');
     const partnerModel = this.findModelForFile(models, partnerFileName, 'partner');
 

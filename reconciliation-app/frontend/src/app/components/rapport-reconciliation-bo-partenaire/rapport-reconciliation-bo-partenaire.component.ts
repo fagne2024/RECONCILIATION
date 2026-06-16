@@ -20,6 +20,8 @@ import {
 } from '../../constants/reconciliation-env-options';
 import { BO_PARTENAIRE_SERVICE_GROUP_TOKENS } from '../../constants/bo-partenaire-service-group-tokens';
 import { PopupService } from '../../services/popup.service';
+import { BoPartenaireReportCacheService } from '../../services/bo-partenaire-report-cache.service';
+import { BoPartenaireResult8Row } from '../../services/bo-partenaire-aggregation.service';
 import {
   auditSnapshotStatutClass as statutAuditPillClassFn,
   auditSnapshotTraitementClass as traitementAuditPillClassFn,
@@ -223,7 +225,8 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     private appState: AppStateService,
     private ecartBoSummaryService: EcartBoSummaryService,
     private dashboardService: DashboardService,
-    private popupService: PopupService
+    private popupService: PopupService,
+    private reportCache: BoPartenaireReportCacheService
   ) {}
 
   ngOnInit(): void {
@@ -321,6 +324,55 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
 
   retourRapport(): void {
     this.router.navigate(['/reconciliation-report']);
+  }
+
+  ouvrirControleInterne(): void {
+    const range = this.getNormalizedDateRange();
+    const year = range?.start.substring(0, 4) ?? String(new Date().getFullYear());
+    let month: string | undefined;
+    if (range && range.start.substring(0, 7) === range.end.substring(0, 7)) {
+      month = range.start.substring(5, 7);
+    }
+
+    if (range && this.selectedCountry) {
+      this.reportCache.publish({
+        rawReport: this.toCacheReportRows(this.rawReport),
+        ecartAll: this.ecartAll,
+        manualRows: this.manualRows,
+        dateDebut: range.start,
+        dateFin: range.end,
+        selectedCountry: this.selectedCountry,
+        selectedEnv: this.selectedEnv
+      });
+    }
+
+    const serviceParam =
+      this.selectedServices.length === 1 ? this.selectedServices[0] : undefined;
+
+    this.router.navigate(['/controle-interne-bo-partenaire'], {
+      queryParams: {
+        country: this.selectedCountry || undefined,
+        env: this.selectedEnv || undefined,
+        year,
+        month: month || undefined,
+        dateDebut: range?.start,
+        dateFin: range?.end,
+        service: serviceParam
+      }
+    });
+  }
+
+  private toCacheReportRows(rows: Result8Row[]): BoPartenaireResult8Row[] {
+    return rows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      service: r.service,
+      country: r.country,
+      env: r.env,
+      totalTransactions: r.totalTransactions,
+      totalVolume: r.totalVolume,
+      traitement: r.traitement
+    }));
   }
 
   appliquerFiltres(): void {

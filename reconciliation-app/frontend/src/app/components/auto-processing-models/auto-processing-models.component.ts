@@ -1,6 +1,6 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { FormBuilder, FormGroup, Validators, FormArray } from '@angular/forms';
-import { AutoProcessingService, AutoProcessingModel, ModelFormatAction, ModelFormatActionType, ModelPreProcessingConfig, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule } from '../../services/auto-processing.service';
+import { AutoProcessingService, AutoProcessingModel, ModelFormatAction, ModelFormatActionType, ModelPreProcessingConfig, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule } from '../../services/auto-processing.service';
 import { FileWatcherService } from '../../services/file-watcher.service';
 import { ModelManagementService } from '../../services/model-management.service';
 import { PopupService } from '../../services/popup.service';
@@ -61,13 +61,16 @@ export class AutoProcessingModelsComponent implements OnInit {
   showFormatActionsSection = false;
   showColumnConcatSection = false;
   showValueMappingsSection = false;
+  showColumnRenameSection = false;
   modelRowFilters: ModelRowFilter[] = [];
   modelFormatActions: ModelFormatAction[] = [];
   modelColumnConcatRules: ModelColumnConcatRule[] = [];
   modelValueMappings: ModelColumnValueMapping[] = [];
+  modelColumnRenameRules: ModelColumnRenameRule[] = [];
   nextModelFilterId = 1;
   nextModelConcatRuleId = 1;
   nextModelValueMappingId = 1;
+  nextModelColumnRenameId = 1;
   readonly formatActionTypes: Array<{ type: ModelFormatActionType; label: string }> = [
     { type: 'removeSpecialStrings', label: 'Supprimer une chaîne spécifique' },
     { type: 'removeCharacters', label: 'Supprimer / conserver des caractères' },
@@ -278,7 +281,7 @@ export class AutoProcessingModelsComponent implements OnInit {
   }
 
   loadModels(): void {
-    this.autoProcessingService.getAllModels().then(models => {
+    this.autoProcessingService.getAllModels(AutoProcessingService.MODELES_MODULE).then(models => {
         if (Array.isArray(models)) {
           this.models = models;
           
@@ -2703,6 +2706,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.showRowFiltersSection = false;
     this.showFormatActionsSection = false;
     this.showValueMappingsSection = false;
+    this.showColumnRenameSection = false;
     
     // Réinitialiser les données
     this.correspondenceRules = [];
@@ -2908,6 +2912,24 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.showColumnConcatSection = !this.showColumnConcatSection;
   }
 
+  toggleColumnRenameSection(): void {
+    this.showColumnRenameSection = !this.showColumnRenameSection;
+  }
+
+  addModelColumnRenameRule(): void {
+    const columns = this.getPreProcessingColumns();
+    this.modelColumnRenameRules.push({
+      id: `rename-${this.nextModelColumnRenameId++}`,
+      sourceColumn: columns[0] || '',
+      targetColumn: '',
+      enabled: true
+    });
+  }
+
+  removeModelColumnRenameRule(index: number): void {
+    this.modelColumnRenameRules.splice(index, 1);
+  }
+
   addModelColumnConcatRule(): void {
     this.modelColumnConcatRules.push({
       id: `concat-${this.nextModelConcatRuleId++}`,
@@ -3106,11 +3128,20 @@ export class AutoProcessingModelsComponent implements OnInit {
         enabled: rule.enabled !== false
       }));
 
-    if (!rowFilters.length && !formatActions.length && !columnConcatRules.length && !valueMappings.length) {
-      return { rowFilters: [], formatActions: [], columnConcatRules: [], valueMappings: [] };
+    const columnRenameRules = this.modelColumnRenameRules
+      .filter(rule => rule.sourceColumn && rule.targetColumn?.trim() && rule.sourceColumn !== rule.targetColumn.trim())
+      .map(rule => ({
+        id: rule.id,
+        sourceColumn: rule.sourceColumn,
+        targetColumn: rule.targetColumn.trim(),
+        enabled: rule.enabled !== false
+      }));
+
+    if (!rowFilters.length && !formatActions.length && !columnConcatRules.length && !valueMappings.length && !columnRenameRules.length) {
+      return { rowFilters: [], formatActions: [], columnConcatRules: [], valueMappings: [], columnRenameRules: [] };
     }
 
-    return { rowFilters, formatActions, columnConcatRules, valueMappings };
+    return { rowFilters, formatActions, columnConcatRules, valueMappings, columnRenameRules };
   }
 
   loadPreProcessingConfig(config?: ModelPreProcessingConfig | null): void {
@@ -3118,9 +3149,11 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.modelFormatActions = [];
     this.modelColumnConcatRules = [];
     this.modelValueMappings = [];
+    this.modelColumnRenameRules = [];
     this.nextModelFilterId = 1;
     this.nextModelConcatRuleId = 1;
     this.nextModelValueMappingId = 1;
+    this.nextModelColumnRenameId = 1;
 
     if (!config) {
       return;
@@ -3155,6 +3188,13 @@ export class AutoProcessingModelsComponent implements OnInit {
       enabled: rule.enabled !== false
     }));
 
+    this.modelColumnRenameRules = (config.columnRenameRules || []).map(rule => ({
+      id: rule.id || `rename-${this.nextModelColumnRenameId++}`,
+      sourceColumn: rule.sourceColumn || '',
+      targetColumn: rule.targetColumn || '',
+      enabled: rule.enabled !== false
+    }));
+
     if (this.modelRowFilters.length) {
       this.showRowFiltersSection = true;
     }
@@ -3171,6 +3211,10 @@ export class AutoProcessingModelsComponent implements OnInit {
       this.showValueMappingsSection = true;
     }
 
+    if (this.modelColumnRenameRules.length) {
+      this.showColumnRenameSection = true;
+    }
+
     if (this.showFormatActionsSection && !this.modelFormatActions.length) {
       this.initDefaultFormatActions();
     }
@@ -3181,12 +3225,15 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.modelFormatActions = [];
     this.modelColumnConcatRules = [];
     this.modelValueMappings = [];
+    this.modelColumnRenameRules = [];
     this.nextModelFilterId = 1;
     this.nextModelConcatRuleId = 1;
     this.nextModelValueMappingId = 1;
+    this.nextModelColumnRenameId = 1;
     this.showRowFiltersSection = false;
     this.showFormatActionsSection = false;
     this.showColumnConcatSection = false;
     this.showValueMappingsSection = false;
+    this.showColumnRenameSection = false;
   }
 }

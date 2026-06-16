@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { Match } from '../models/reconciliation-response.model';
+import { filterRecordsByMagicPartition } from '../utils/magic-partition.util';
 
 @Injectable({
     providedIn: 'root'
@@ -11,6 +12,10 @@ export class ReconciliationTabsService {
     private filteredBoOnlySubject = new BehaviorSubject<Record<string, string>[]>([]);
     private filteredPartnerOnlySubject = new BehaviorSubject<Record<string, string>[]>([]);
     private filteredMismatchesSubject = new BehaviorSubject<Record<string, string>[]>([]);
+
+    /** Contexte réconciliation magique (service / fichier partenaire actifs). */
+    private magicServiceFilter = '';
+    private magicPartnerFileFilter = '';
 
     // Observables
     public filteredMatches$ = this.filteredMatchesSubject.asObservable();
@@ -27,6 +32,28 @@ export class ReconciliationTabsService {
     setFilteredBoOnly(boOnly: Record<string, string>[]) {
         console.log('📊 ReconciliationTabsService - Mise à jour des écarts BO filtrés:', boOnly.length);
         this.filteredBoOnlySubject.next(boOnly);
+    }
+
+    setMagicViewContext(service: string, partnerFile: string = ''): void {
+        this.magicServiceFilter = (service || '').trim();
+        this.magicPartnerFileFilter = (partnerFile || '').trim();
+    }
+
+    getMagicViewContext(): { service: string; partnerFile: string } {
+        return {
+            service: this.magicServiceFilter,
+            partnerFile: this.magicPartnerFileFilter
+        };
+    }
+
+    /** Filtre les écarts BO/Partenaire selon le contexte magique (_magicService / _magicPartnerFile). */
+    filterRecordsByMagicView(records: Record<string, string>[]): Record<string, string>[] {
+        const { service, partnerFile } = this.getMagicViewContext();
+        return filterRecordsByMagicPartition(records, service, partnerFile);
+    }
+
+    filterBoEcartsByMagicView(records: Record<string, string>[]): Record<string, string>[] {
+        return this.filterRecordsByMagicView(records);
     }
 
     setFilteredPartnerOnly(partnerOnly: Record<string, string>[]) {
@@ -62,6 +89,8 @@ export class ReconciliationTabsService {
         this.filteredBoOnlySubject.next([]);
         this.filteredPartnerOnlySubject.next([]);
         this.filteredMismatchesSubject.next([]);
+        this.magicServiceFilter = '';
+        this.magicPartnerFileFilter = '';
     }
 }
 

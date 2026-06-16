@@ -86,6 +86,10 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   concatSeparator: string = '';
   concatOrderMode: boolean = false;
 
+  // --- RENOMMAGE D'EN-TÊTES ---
+  renameSourceCol: string = '';
+  renameNewName: string = '';
+
   exportTypePrefix: string = '';
   exportTypeSuffix: string = '';
   exportTypeCustomSuffix: string = '';
@@ -2334,6 +2338,93 @@ End Sub`;
     this.showError('format', 'Aucune option de formatage des en-têtes disponible.');
   }
 
+  applyColumnRename() {
+    const sourceColumn = this.renameSourceCol?.trim();
+    const newName = this.renameNewName?.trim();
+
+    if (!sourceColumn || !newName) {
+      this.showError('columnRename', 'Sélectionnez une colonne et saisissez le nouveau nom d\'en-tête.');
+      return;
+    }
+
+    if (sourceColumn === newName) {
+      this.showError('columnRename', 'Le nouveau nom doit être différent du nom actuel.');
+      return;
+    }
+
+    if (!this.columns.includes(sourceColumn)) {
+      this.showError('columnRename', `La colonne « ${sourceColumn} » est introuvable.`);
+      return;
+    }
+
+    if (this.columns.includes(newName)) {
+      this.showError('columnRename', `La colonne « ${newName} » existe déjà.`);
+      return;
+    }
+
+    try {
+      this.renameColumnInDataset(sourceColumn, newName);
+      this.renameSourceCol = '';
+      this.renameNewName = '';
+      this.updateDisplayedRows();
+      this.showSuccess('columnRename', `En-tête renommé : « ${sourceColumn} » → « ${newName} ».`);
+    } catch (e) {
+      this.showError('columnRename', 'Erreur lors du renommage de l\'en-tête.');
+    }
+  }
+
+  private renameColumnInDataset(sourceColumn: string, newName: string): void {
+    const renameRows = (rows: any[]) => rows.map(row => this.renameRowColumnKey(row, sourceColumn, newName));
+
+    this.originalRows = renameRows(this.originalRows);
+    this.allRows = renameRows(this.allRows);
+    this.combinedRows = renameRows(this.combinedRows);
+    if (this.filteredRows?.length) {
+      this.filteredRows = renameRows(this.filteredRows);
+    }
+
+    const renameInList = (cols: string[]) => cols.map(col => col === sourceColumn ? newName : col);
+    this.allColumns = renameInList(this.allColumns);
+    this.columns = renameInList(this.columns);
+    this.dedupCols = renameInList(this.dedupCols);
+    this.selectedCols = renameInList(this.selectedCols);
+    this.concatCols = renameInList(this.concatCols);
+
+    if (this.extractCol === sourceColumn) {
+      this.extractCol = newName;
+    }
+    if (this.exportTypeCol === sourceColumn) {
+      this.exportTypeCol = newName;
+    }
+    if (this.exportDateCol === sourceColumn) {
+      this.exportDateCol = newName;
+    }
+    if (this.selectedFilterColumn === sourceColumn) {
+      this.selectedFilterColumn = newName;
+    }
+
+    this.multipleFilters.forEach(filter => {
+      if (filter.column === sourceColumn) {
+        filter.column = newName;
+      }
+    });
+
+    Object.keys(this.formatSelections).forEach(key => {
+      this.formatSelections[key] = renameInList(this.formatSelections[key] || []);
+    });
+  }
+
+  private renameRowColumnKey(row: Record<string, any>, sourceColumn: string, newName: string): Record<string, any> {
+    if (!row || !Object.prototype.hasOwnProperty.call(row, sourceColumn)) {
+      return row;
+    }
+
+    const updated = { ...row };
+    updated[newName] = updated[sourceColumn];
+    delete updated[sourceColumn];
+    return updated;
+  }
+
   applyFormatting() {
     if (this.formatOptions.removeCharacters) {
       this.applyRemoveCharactersFormatting();
@@ -2699,6 +2790,7 @@ End Sub`;
     selectCols: false,
     extract: false,
     filter: false,
+    columnRename: false,
     concat: false,
     exportByType: false,
     exportByDate: false,

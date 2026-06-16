@@ -32,6 +32,9 @@ public class UserEntity {
     @Column(name = "email", unique = true)
     private String email;
 
+    @Column(name = "enabled", nullable = false)
+    private Boolean enabled = true;
+
     // Getters et setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -49,4 +52,6 @@ public class UserEntity {
     public void setQrCodeScanned(Boolean qrCodeScanned) { this.qrCodeScanned = qrCodeScanned != null ? qrCodeScanned : false; }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+    public Boolean getEnabled() { return enabled == null || enabled; }
+    public void setEnabled(Boolean enabled) { this.enabled = enabled != null ? enabled : true; }
 } 

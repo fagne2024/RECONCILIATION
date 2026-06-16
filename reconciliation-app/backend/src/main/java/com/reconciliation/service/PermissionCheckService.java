@@ -11,6 +11,7 @@ import com.reconciliation.repository.PermissionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.text.Normalizer;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -126,6 +127,28 @@ public class PermissionCheckService {
             }
         }
 
+        String normalizedPath = normalizeApiPath(apiPath);
+        if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/validate")) {
+            return canValidateBoPartenaireControleInterne(username);
+        }
+        if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/revoke")) {
+            return canRevokeBoPartenaireControleInterne(username);
+        }
+
+        // Consultation / utilisation des modèles dans le flux réconciliation :
+        // permissions du module Réconciliation, pas du module Modèles (sauf override explicite Modèles).
+        if (isReconciliationModelConsumptionPath(apiPath, httpMethod) && !isModelesModuleOverride(moduleOverride)) {
+            return hasReconciliationModelConsumptionPermission(username, apiPath, httpMethod, permissionOverride);
+        }
+
+        // Actions résultats / statuts / écarts BO dans le flux réconciliation :
+        // accepter les permissions Réconciliation même si le frontend envoie le contexte Résultats.
+        if (isReconciliationWorkflowPath(apiPath, httpMethod)) {
+            if (hasReconciliationWorkflowPermission(username, httpMethod, permissionOverride)) {
+                return true;
+            }
+        }
+
         // Mapper le chemin API vers le module
         String moduleName = resolveModuleForApiPath(apiPath, httpMethod, moduleOverride);
         if (moduleName == null) {
@@ -154,14 +177,53 @@ public class PermissionCheckService {
     }
 
     public String resolveModuleForApiPath(String apiPath, String httpMethod, String moduleOverride) {
+        if (isReconciliationModelConsumptionPath(apiPath, httpMethod) && !isModelesModuleOverride(moduleOverride)) {
+            return "Réconciliation";
+        }
+        if (isReconciliationWorkflowPath(apiPath, httpMethod)) {
+            return "Réconciliation";
+        }
         if (moduleOverride != null && !moduleOverride.isBlank()) {
-            return moduleOverride;
+            return canonicalizeModuleOverride(moduleOverride);
+        }
+        if (isReconciliationModelConsumptionPath(apiPath, httpMethod)) {
+            return "Réconciliation";
         }
         String dashboardModule = mapDashboardReadApiPathToModule(apiPath, httpMethod);
         if (dashboardModule != null) {
             return dashboardModule;
         }
         return mapApiPathToModule(apiPath);
+    }
+
+    /**
+     * Les headers HTTP n'acceptent pas toujours des valeurs non-ASCII (ex: "Réconciliation").
+     * On accepte donc un override "ascii" (ex: "Reconciliation") et on le mappe vers le nom
+     * exact du module enregistré en base.
+     */
+    private String canonicalizeModuleOverride(String moduleOverride) {
+        if (moduleOverride == null) {
+            return null;
+        }
+
+        final String trimmed = moduleOverride.trim();
+        if (trimmed.isEmpty()) {
+            return trimmed;
+        }
+
+        final String ascii = Normalizer
+            .normalize(trimmed, Normalizer.Form.NFD)
+            .replaceAll("\\p{M}+", "");
+        final String lower = ascii.toLowerCase();
+
+        if (lower.equals("reconciliation")) return "Réconciliation";
+        if (lower.equals("resultats")) return "Résultats";
+        if (lower.equals("modeles") || lower.equals("modeles de traitement") || lower.equals("modeles_traitement")) return "Modèles";
+        if (lower.equals("operations")) return "Opérations";
+        if (lower.equals("comptabilite")) return "Comptabilité";
+        if (lower.equals("classements")) return "Classements";
+
+        return trimmed;
     }
 
     public String resolvePermissionForApiPath(String apiPath, String httpMethod) {
@@ -171,6 +233,14 @@ public class PermissionCheckService {
     public String resolvePermissionForApiPath(String apiPath, String httpMethod, String moduleOverride, String permissionOverride) {
         if (permissionOverride != null && !permissionOverride.isBlank()) {
             return permissionOverride;
+        }
+
+        if (isReconciliationModelConsumptionPath(apiPath, httpMethod) && !isModelesModuleOverride(moduleOverride)) {
+            return resolveReconciliationModelConsumptionPermission(apiPath, httpMethod);
+        }
+
+        if (isReconciliationWorkflowPath(apiPath, httpMethod)) {
+            return resolveReconciliationWorkflowPermission(apiPath, httpMethod);
         }
 
         if (moduleOverride != null && !moduleOverride.isBlank() && "GET".equalsIgnoreCase(httpMethod)) {
@@ -237,6 +307,7 @@ public class PermissionCheckService {
         if (apiPath.startsWith("/api/reconciliation-report")) return "Résultats";
         if (apiPath.startsWith("/api/result8rec")) return "Résultats";
         if (apiPath.startsWith("/api/ecart-bo-summary")) return "Résultats";
+        if (apiPath.startsWith("/api/bo-partenaire-controle-interne")) return "Résultats";
         if (apiPath.startsWith("/api/report-dashboard")) return "Résultats";
         if (apiPath.startsWith("/api/service-references")) return "Dashboard";
         if (apiPath.startsWith("/api/aide")) return "AIDE";
@@ -355,6 +426,180 @@ public class PermissionCheckService {
         }
 
         return true;
+    }
+
+    /**
+     * Endpoints de lecture / traitement des modèles utilisés pendant une réconciliation.
+     * La gestion CRUD des modèles reste rattachée au module Modèles.
+     */
+    private boolean isReconciliationModelConsumptionPath(String apiPath, String httpMethod) {
+        if (apiPath == null || httpMethod == null) {
+            return false;
+        }
+
+        String path = normalizeApiPath(apiPath);
+        String method = httpMethod.toUpperCase();
+
+        if ("GET".equals(method)) {
+            if (path.equals("/api/auto-processing/models")) return true;
+            if (path.matches("/api/auto-processing/models/[^/]+")) return true;
+            if (path.matches("/api/auto-processing/models/[^/]+/column-rules")) return true;
+            if (path.matches("/api/auto-processing/models/[^/]+/target-columns")) return true;
+            if (path.matches("/api/auto-processing/models/[^/]+/validate-rules")) return true;
+            if (path.matches("/api/auto-processing-models/[^/]+")) return true;
+            return false;
+        }
+
+        if ("POST".equals(method)) {
+            if (path.matches("/api/auto-processing/process-data/[^/]+")) return true;
+            if (path.matches("/api/auto-processing/process-single-row/[^/]+")) return true;
+        }
+
+        return false;
+    }
+
+    private boolean isModelesModuleOverride(String moduleOverride) {
+        if (moduleOverride == null || moduleOverride.isBlank()) {
+            return false;
+        }
+        return "Modèles".equals(canonicalizeModuleOverride(moduleOverride));
+    }
+
+    private boolean hasReconciliationModelConsumptionPermission(String username, String apiPath, String httpMethod, String permissionOverride) {
+        if (permissionOverride != null && !permissionOverride.isBlank()) {
+            return hasPermission(username, "Réconciliation", permissionOverride);
+        }
+
+        if (hasPermission(username, "Réconciliation", "consulter")) {
+            return true;
+        }
+
+        if ("POST".equalsIgnoreCase(httpMethod)) {
+            return hasPermission(username, "Réconciliation", "lancer_reconciliation");
+        }
+
+        return false;
+    }
+
+    private String resolveReconciliationModelConsumptionPermission(String apiPath, String httpMethod) {
+        if ("POST".equalsIgnoreCase(httpMethod)) {
+            return "lancer_reconciliation";
+        }
+        return "consulter";
+    }
+
+    /**
+     * Endpoints utilisés pendant ou juste après une réconciliation (résultats, statuts, écarts BO).
+     */
+    private boolean isReconciliationWorkflowPath(String apiPath, String httpMethod) {
+        if (apiPath == null || httpMethod == null) {
+            return false;
+        }
+
+        String path = normalizeApiPath(apiPath);
+
+        if (path.startsWith("/api/reconciliation")) return true;
+        if (path.startsWith("/api/reconciliation-launcher")) return true;
+        if (path.startsWith("/api/ecart-bo-summary")) return true;
+
+        if (path.startsWith("/api/result8rec")) {
+            return !path.contains("/add-traitement-column");
+        }
+
+        return false;
+    }
+
+    private boolean hasReconciliationWorkflowPermission(String username, String httpMethod, String permissionOverride) {
+        if (permissionOverride != null && !permissionOverride.isBlank()) {
+            return hasPermission(username, "Réconciliation", permissionOverride);
+        }
+
+        if (hasPermission(username, "Réconciliation", "consulter")) {
+            return true;
+        }
+
+        String method = httpMethod != null ? httpMethod.toUpperCase() : "";
+        if ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method) || "DELETE".equals(method)) {
+            if (hasPermission(username, "Réconciliation", "lancer_reconciliation")) {
+                return true;
+            }
+            if (hasPermission(username, "Réconciliation", "modifier")) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private String resolveReconciliationWorkflowPermission(String apiPath, String httpMethod) {
+        String path = normalizeApiPath(apiPath);
+        String method = httpMethod != null ? httpMethod.toUpperCase() : "";
+
+        if (path.contains("/status") && ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method))) {
+            return "enregistrer_statut_reconciliation";
+        }
+        if (path.contains("/mark-ok") || path.contains("/unmark-ok")) {
+            return "marquer_ok";
+        }
+        if ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method)) {
+            return "lancer_reconciliation";
+        }
+        return "consulter";
+    }
+
+    /** Admin ou profil « Contrôle Interne ». */
+    public boolean canValidateBoPartenaireControleInterne(String username) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+        if ("admin".equalsIgnoreCase(username.trim())) {
+            return true;
+        }
+        Optional<UserEntity> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            return false;
+        }
+        UserEntity user = userOpt.get();
+        if (isAdminProfilName(user.getProfil() != null ? user.getProfil().getNom() : null)) {
+            return true;
+        }
+        return isControleInterneProfilName(user.getProfil() != null ? user.getProfil().getNom() : null);
+    }
+
+    /** Réservé aux administrateurs. */
+    public boolean canRevokeBoPartenaireControleInterne(String username) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+        if ("admin".equalsIgnoreCase(username.trim())) {
+            return true;
+        }
+        Optional<UserEntity> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            return false;
+        }
+        UserEntity user = userOpt.get();
+        return isAdminProfilName(user.getProfil() != null ? user.getProfil().getNom() : null);
+    }
+
+    private boolean isAdminProfilName(String profilNom) {
+        if (profilNom == null || profilNom.isBlank()) {
+            return false;
+        }
+        String upper = profilNom.trim().toUpperCase();
+        return upper.equals("ADMIN") || upper.equals("ADMINISTRATEUR");
+    }
+
+    private boolean isControleInterneProfilName(String profilNom) {
+        if (profilNom == null || profilNom.isBlank()) {
+            return false;
+        }
+        String normalized = Normalizer.normalize(profilNom.trim(), Normalizer.Form.NFD)
+            .replaceAll("\\p{M}+", "")
+            .toUpperCase()
+            .replaceAll("[^A-Z0-9]", "");
+        return normalized.equals("CONTROLEINTERNE")
+            || (normalized.contains("CONTROLE") && normalized.contains("INTERNE"));
     }
 }
 

@@ -194,6 +194,21 @@
   }
 }
 
+.magic-service-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 10px;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  font-style: normal;
+  color: #5b21b6;
+  background: #ede9fe;
+  border: 1px solid #c4b5fd;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
 .ph-ecart-right {
   flex-shrink: 0;
 }

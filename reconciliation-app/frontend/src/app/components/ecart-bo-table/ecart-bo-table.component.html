@@ -31,7 +31,7 @@
   <div class="page-header-ecart">
     <div class="ph-ecart-left">
       <div class="ph-eyebrow"><span></span>Écarts</div>
-      <h1 class="ph-title-ecart">Vue des <em>écarts BO</em></h1>
+      <h1 class="ph-title-ecart">Vue des <em>écarts BO</em><span *ngIf="magicServiceFilterLocked" class="magic-service-badge">{{ magicServiceFilterLocked }}</span></h1>
     </div>
     <div class="ph-ecart-right">
       <div class="hero-kpi-strip">

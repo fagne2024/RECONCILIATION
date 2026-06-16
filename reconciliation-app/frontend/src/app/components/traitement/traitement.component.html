@@ -1162,6 +1162,43 @@
      <div *ngIf="errorMsg.filter" class="error-msg">{{ errorMsg.filter }}</div>
    </div>
    </div>
+
+     <div *ngIf="columns.length > 0" class="column-rename-section" style="margin-bottom: 24px;">
+     <div class="section-header">
+       <h4>
+         <i class="fas fa-i-cursor"></i> Renommer un en-tête
+         <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('columnRename')">
+           <i class="fas fa-eye" *ngIf="!showSections.columnRename"></i>
+           <i class="fas fa-eye-slash" *ngIf="showSections.columnRename"></i>
+           {{ showSections.columnRename ? 'Masquer' : 'Afficher' }}
+         </button>
+       </h4>
+     </div>
+
+     <div *ngIf="showSections.columnRename" class="section-content">
+       <div class="filter-controls">
+         <div class="filter-group">
+           <label>Colonne à renommer :</label>
+           <mat-form-field appearance="fill" class="filter-select">
+             <mat-label>Sélectionner une colonne</mat-label>
+             <mat-select [(ngModel)]="renameSourceCol" (selectionChange)="closeMatSelectPanelAfterSelection($event)">
+               <mat-option *ngFor="let col of columns" [value]="col">{{ col }}</mat-option>
+             </mat-select>
+           </mat-form-field>
+         </div>
+         <div class="filter-group">
+           <label>Nouveau nom d'en-tête :</label>
+           <input type="text" [(ngModel)]="renameNewName" placeholder="Ex: MONTANT" class="filter-input">
+         </div>
+         <div class="filter-actions">
+           <button (click)="applyColumnRename()" [disabled]="!renameSourceCol || !renameNewName?.trim()" class="apply-btn">Renommer</button>
+         </div>
+       </div>
+       <div *ngIf="successMsg.columnRename" class="success-msg">{{ successMsg.columnRename }}</div>
+       <div *ngIf="errorMsg.columnRename" class="error-msg">{{ errorMsg.columnRename }}</div>
+     </div>
+     </div>
+
      <div *ngIf="columns.length > 1" class="concat-section" style="margin-bottom: 24px;">
      <div class="section-header">
        <h4>

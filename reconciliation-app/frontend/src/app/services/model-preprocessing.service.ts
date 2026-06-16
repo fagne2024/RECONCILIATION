@@ -4,7 +4,8 @@ import {
   ModelPreProcessingConfig,
   ModelRowFilter,
   ModelColumnValueMapping,
-  ModelColumnConcatRule
+  ModelColumnConcatRule,
+  ModelColumnRenameRule
 } from './auto-processing.service';
 import { buildConcatenatedValue } from '../utils/concat.util';
 
@@ -37,6 +38,10 @@ export class ModelPreProcessingService {
 
     if (config.valueMappings?.length) {
       result = this.applyValueMappings(result, config.valueMappings);
+    }
+
+    if (config.columnRenameRules?.length) {
+      result = this.applyColumnRenameRules(result, config.columnRenameRules);
     }
 
     return result;
@@ -112,6 +117,35 @@ export class ModelPreProcessingService {
           rule.sourceColumns.map(column => newRow[column]),
           rule.separator ?? ''
         );
+      }
+
+      return newRow;
+    });
+  }
+
+  applyColumnRenameRules(
+    rows: Record<string, string>[],
+    rules: ModelColumnRenameRule[]
+  ): Record<string, string>[] {
+    const activeRules = this.getActiveColumnRenameRules(rules);
+    if (!activeRules.length) {
+      return rows;
+    }
+
+    return rows.map(row => {
+      const newRow = { ...row };
+
+      for (const rule of activeRules) {
+        const sourceColumn = rule.sourceColumn;
+        const targetColumn = rule.targetColumn?.trim();
+        if (!sourceColumn || !targetColumn || sourceColumn === targetColumn) {
+          continue;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(newRow, sourceColumn)) {
+          newRow[targetColumn] = newRow[sourceColumn];
+          delete newRow[sourceColumn];
+        }
       }
 
       return newRow;
@@ -322,7 +356,8 @@ export class ModelPreProcessingService {
     return this.getActiveFilters(config).length > 0
       || this.getActiveFormatActions(config).length > 0
       || this.getActiveColumnConcatRules(config?.columnConcatRules).length > 0
-      || this.getActiveValueMappings(config?.valueMappings).length > 0;
+      || this.getActiveValueMappings(config?.valueMappings).length > 0
+      || this.getActiveColumnRenameRules(config?.columnRenameRules).length > 0;
   }
 
   getActiveFilters(config?: ModelPreProcessingConfig | null): ModelRowFilter[] {
@@ -355,11 +390,21 @@ export class ModelPreProcessingService {
     );
   }
 
+  getActiveColumnRenameRules(rules?: ModelColumnRenameRule[] | null): ModelColumnRenameRule[] {
+    return (rules ?? []).filter(
+      rule => rule.enabled
+        && !!rule.sourceColumn
+        && !!rule.targetColumn?.trim()
+        && rule.sourceColumn !== rule.targetColumn.trim()
+    );
+  }
+
   getPreProcessingSummary(config?: ModelPreProcessingConfig | null): {
     activeFilterCount: number;
     activeFormatCount: number;
     activeConcatCount: number;
     activeValueMappingCount: number;
+    activeColumnRenameCount: number;
     summaryText: string;
     detailText: string;
   } {
@@ -367,6 +412,7 @@ export class ModelPreProcessingService {
     const formats = this.getActiveFormatActions(config);
     const concatRules = this.getActiveColumnConcatRules(config?.columnConcatRules);
     const valueMappings = this.getActiveValueMappings(config?.valueMappings);
+    const columnRenameRules = this.getActiveColumnRenameRules(config?.columnRenameRules);
     const parts: string[] = [];
 
     if (filters.length) {
@@ -380,6 +426,9 @@ export class ModelPreProcessingService {
     }
     if (valueMappings.length) {
       parts.push(`${valueMappings.length} renommage(s) de valeurs`);
+    }
+    if (columnRenameRules.length) {
+      parts.push(`${columnRenameRules.length} renommage(s) d'en-têtes`);
     }
 
     const detailLines: string[] = [];
@@ -400,12 +449,16 @@ export class ModelPreProcessingService {
     valueMappings.forEach(mapping => {
       detailLines.push(`• Renommage : ${mapping.column} — « ${mapping.fromValue} » → « ${mapping.toValue} »`);
     });
+    columnRenameRules.forEach(rule => {
+      detailLines.push(`• En-tête : ${rule.sourceColumn} → ${rule.targetColumn}`);
+    });
 
     return {
       activeFilterCount: filters.length,
       activeFormatCount: formats.length,
       activeConcatCount: concatRules.length,
       activeValueMappingCount: valueMappings.length,
+      activeColumnRenameCount: columnRenameRules.length,
       summaryText: parts.length ? parts.join(' + ') : '',
       detailText: detailLines.join('\n')
     };

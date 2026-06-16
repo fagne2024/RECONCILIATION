@@ -142,6 +142,12 @@ public class UserController {
                 user.setProfil(profil);
             }
             
+            // Conserver l'état du compte et les champs 2FA
+            user.setEnabled(existingUser.getEnabled());
+            user.setEnabled2FA(existingUser.getEnabled2FA());
+            user.setSecret2FA(existingUser.getSecret2FA());
+            user.setQrCodeScanned(existingUser.getQrCodeScanned());
+            
             UserEntity updatedUser = userRepository.save(user);
             // Ne pas renvoyer le mot de passe hashé dans la réponse
             updatedUser.setPassword(null);
@@ -314,6 +320,44 @@ public class UserController {
             System.err.println("❌ [FORGOT-PASSWORD] Erreur générale: " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of("error", "Une erreur est survenue. Veuillez réessayer plus tard."));
+        }
+    }
+
+    /**
+     * Active ou désactive un compte utilisateur
+     */
+    @PostMapping("/{id}/set-enabled")
+    public ResponseEntity<?> setUserEnabled(@PathVariable Long id, @RequestBody Map<String, Boolean> payload) {
+        try {
+            Boolean enabled = payload.get("enabled");
+            if (enabled == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Le champ 'enabled' est requis"));
+            }
+
+            Optional<UserEntity> userOpt = userRepository.findById(id);
+            if (userOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            UserEntity user = userOpt.get();
+            if ("admin".equals(user.getUsername()) && !enabled) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Impossible de désactiver le compte administrateur"));
+            }
+
+            user.setEnabled(enabled);
+            UserEntity updatedUser = userRepository.save(user);
+            updatedUser.setPassword(null);
+
+            String message = enabled
+                ? "Utilisateur activé avec succès"
+                : "Utilisateur désactivé avec succès";
+
+            return ResponseEntity.ok(Map.of(
+                "message", message,
+                "user", updatedUser
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Erreur lors de la modification du statut : " + e.getMessage()));
         }
     }
 

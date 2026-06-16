@@ -6,6 +6,7 @@ import { ExportOptimizationService } from '../../services/export-optimization.se
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import { fixGarbledCharacters, fixCellEncoding } from '../../utils/encoding-fixer';
 import { stripAllWhitespace } from '../../utils/concat.util';
+import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../../utils/search-filter.util';
 import {
     formatSpreadsheetCellValue,
     formatSpreadsheetDateValue,
@@ -334,7 +335,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     async loadTraitementModels(): Promise<void> {
         this.traitementModelsLoading = true;
         try {
-            this.traitementModels = await this.autoProcessingService.getAllModels('Réconciliation');
+            // En /upload-assisted, le bouton "Traitement de fichier" doit lister tous les modèles,
+            // même si l'utilisateur n'a pas accès au module de gestion des modèles.
+            this.traitementModels = await this.autoProcessingService.getAllModelsUnrestricted(true);
             if (this.traitementFiles.length > 0) {
                 this.suggestTraitementModelFromFiles();
             } else if (this.traitementModels.length === 1 && this.traitementModels[0].id) {
@@ -481,6 +484,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         try {
             const compiled = await this.compileAssistedTreatmentFileRows(this.traitementFiles);
+            await this.yieldToMainThread();
             compiled.rows = this.normalizeData(compiled.rows);
             if (!compiled.rows.length) {
                 await this.popupService.showWarning(
@@ -531,7 +535,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 }
             }
 
-            const dedupResult = this.removeDuplicateTreatmentRows(normalizedProcessed);
+            const dedupResult = await this.removeDuplicateTreatmentRowsAsync(normalizedProcessed);
             const uniqueProcessed = dedupResult.uniqueRows;
 
             if (!uniqueProcessed.length) {
@@ -633,6 +637,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     : '';
                 loadedNames.push(`${file.name} (${parsed.rows.length}${headerInfo}${removedInfo})`);
             }
+            await this.yieldToMainThread();
         }
 
         return {
@@ -707,25 +712,85 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         };
     }
 
-    /** Lit toutes les feuilles Excel et fusionne les lignes utiles (rapports multi-feuilles Orange Money, etc.). */
-    private parseAssistedTreatmentWorkbook(workbook: XLSX.WorkBook): {
+    private async parseAssistedTreatmentGridAsync(jsonData: any[][]): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
-    } {
+    }> {
+        if (!jsonData?.length) {
+            return { rows: [], headerLine: 0, removedLines: 0 };
+        }
+
+        const normalizedGrid = await this.normalizeAssistedTreatmentGridAsync(jsonData);
+        const assistedHeader = this.detectAssistedTreatmentHeader(normalizedGrid);
+        const headerLine = assistedHeader.headerRowIndex;
+        const headerRow = assistedHeader.headerRow;
+        const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
+        const headers = (hasDetectedHeaders ? headerRow : normalizedGrid[0] || [])
+            .map((header: any, index: number) => this.normalizeColumnName(header || `Col${index + 1}`));
+        const startIndex = hasDetectedHeaders ? headerLine + 1 : 1;
+        const skippedBeforeHeader = hasDetectedHeaders ? headerLine : 0;
+
+        const rows: Record<string, string>[] = [];
+        let skippedUselessRows = 0;
+        const batchSize = 2500;
+
+        for (let i = startIndex; i < normalizedGrid.length; i++) {
+            const rowData = normalizedGrid[i] as any[];
+            if (!rowData || rowData.length === 0) {
+                skippedUselessRows++;
+                continue;
+            }
+
+            const row: Record<string, string> = {};
+            headers.forEach((header, index) => {
+                this.assignExcelCellValue(row, header, rowData[index]);
+            });
+
+            if (!this.isUsefulAssistedTreatmentRow(row, headers)) {
+                skippedUselessRows++;
+                continue;
+            }
+
+            rows.push(row);
+
+            if (rows.length % batchSize === 0) {
+                await this.yieldToMainThread();
+            }
+        }
+
+        console.log(
+            `📋 Traitement assisté (${assistedHeader.source}) — en-tête ligne ${headerLine + 1}, ` +
+            `${skippedBeforeHeader} ligne(s) avant en-tête ignorée(s), ` +
+            `${skippedUselessRows} ligne(s) inutile(s) filtrée(s), ${rows.length} ligne(s) conservée(s)`
+        );
+
+        return {
+            rows,
+            headerLine,
+            removedLines: skippedBeforeHeader + skippedUselessRows
+        };
+    }
+
+    /** Lit toutes les feuilles Excel et fusionne les lignes utiles (rapports multi-feuilles Orange Money, etc.). */
+    private async parseAssistedTreatmentWorkbook(workbook: XLSX.WorkBook): Promise<{
+        rows: Record<string, string>[];
+        headerLine: number;
+        removedLines: number;
+    }> {
         const sheetNames = workbook.SheetNames.filter(name => !!workbook.Sheets[name]);
         if (!sheetNames.length) {
             return { rows: [], headerLine: 0, removedLines: 0 };
         }
 
-        const firstGrid = this.normalizeAssistedTreatmentGrid(
+        const firstGrid = await this.normalizeAssistedTreatmentGridAsync(
             this.workbookSheetToGrid(workbook.Sheets[sheetNames[0]])
         );
         if (!firstGrid.length) {
             return { rows: [], headerLine: 0, removedLines: 0 };
         }
 
-        const firstParse = this.parseAssistedTreatmentGrid(firstGrid);
+        const firstParse = await this.parseAssistedTreatmentGridAsync(firstGrid);
         if (sheetNames.length === 1) {
             return firstParse;
         }
@@ -746,14 +811,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         for (let i = 1; i < sheetNames.length; i++) {
             const sheetName = sheetNames[i];
-            const grid = this.normalizeAssistedTreatmentGrid(
+            this.traitementProgressMessage = `Compilation feuille ${i + 1}/${sheetNames.length} : ${sheetName}`;
+            this.cd.detectChanges();
+
+            const grid = await this.normalizeAssistedTreatmentGridAsync(
                 this.workbookSheetToGrid(workbook.Sheets[sheetName])
             );
             if (!grid.length) {
                 continue;
             }
 
-            const continuation = this.parseAssistedTreatmentContinuationSheet(
+            const continuation = await this.parseAssistedTreatmentContinuationSheetAsync(
                 grid,
                 headers,
                 assistedHeader.headerRow
@@ -764,6 +832,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
             this.appendRowsSafely(mergedRows, continuation.rows);
             removedLines += continuation.removedLines;
+            await this.yieldToMainThread();
         }
 
         return {
@@ -783,6 +852,55 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     private parseAssistedTreatmentContinuationSheet(
+        jsonData: any[][],
+        headers: string[],
+        referenceHeaderRow: string[]
+    ): { rows: Record<string, string>[]; removedLines: number } {
+        return this.parseAssistedTreatmentContinuationSheetSync(jsonData, headers, referenceHeaderRow);
+    }
+
+    private async parseAssistedTreatmentContinuationSheetAsync(
+        jsonData: any[][],
+        headers: string[],
+        referenceHeaderRow: string[]
+    ): Promise<{ rows: Record<string, string>[]; removedLines: number }> {
+        if (!jsonData.length || !headers.length) {
+            return { rows: [], removedLines: 0 };
+        }
+
+        const startIndex = this.findContinuationSheetDataStart(jsonData, referenceHeaderRow);
+        const rows: Record<string, string>[] = [];
+        let removedLines = startIndex;
+        const batchSize = 2500;
+
+        for (let i = startIndex; i < jsonData.length; i++) {
+            const rowData = jsonData[i] as any[];
+            if (!rowData || rowData.length === 0) {
+                removedLines++;
+                continue;
+            }
+
+            const row: Record<string, string> = {};
+            headers.forEach((header, index) => {
+                this.assignExcelCellValue(row, header, rowData[index]);
+            });
+
+            if (!this.isUsefulAssistedTreatmentRow(row, headers)) {
+                removedLines++;
+                continue;
+            }
+
+            rows.push(row);
+
+            if (rows.length % batchSize === 0) {
+                await this.yieldToMainThread();
+            }
+        }
+
+        return { rows, removedLines };
+    }
+
+    private parseAssistedTreatmentContinuationSheetSync(
         jsonData: any[][],
         headers: string[],
         referenceHeaderRow: string[]
@@ -960,41 +1078,60 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     /** Répartit les lignes CSV lues en une seule colonne (export Excel). */
     private normalizeAssistedTreatmentGrid(jsonData: any[][]): any[][] {
-        return jsonData.map(row => {
-            if (!Array.isArray(row) || row.length === 0) {
-                return row;
+        return jsonData.map(row => this.normalizeAssistedTreatmentRow(row));
+    }
+
+    private async normalizeAssistedTreatmentGridAsync(jsonData: any[][]): Promise<any[][]> {
+        if (jsonData.length <= 5000) {
+            return this.normalizeAssistedTreatmentGrid(jsonData);
+        }
+
+        const result: any[][] = new Array(jsonData.length);
+        const batchSize = 1500;
+        for (let start = 0; start < jsonData.length; start += batchSize) {
+            const end = Math.min(start + batchSize, jsonData.length);
+            for (let i = start; i < end; i++) {
+                result[i] = this.normalizeAssistedTreatmentRow(jsonData[i]);
             }
+            await this.yieldToMainThread();
+        }
+        return result;
+    }
 
-            const nonEmptyCells = row.filter(
-                cell => cell !== null && cell !== undefined && String(cell).trim() !== ''
-            );
-
-            if (nonEmptyCells.length !== 1) {
-                return row;
-            }
-
-            const cellValue = String(nonEmptyCells[0]);
-            const commaCount = (cellValue.match(/,/g) || []).length;
-            const semicolonCount = (cellValue.match(/;/g) || []).length;
-
-            if (commaCount + semicolonCount < 2) {
-                return row;
-            }
-
-            const delimiter = semicolonCount > commaCount ? ';' : ',';
-            const parsed = Papa.parse(cellValue, {
-                header: false,
-                delimiter,
-                skipEmptyLines: false
-            });
-
-            const splitRow = parsed.data?.[0] as any[] | undefined;
-            if (splitRow && splitRow.length > 1) {
-                return splitRow;
-            }
-
+    private normalizeAssistedTreatmentRow(row: any[]): any[] {
+        if (!Array.isArray(row) || row.length === 0) {
             return row;
+        }
+
+        const nonEmptyCells = row.filter(
+            cell => cell !== null && cell !== undefined && String(cell).trim() !== ''
+        );
+
+        if (nonEmptyCells.length !== 1) {
+            return row;
+        }
+
+        const cellValue = String(nonEmptyCells[0]);
+        const commaCount = (cellValue.match(/,/g) || []).length;
+        const semicolonCount = (cellValue.match(/;/g) || []).length;
+
+        if (commaCount + semicolonCount < 2) {
+            return row;
+        }
+
+        const delimiter = semicolonCount > commaCount ? ';' : ',';
+        const parsed = Papa.parse(cellValue, {
+            header: false,
+            delimiter,
+            skipEmptyLines: false
         });
+
+        const splitRow = parsed.data?.[0] as any[] | undefined;
+        if (splitRow && splitRow.length > 1) {
+            return splitRow;
+        }
+
+        return row;
     }
 
     private getAssistedGridRowText(row: any[] | undefined): string {
@@ -1132,7 +1269,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         let duplicatesRemoved = 0;
 
         for (const row of rows) {
-            const key = JSON.stringify(row);
+            const key = this.buildTreatmentRowDedupKey(row);
             if (seen.has(key)) {
                 duplicatesRemoved++;
                 continue;
@@ -1148,6 +1285,85 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return { uniqueRows, duplicatesRemoved };
     }
 
+    private async removeDuplicateTreatmentRowsAsync(rows: Record<string, string>[]): Promise<{
+        uniqueRows: Record<string, string>[];
+        duplicatesRemoved: number;
+    }> {
+        const seen = new Set<string>();
+        const uniqueRows: Record<string, string>[] = [];
+        let duplicatesRemoved = 0;
+        const batchSize = 5000;
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const key = this.buildTreatmentRowDedupKey(row);
+            if (seen.has(key)) {
+                duplicatesRemoved++;
+            } else {
+                seen.add(key);
+                uniqueRows.push(row);
+            }
+
+            if (i > 0 && i % batchSize === 0) {
+                await this.yieldToMainThread();
+            }
+        }
+
+        if (duplicatesRemoved > 0) {
+            console.log(`🧹 ${duplicatesRemoved} doublon(s) ignoré(s) sur ${rows.length} ligne(s) traitées`);
+        }
+
+        return { uniqueRows, duplicatesRemoved };
+    }
+
+    private buildTreatmentRowDedupKey(row: Record<string, string>): string {
+        const keys = Object.keys(row).sort();
+        let key = '';
+        for (const k of keys) {
+            key += `${k}\u0000${row[k] ?? ''}\u0001`;
+        }
+        return key;
+    }
+
+    private getAssistedXlsxReadOptions(fileSizeMB: number): XLSX.ParsingOptions {
+        if (fileSizeMB > 5) {
+            return {
+                type: 'array',
+                cellDates: false,
+                cellNF: false,
+                cellText: false,
+                sheetStubs: false,
+                dense: true,
+                cellStyles: false,
+                cellHTML: false,
+                cellFormula: false,
+                raw: true
+            };
+        }
+        return {
+            type: 'array',
+            cellDates: true,
+            raw: true
+        };
+    }
+
+    private yieldToMainThread(): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    /** Laisse l'UI afficher la progression avant l'appel synchrone XLSX.read. */
+    private readAssistedXlsxWorkbook(data: Uint8Array, fileSizeMB: number): Promise<XLSX.WorkBook> {
+        return new Promise((resolve, reject) => {
+            setTimeout(() => {
+                try {
+                    resolve(XLSX.read(data, this.getAssistedXlsxReadOptions(fileSizeMB)));
+                } catch (error) {
+                    reject(error);
+                }
+            }, fileSizeMB > 10 ? 100 : 0);
+        });
+    }
+
     private getResolvedAutoBoFileName(): string {
         return this.autoBoFile?.name || this.autoBoFileName || '';
     }
@@ -1161,7 +1377,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
         try {
-            const models = await this.autoProcessingService.getAllModels('Réconciliation');
+            const models = await this.autoProcessingService.getAllModelsUnrestricted();
             const match = models.find(m =>
                 (m.fileType === 'partner' || m.fileType === 'both') &&
                 this.matchesFilePattern(fileName, m.filePattern)
@@ -1291,35 +1507,46 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         if (this.isExcelFile(fileName)) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (e: ProgressEvent<FileReader>) => {
-                    try {
-                        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-                        const workbook = XLSX.read(data, {
-                            type: 'array',
-                            cellDates: true,
-                            raw: true
-                        });
-                        if (!workbook.SheetNames?.length) {
-                            reject(new Error('Aucune feuille Excel trouvée'));
-                            return;
-                        }
-
-                        resolve(this.parseAssistedTreatmentWorkbook(workbook));
-                    } catch (error) {
-                        reject(error);
-                    }
-                };
-                reader.onerror = () => reject(new Error('Erreur lors de la lecture du fichier Excel'));
-                reader.readAsArrayBuffer(file);
-            });
+            return this.readAssistedTreatmentExcelFile(file);
         }
 
         return Promise.reject(new Error('Format non supporté. Utilisez CSV ou Excel.'));
     }
 
-    // onReconciliationTypeChange - COMMENTÉ (seul le type 1-1 est conservé)
+    private async readAssistedTreatmentExcelFile(file: File): Promise<{
+        rows: Record<string, string>[];
+        headerLine: number;
+        removedLines: number;
+    }> {
+        const fileSizeMB = file.size / (1024 * 1024);
+        this.traitementProgressMessage = fileSizeMB > 5
+            ? `Lecture Excel (${fileSizeMB.toFixed(0)} Mo) : ${file.name}...`
+            : `Lecture Excel : ${file.name}...`;
+        this.cd.detectChanges();
+
+        try {
+            const arrayBuffer = await this.readFileAsArrayBuffer(file);
+            await this.yieldToMainThread();
+
+            const data = new Uint8Array(arrayBuffer);
+            this.traitementProgressMessage = fileSizeMB > 5
+                ? `Analyse Excel (${fileSizeMB.toFixed(0)} Mo) — veuillez patienter...`
+                : `Analyse Excel : ${file.name}...`;
+            this.cd.detectChanges();
+            await this.yieldToMainThread();
+
+            const workbook = await this.readAssistedXlsxWorkbook(data, fileSizeMB);
+            if (!workbook.SheetNames?.length) {
+                throw new Error('Aucune feuille Excel trouvée');
+            }
+
+            await this.yieldToMainThread();
+            return this.parseAssistedTreatmentWorkbook(workbook);
+        } catch (error) {
+            throw error instanceof Error ? error : new Error(String(error));
+        }
+    }
+
     // onReconciliationTypeChange(type: '1-1' | '1-2' | '1-3' | '1-4' | '1-5'): void {
     //     this.reconciliationType = type;
     //     // Sauvegarder le type dans le service
@@ -3852,22 +4079,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     get filteredPartnerAvailableAgencies(): string[] {
-        const term = (this.partnerAgencySearchFilter || '').trim().toLowerCase();
-        if (!term) return this.partnerAvailableAgencies;
+        if (!hasCommaSeparatedSearchFilter(this.partnerAgencySearchFilter)) return this.partnerAvailableAgencies;
         return this.partnerAvailableAgencies.filter(agency =>
-            agency.toLowerCase().includes(term) ||
-            String(this.getPartnerAgencyCount(agency)).includes(term)
+            matchesCommaSeparatedFilter(
+                this.partnerAgencySearchFilter,
+                agency,
+                this.getPartnerAgencyCount(agency)
+            )
         );
     }
 
     onPartnerAgencySearchFilterChange(value: string): void {
-        const term = (value || '').trim();
+        const hasFilter = hasCommaSeparatedSearchFilter(value);
         const hadSnapshot = Array.isArray(this.partnerAgenciesSelectionBeforeSearch);
-        if (term && !hadSnapshot) {
+        if (hasFilter && !hadSnapshot) {
             this.partnerAgenciesSelectionBeforeSearch = [...this.partnerSelectedAgencies];
         }
         this.partnerAgencySearchFilter = value;
-        if (term) {
+        if (hasFilter) {
             this.partnerSelectedAgencies = [...this.filteredPartnerAvailableAgencies];
         } else if (hadSnapshot) {
             this.partnerSelectedAgencies = [...(this.partnerAgenciesSelectionBeforeSearch || [])];
@@ -3940,11 +4169,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     /** Liste des agences filtrée par le critère de recherche (popup) */
     get filteredAvailableAgencies(): string[] {
-        const term = (this.agencySearchFilter || '').trim().toLowerCase();
-        if (!term) return this.availableAgencies;
+        if (!hasCommaSeparatedSearchFilter(this.agencySearchFilter)) return this.availableAgencies;
         return this.availableAgencies.filter(agency =>
-            agency.toLowerCase().includes(term) ||
-            String(this.getAgencyCount(agency)).includes(term)
+            matchesCommaSeparatedFilter(
+                this.agencySearchFilter,
+                agency,
+                this.getAgencyCount(agency)
+            )
         );
     }
 
@@ -3954,13 +4185,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
      * - si la recherche est vidée : restaurer la sélection précédente
      */
     onAgencySearchFilterChange(value: string): void {
-        const term = (value || '').trim();
+        const hasFilter = hasCommaSeparatedSearchFilter(value);
         const hadSnapshot = Array.isArray(this.agenciesSelectionBeforeSearch);
-        if (term && !hadSnapshot) {
+        if (hasFilter && !hadSnapshot) {
             this.agenciesSelectionBeforeSearch = [...this.selectedAgencies];
         }
         this.agencySearchFilter = value;
-        if (term) {
+        if (hasFilter) {
             this.selectedAgencies = [...this.filteredAvailableAgencies];
         } else if (hadSnapshot) {
             this.selectedAgencies = [...(this.agenciesSelectionBeforeSearch || [])];
@@ -4151,10 +4382,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     get filteredAutoAvailableStatuses(): string[] {
-        const term = (this.autoStatusSearchFilter || '').trim().toLowerCase();
-        if (!term) return this.autoAvailableStatuses;
+        if (!hasCommaSeparatedSearchFilter(this.autoStatusSearchFilter)) return this.autoAvailableStatuses;
         return this.autoAvailableStatuses.filter(st =>
-            st.toLowerCase().includes(term) || String(this.getAutoStatusCount(st)).includes(term)
+            matchesCommaSeparatedFilter(
+                this.autoStatusSearchFilter,
+                st,
+                this.getAutoStatusCount(st)
+            )
         );
     }
 
@@ -4206,21 +4440,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     get filteredAvailableServices(): string[] {
-        const term = (this.serviceSearchFilter || '').trim().toLowerCase();
-        if (!term) return this.availableServices;
+        if (!hasCommaSeparatedSearchFilter(this.serviceSearchFilter)) return this.availableServices;
         return this.availableServices.filter(s =>
-            s.toLowerCase().includes(term) || String(this.getServiceCount(s)).includes(term)
+            matchesCommaSeparatedFilter(
+                this.serviceSearchFilter,
+                s,
+                this.getServiceCount(s)
+            )
         );
     }
 
     onServiceSearchFilterChange(value: string): void {
-        const term = (value || '').trim();
+        const hasFilter = hasCommaSeparatedSearchFilter(value);
         const hadSnapshot = Array.isArray(this.servicesSelectionBeforeSearch);
-        if (term && !hadSnapshot) {
+        if (hasFilter && !hadSnapshot) {
             this.servicesSelectionBeforeSearch = [...this.selectedServices];
         }
         this.serviceSearchFilter = value;
-        if (term) {
+        if (hasFilter) {
             this.selectedServices = [...this.filteredAvailableServices];
         } else if (hadSnapshot) {
             this.selectedServices = [...(this.servicesSelectionBeforeSearch || [])];
@@ -4407,21 +4644,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     get filteredPartnerAvailableServices(): string[] {
-        const term = (this.partnerServiceSearchFilter || '').trim().toLowerCase();
-        if (!term) return this.partnerAvailableServices;
+        if (!hasCommaSeparatedSearchFilter(this.partnerServiceSearchFilter)) return this.partnerAvailableServices;
         return this.partnerAvailableServices.filter(s =>
-            s.toLowerCase().includes(term) || String(this.getPartnerServiceCount(s)).includes(term)
+            matchesCommaSeparatedFilter(
+                this.partnerServiceSearchFilter,
+                s,
+                this.getPartnerServiceCount(s)
+            )
         );
     }
 
     onPartnerServiceSearchFilterChange(value: string): void {
-        const term = (value || '').trim();
+        const hasFilter = hasCommaSeparatedSearchFilter(value);
         const hadSnapshot = Array.isArray(this.partnerServicesSelectionBeforeSearch);
-        if (term && !hadSnapshot) {
+        if (hasFilter && !hadSnapshot) {
             this.partnerServicesSelectionBeforeSearch = [...this.partnerSelectedServices];
         }
         this.partnerServiceSearchFilter = value;
-        if (term) {
+        if (hasFilter) {
             this.partnerSelectedServices = [...this.filteredPartnerAvailableServices];
         } else if (hadSnapshot) {
             this.partnerSelectedServices = [...(this.partnerServicesSelectionBeforeSearch || [])];
@@ -4676,10 +4916,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     get filteredPartnerAvailablePayments(): string[] {
-        const term = (this.partnerPaymentSearchFilter || '').trim().toLowerCase();
-        if (!term) return this.partnerAvailablePayments;
+        if (!hasCommaSeparatedSearchFilter(this.partnerPaymentSearchFilter)) return this.partnerAvailablePayments;
         return this.partnerAvailablePayments.filter(p =>
-            p.toLowerCase().includes(term) || String(this.getPartnerPaymentCount(p)).includes(term)
+            matchesCommaSeparatedFilter(
+                this.partnerPaymentSearchFilter,
+                p,
+                this.getPartnerPaymentCount(p)
+            )
         );
     }
 
@@ -4725,10 +4968,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     get filteredPartnerAvailableStatuses(): string[] {
-        const term = (this.partnerStatusSearchFilter || '').trim().toLowerCase();
-        if (!term) return this.partnerAvailableStatuses;
+        if (!hasCommaSeparatedSearchFilter(this.partnerStatusSearchFilter)) return this.partnerAvailableStatuses;
         return this.partnerAvailableStatuses.filter(st =>
-            st.toLowerCase().includes(term) || String(this.getPartnerStatusCount(st)).includes(term)
+            matchesCommaSeparatedFilter(
+                this.partnerStatusSearchFilter,
+                st,
+                this.getPartnerStatusCount(st)
+            )
         );
     }
 
@@ -5611,7 +5857,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         console.log('📄 Fichiers:', { boFileName, partnerFileName });
 
         try {
-            const models = await this.autoProcessingService.getAllModels('Réconciliation');
+            const models = await this.autoProcessingService.getAllModelsUnrestricted();
             console.log(`📋 ${models.length} modèles disponibles`);
 
             // Priorité 0 : modèle partenaire mémorisé lors du traitement assisté
@@ -6240,7 +6486,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 // Appliquer les boTreatments du modèle
                 if (keyDetectionResult.modelId) {
                     try {
-                        const models = await this.autoProcessingService.getAllModels('Réconciliation');
+                        const models = await this.autoProcessingService.getAllModelsUnrestricted();
                         const usedModel = models.find(m => m.id === keyDetectionResult.modelId);
                         
                         if (usedModel && usedModel.reconciliationKeys?.boTreatments) {
@@ -6630,21 +6876,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     get filteredManualAvailableServices(): string[] {
-        const term = (this.manualServiceSearchFilter || '').trim().toLowerCase();
-        if (!term) return this.manualAvailableServices;
+        if (!hasCommaSeparatedSearchFilter(this.manualServiceSearchFilter)) return this.manualAvailableServices;
         return this.manualAvailableServices.filter(s =>
-            s.toLowerCase().includes(term) || String(this.getManualServiceCount(s)).includes(term)
+            matchesCommaSeparatedFilter(
+                this.manualServiceSearchFilter,
+                s,
+                this.getManualServiceCount(s)
+            )
         );
     }
 
     onManualServiceSearchFilterChange(value: string): void {
-        const term = (value || '').trim();
+        const hasFilter = hasCommaSeparatedSearchFilter(value);
         const hadSnapshot = Array.isArray(this.manualServicesSelectionBeforeSearch);
-        if (term && !hadSnapshot) {
+        if (hasFilter && !hadSnapshot) {
             this.manualServicesSelectionBeforeSearch = [...this.manualSelectedServices];
         }
         this.manualServiceSearchFilter = value;
-        if (term) {
+        if (hasFilter) {
             this.manualSelectedServices = [...this.filteredManualAvailableServices];
         } else if (hadSnapshot) {
             this.manualSelectedServices = [...(this.manualServicesSelectionBeforeSearch || [])];
@@ -6763,10 +7012,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     get filteredManualAvailableStatuses(): string[] {
-        const term = (this.manualStatusSearchFilter || '').trim().toLowerCase();
-        if (!term) return this.manualAvailableStatuses;
+        if (!hasCommaSeparatedSearchFilter(this.manualStatusSearchFilter)) return this.manualAvailableStatuses;
         return this.manualAvailableStatuses.filter(st =>
-            st.toLowerCase().includes(term) || String(this.getManualStatusCount(st)).includes(term)
+            matchesCommaSeparatedFilter(
+                this.manualStatusSearchFilter,
+                st,
+                this.getManualStatusCount(st)
+            )
         );
     }
 

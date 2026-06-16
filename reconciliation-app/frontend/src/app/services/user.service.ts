@@ -51,6 +51,10 @@ export class UserService {
     return this.http.post(`${this.apiUrl}/${id}/reset-password`, {});
   }
 
+  setUserEnabled(id: number, enabled: boolean): Observable<{ message: string; user: User }> {
+    return this.http.post<{ message: string; user: User }>(`${this.apiUrl}/${id}/set-enabled`, { enabled });
+  }
+
   forgotPassword(email: string): Observable<any> {
     return this.http.post(`${this.apiUrl}/forgot-password`, { email });
   }

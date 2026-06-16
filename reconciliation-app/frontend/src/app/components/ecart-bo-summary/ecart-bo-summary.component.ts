@@ -11,6 +11,7 @@ import {
   EcartBoSummaryPendingLine
 } from '../../services/ecart-bo-summary.service';
 import { PopupService } from '../../services/popup.service';
+import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import { ModernPopupComponent } from '../modern-popup/modern-popup.component';
 import {
@@ -163,23 +164,28 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   private selectionKeyCounter = 0;
   private isPersistingLinks = false;
 
+  /** Service magique actif (réconciliation magique) — cloisonne l'affichage. */
+  magicServiceFilterLocked = '';
+
   constructor(
     private appStateService: AppStateService,
     private router: Router,
     private cdr: ChangeDetectorRef,
     private ecartBoSummaryService: EcartBoSummaryService,
-    private popupService: PopupService
+    private popupService: PopupService,
+    private reconciliationTabsService: ReconciliationTabsService
   ) {}
 
   ngOnInit(): void {
     this.refreshUniqueEnvCodes();
+    this.syncMagicServiceFilterFromContext();
     const pendingLines = this.ecartBoSummaryService.getAndClearPendingLinesFromEcartBo();
     const prefill = this.ecartBoSummaryService.getAndClearPrefillFromMatches();
 
     this.subscription.add(
       this.appStateService.getReconciliationResults().pipe(take(1)).subscribe((response: ReconciliationResponse | null) => {
         if (pendingLines && pendingLines.length > 0) {
-          this.pendingLinesBuffer = pendingLines;
+          this.pendingLinesBuffer = this.filterPendingLinesByMagicService(pendingLines);
           this.prefillBuffer = prefill;
           this.awaitingEnvChoice = true;
           this.pendingEnvSelection = this.sessionDefaultEnvCode || '';
@@ -235,6 +241,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     } else if (this.response) {
       this.loadSummaryData();
     }
+
+    this.syncMagicServiceFilterFromContext();
 
     if (prefill) {
       this.popupService
@@ -491,7 +499,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     try {
       const mismatches = this.response?.mismatches || [];
       const boOnly = this.response?.boOnly || [];
-      const allData = [...mismatches, ...boOnly];
+      let allData = this.applyMagicReconciliationFilter([...mismatches, ...boOnly]);
       
       // Fonction helper pour extraire les valeurs
       const getValue = (record: Record<string, string>, keys: string[]): string => {
@@ -605,6 +613,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       this.uniquePays = [...new Set(this.summaryItems.map(item => item.pays).filter(p => p))].sort();
       this.refreshUniqueEnvCodes();
 
+      this.syncMagicServiceFilterFromContext();
       this.applyFilters();
     } finally {
       this.isLoading = false;
@@ -637,6 +646,48 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     }
 
     this.loadSavedSummaryData();
+  }
+
+  /** Applique le cloisonnement service depuis la réconciliation magique. */
+  private syncMagicServiceFilterFromContext(): void {
+    const magicService = this.getActiveMagicServiceFilter();
+    this.magicServiceFilterLocked = magicService;
+    if (magicService) {
+      this.selectedService = magicService;
+    }
+  }
+
+  private getActiveMagicServiceFilter(): string {
+    const magicCtx = this.reconciliationTabsService.getMagicViewContext();
+    return (magicCtx.service || this.appStateService.getSelectedMagicService() || '').trim();
+  }
+
+  private ensureMagicViewContext(): void {
+    const magicCtx = this.reconciliationTabsService.getMagicViewContext();
+    const service = magicCtx.service || this.appStateService.getSelectedMagicService();
+    const partnerFile = magicCtx.partnerFile || this.appStateService.getSelectedMagicPartnerFile();
+    if (service && !magicCtx.service) {
+      this.reconciliationTabsService.setMagicViewContext(service, partnerFile);
+    }
+  }
+
+  private applyMagicReconciliationFilter(records: Record<string, string>[]): Record<string, string>[] {
+    const service = this.getActiveMagicServiceFilter();
+    const partnerFile = this.reconciliationTabsService.getMagicViewContext().partnerFile
+      || this.appStateService.getSelectedMagicPartnerFile();
+    if (!service && !partnerFile) {
+      return records;
+    }
+    this.ensureMagicViewContext();
+    return this.reconciliationTabsService.filterBoEcartsByMagicView(records);
+  }
+
+  private filterPendingLinesByMagicService(lines: EcartBoSummaryPendingLine[]): EcartBoSummaryPendingLine[] {
+    const magicService = this.getActiveMagicServiceFilter();
+    if (!magicService) {
+      return lines;
+    }
+    return lines.filter(line => (line.service || '').trim() === magicService);
   }
 
   /**

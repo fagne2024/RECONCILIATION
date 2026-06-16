@@ -6,6 +6,7 @@ export interface User {
     password?: string;
     email?: string;
     profil?: Profil;
+    enabled?: boolean;
     enabled2FA?: boolean;
     secret2FA?: string;
 } 

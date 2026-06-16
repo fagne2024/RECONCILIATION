@@ -523,6 +523,19 @@
       border-color: #667eea;
     }
 
+    &.user-card-disabled {
+      opacity: 0.85;
+      border-color: #dee2e6;
+
+      &:hover {
+        border-color: #adb5bd;
+      }
+
+      .user-card-header {
+        background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+      }
+    }
+
     .user-card-header {
       padding: 20px;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -694,6 +707,30 @@
           }
         }
 
+        &.btn-toggle-status {
+          color: white;
+
+          &.btn-status-active {
+            background: #6c757d;
+
+            &:hover:not(:disabled) {
+              background: #5a6268;
+              transform: translateY(-2px);
+              box-shadow: 0 4px 8px rgba(108, 117, 125, 0.3);
+            }
+          }
+
+          &.btn-status-inactive {
+            background: #17a2b8;
+
+            &:hover:not(:disabled) {
+              background: #138496;
+              transform: translateY(-2px);
+              box-shadow: 0 4px 8px rgba(23, 162, 184, 0.3);
+            }
+          }
+        }
+
         &.btn-delete {
           background: #dc3545;
           color: white;
@@ -830,6 +867,11 @@
   &.badge-primary {
     color: #fff;
     background-color: #007bff;
+  }
+
+  &.badge-disabled {
+    color: #fff;
+    background-color: #6c757d;
   }
 }
 

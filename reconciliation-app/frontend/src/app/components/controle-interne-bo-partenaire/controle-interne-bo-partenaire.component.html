@@ -1,0 +1,222 @@
+<div class="ci-root">
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Contrôle Interne</strong>
+      <span class="nav-path-sub">Rapport BO vs Partenaire</span>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="refreshData()" [disabled]="loading">
+        <i class="fas" [ngClass]="loading ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i> Actualiser
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="retourRapportBo()">
+        <i class="fas fa-arrow-left"></i> Retour au rapport BO vs Partenaire
+      </button>
+    </div>
+  </nav>
+
+  <div class="page-header-report">
+    <div class="ph-report-left">
+      <div class="ph-eyebrow"><span></span>Contrôle Interne</div>
+      <h1 class="ph-title-report">Agrégation <em>mensuelle</em></h1>
+      <p class="ci-subtitle">{{ subtitle }}</p>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="ci-filters-card">
+      <h2>Périmètre</h2>
+      <div class="ci-filters">
+        <label>
+          <span>Pays</span>
+          <select [(ngModel)]="selectedCountry" (ngModelChange)="appliquerFiltres()">
+            <option value="">— Choisir —</option>
+            <option *ngFor="let c of countries" [value]="c">{{ c }}</option>
+          </select>
+        </label>
+        <label>
+          <span>Année</span>
+          <select [(ngModel)]="selectedYear" (ngModelChange)="appliquerFiltres()">
+            <option *ngFor="let y of yearOptions" [value]="y">{{ y }}</option>
+          </select>
+        </label>
+        <label>
+          <span>Mois</span>
+          <select [(ngModel)]="selectedMonth" (ngModelChange)="appliquerFiltres()">
+            <option *ngFor="let m of monthOptions" [value]="m.value">{{ m.label }}</option>
+          </select>
+        </label>
+        <label>
+          <span>ENV</span>
+          <select [(ngModel)]="selectedEnv" (ngModelChange)="appliquerFiltres()">
+            <option *ngFor="let e of envOptions" [value]="e">{{ e }}</option>
+          </select>
+        </label>
+        <label class="ci-filter-service">
+          <span>Service</span>
+          <select [(ngModel)]="selectedService" (ngModelChange)="onServiceFilterChange()">
+            <option value="">Tous les services</option>
+            <option *ngFor="let s of availableServices" [value]="s">{{ s }}</option>
+          </select>
+        </label>
+      </div>
+      <p class="ci-perm-hint" *ngIf="!canValidateControleInterne">
+        Consultation seule — seuls un administrateur ou un profil Contrôle Interne peuvent valider.
+      </p>
+    </div>
+
+    <div *ngIf="error" class="ci-error">{{ error }}</div>
+    <div *ngIf="loading" class="ci-loading">
+      <i class="fas fa-spinner fa-spin"></i> Chargement…
+    </div>
+    <div *ngIf="!loading && loadingValidations" class="ci-loading-inline">
+      <i class="fas fa-spinner fa-spin"></i> Mise à jour des validations…
+    </div>
+
+    <ng-container *ngIf="!loading && !error">
+      <div class="ci-section">
+        <h2>Vue agrégée par mois et service</h2>
+        <p class="ci-hint">
+          Données issues du rapport BO vs Partenaire. Statut contrôle interne par défaut :
+          <strong>En cours de validation</strong>.
+        </p>
+        <div class="ci-table-wrap" *ngIf="monthlyRows.length; else noMonthly">
+          <table class="ci-table">
+            <thead>
+              <tr>
+                <th>Mois</th>
+                <th>Service</th>
+                <th>Statut rapport</th>
+                <th>Statut contrôle interne</th>
+                <th class="num">BO Nbre</th>
+                <th class="num">BO Volume</th>
+                <th class="num">Part. Nbre</th>
+                <th class="num">Part. Volume</th>
+                <th class="num">Écart Nbre</th>
+                <th class="num">Écart Volume</th>
+                <th class="num">Taux</th>
+                <th class="ci-col-action">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of monthlyRows; trackBy: trackByRow">
+                <td>{{ row.monthLabel }}</td>
+                <td class="ci-service">{{ row.service }}</td>
+                <td>
+                  <span [class]="classeStatutRapport(row.traitement)">{{ row.statutRapport }}</span>
+                </td>
+                <td>
+                  <span [class]="classeStatutControle(row)">{{ row.statutControleInterne }}</span>
+                  <div class="ci-valid-meta" *ngIf="row.isControleValide && row.controleInterneValidatedBy">
+                    par {{ row.controleInterneValidatedBy }}
+                  </div>
+                </td>
+                <td class="num">{{ formatNumber(row.boNombre) }}</td>
+                <td class="num">{{ formatVolume(row.boVolume) }}</td>
+                <td class="num">{{ formatNumber(row.partenaireNombre) }}</td>
+                <td class="num">{{ formatVolume(row.partenaireVolume) }}</td>
+                <td class="num">{{ formatNumber(row.ecartNombre) }}</td>
+                <td class="num">{{ formatVolume(row.ecartVolume) }}</td>
+                <td class="num">{{ libelleTaux(row) }}</td>
+                <td class="ci-col-action">
+                  <button
+                    type="button"
+                    class="ci-btn-validate"
+                    *ngIf="!row.isControleValide && canValidateControleInterne"
+                    [disabled]="!canValidateRow(row)"
+                    (click)="validerLigne(row)"
+                  >
+                    <i class="fas" [ngClass]="isRowValidating(row) ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+                    Valider
+                  </button>
+                  <button
+                    type="button"
+                    class="ci-btn-revoke"
+                    *ngIf="row.isControleValide && canRevokeControleInterne"
+                    [disabled]="!canRevokeRow(row)"
+                    (click)="annulerValidation(row)"
+                    title="Annuler la validation (administrateur)"
+                  >
+                    <i class="fas" [ngClass]="isRowValidating(row) ? 'fa-spinner fa-spin' : 'fa-undo'"></i>
+                    Annuler
+                  </button>
+                  <span class="ci-validated-tag" *ngIf="row.isControleValide && !canRevokeControleInterne">
+                    <i class="fas fa-check-circle"></i> Validé
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <ng-template #noMonthly>
+          <p class="ci-empty">Aucune donnée pour ce périmètre.</p>
+        </ng-template>
+      </div>
+
+      <div class="ci-panels">
+        <div class="ci-panel ci-panel--warn">
+          <h3>
+            <i class="fas fa-exclamation-triangle"></i>
+            Dates &amp; services non validés &amp; clôturés (rapport)
+          </h3>
+          <p class="ci-panel-count">{{ nonValidesClotures.length }} combinaison(s)</p>
+          <div class="ci-mini-table-wrap" *ngIf="nonValidesClotures.length; else noNonValides">
+            <table class="ci-mini-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Service</th>
+                  <th>Statut rapport</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let line of nonValidesClotures; trackBy: trackByDateService">
+                  <td>{{ formatFrShort(line.date) }}</td>
+                  <td>{{ line.service }}</td>
+                  <td><span class="ci-pill ci-pill--pending">{{ line.statutRapport }}</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ng-template #noNonValides>
+            <p class="ci-empty-small">Toutes les dates/services du périmètre sont validées &amp; clôturées.</p>
+          </ng-template>
+        </div>
+
+        <div class="ci-panel ci-panel--ok">
+          <h3>
+            <i class="fas fa-check-circle"></i>
+            Dates &amp; services validés &amp; clôturés (rapport)
+          </h3>
+          <p class="ci-panel-count">{{ validesClotures.length }} combinaison(s)</p>
+          <div class="ci-mini-table-wrap" *ngIf="validesClotures.length; else noValides">
+            <table class="ci-mini-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Service</th>
+                  <th>Statut rapport</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let line of validesClotures; trackBy: trackByDateService">
+                  <td>{{ formatFrShort(line.date) }}</td>
+                  <td>{{ line.service }}</td>
+                  <td><span class="ci-pill ci-pill--ok">{{ line.statutRapport }}</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ng-template #noValides>
+            <p class="ci-empty-small">Aucune date/service validée &amp; clôturée sur le périmètre.</p>
+          </ng-template>
+        </div>
+      </div>
+    </ng-container>
+  </div>
+</div>

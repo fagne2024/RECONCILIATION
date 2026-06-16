@@ -12,6 +12,9 @@ import { EcartSolde } from '../../models/ecart-solde.model';
 import { TrxSfData } from '../../services/trx-sf.service';
 import { ImpactOP } from '../../models/impact-op.model';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
+import { extractRecordAmount } from '../../utils/record-amount.util';
+import { filterRecordsByMagicPartition } from '../../utils/magic-partition.util';
 
 @Component({
   selector: 'app-ecart-bo-table',
@@ -70,6 +73,8 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   // Chargement progressif
   isLoading = false;
   loadProgress = 0;
+  private lastProcessedSignature = '';
+  magicServiceFilterLocked = '';
 
   // Scroll to top
   showScrollTopBtn = false;
@@ -89,6 +94,7 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     private ecartSoldeService: EcartSoldeService,
     private trxSfService: TrxSfService,
     private impactOPService: ImpactOPService,
+    private reconciliationTabsService: ReconciliationTabsService,
     private el: ElementRef
   ) {}
 
@@ -99,10 +105,22 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.syncMagicContextFromAppState();
     this.subscription.add(
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
         if (response) {
           this.response = response;
+          this.syncMagicContextFromAppState();
+          this.loadBoOnly();
+        }
+      })
+    );
+
+    this.subscription.add(
+      this.appStateService.selectedMagicService$.subscribe(() => {
+        this.syncMagicContextFromAppState();
+        if (this.response) {
+          this.lastProcessedSignature = '';
           this.loadBoOnly();
         }
       })
@@ -128,74 +146,103 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     document.removeEventListener('click', this.handleDocumentClick.bind(this));
   }
 
+  private syncMagicContextFromAppState(): void {
+    const service = this.appStateService.getSelectedMagicService();
+    const partnerFile = this.appStateService.getSelectedMagicPartnerFile();
+    if (service || partnerFile) {
+      this.reconciliationTabsService.setMagicViewContext(service, partnerFile);
+      if (service) {
+        this.magicServiceFilterLocked = service;
+      }
+    }
+  }
+
+  private resolveBoOnlyForDisplay(): Record<string, string>[] {
+    const mismatches = this.response?.mismatches || [];
+    const boOnly = this.response?.boOnly || [];
+    const allData = [...mismatches, ...boOnly];
+    const service = this.appStateService.getSelectedMagicService()
+      || this.reconciliationTabsService.getMagicViewContext().service;
+    const partnerFile = this.appStateService.getSelectedMagicPartnerFile()
+      || this.reconciliationTabsService.getMagicViewContext().partnerFile;
+
+    if (!service && !partnerFile) {
+      return allData;
+    }
+
+    this.reconciliationTabsService.setMagicViewContext(service || '', partnerFile || '');
+    this.magicServiceFilterLocked = (service || '').trim();
+
+    const strictFiltered = filterRecordsByMagicPartition(allData, service || '', partnerFile || '');
+    return strictFiltered;
+  }
+
   private async loadBoOnly(): Promise<void> {
     this.isLoading = true;
     this.loadProgress = 0;
     this.cdr.markForCheck();
-    
-    try {
-      const mismatches = this.response?.mismatches || [];
-      const boOnly = this.response?.boOnly || [];
-      const allData = [...mismatches, ...boOnly];
-      const total = allData.length;
-      
-      if (total === 0) {
-        this.filteredBoOnly = [];
-        this.isLoading = false;
-        this.loadProgress = 100;
-        this.initializeColumns();
-        this.applyFilters();
-        this.cdr.markForCheck();
-        return;
-      }
 
-      // Chargement progressif par chunks pour éviter de bloquer l'UI
-      // Utiliser des chunks plus petits pour un feedback plus rapide
-      const chunkSize = 500; // Chunks plus petits pour un feedback plus rapide
-      this.filteredBoOnly = [];
-      
-      // Charger immédiatement un petit échantillon pour l'initialisation rapide
-      if (allData.length > 0) {
-        const sampleSize = Math.min(50, total);
-        const sample = allData.slice(0, sampleSize);
-        this.filteredBoOnly.push(...sample);
-        this.loadProgress = 2;
-        this.initializeColumns();
-        this.applyFilters();
-        this.cdr.markForCheck();
-        
-        // Permettre au navigateur de mettre à jour l'UI immédiatement
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
-      
-      // Charger le reste par chunks pour un feedback régulier
-      for (let i = 50; i < total; i += chunkSize) {
-        const chunk = allData.slice(i, Math.min(i + chunkSize, total));
-        this.filteredBoOnly.push(...chunk);
-        this.loadProgress = Math.round(((i + chunk.length) / total) * 98 + 2); // 2-100%
-        
-        // Réappliquer les filtres seulement tous les 3 chunks pour optimiser
-        if ((i / chunkSize) % 3 === 0) {
-          this.applyFilters();
-        }
-        
-        this.cdr.markForCheck();
-        
-        // Permettre au navigateur de mettre à jour l'UI
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
-      
-      // Finaliser les filtres une dernière fois
-      this.applyFilters();
-      
-      // Finaliser
-      this.loadProgress = 100;
-      this.applyFilters();
+    try {
+      this.syncMagicContextFromAppState();
+      const allData = this.resolveBoOnlyForDisplay();
+      this.lastProcessedSignature = `${this.response?.mismatches?.length || 0}_${this.response?.boOnly?.length || 0}_${this.appStateService.getSelectedMagicService()}_${this.appStateService.getSelectedMagicPartnerFile()}`;
+      this.reconciliationTabsService.setFilteredBoOnly(allData);
+      await this.loadBoOnlyProgressively(allData);
     } finally {
       this.isLoading = false;
       this.cdr.markForCheck();
       setTimeout(() => this.updateTableScrollState(), 100);
     }
+  }
+
+  private applyCachedBoOnly(cached: Record<string, string>[]): void {
+    this.filteredBoOnly = [...cached];
+    this.loadProgress = 100;
+    this.initializeColumns();
+    this.applyFilters();
+    this.isLoading = false;
+    this.cdr.markForCheck();
+  }
+
+  private async loadBoOnlyProgressively(allData: Record<string, string>[]): Promise<void> {
+      const total = allData.length;
+      
+      if (total === 0) {
+        this.filteredBoOnly = [];
+        this.loadProgress = 100;
+        this.initializeColumns();
+        this.applyFilters();
+        return;
+      }
+
+      const chunkSize = 500;
+      this.filteredBoOnly = [];
+      
+      if (allData.length > 0) {
+        const sampleSize = Math.min(50, total);
+        this.filteredBoOnly.push(...allData.slice(0, sampleSize));
+        this.loadProgress = 2;
+        this.initializeColumns();
+        this.applyFilters();
+        this.cdr.markForCheck();
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      
+      for (let i = 50; i < total; i += chunkSize) {
+        const chunk = allData.slice(i, Math.min(i + chunkSize, total));
+        this.filteredBoOnly.push(...chunk);
+        this.loadProgress = Math.round(((i + chunk.length) / total) * 98 + 2);
+        
+        if ((i / chunkSize) % 3 === 0) {
+          this.applyFilters();
+        }
+        
+        this.cdr.markForCheck();
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      
+      this.applyFilters();
+      this.loadProgress = 100;
   }
 
   private initializeColumns(): void {
@@ -520,9 +567,8 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     // Recherche de service avec plusieurs noms possibles
     const service = getValueWithFallback(['Service', 'service', 'SERVICE', 'serv', 'Serv']);
     
-    // Recherche de volume/montant avec plusieurs noms possibles
-    const volumeStr = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME']);
-    const volume = volumeStr ? parseFloat(volumeStr.toString().replace(',', '.')) : 0;
+    // Recherche de volume/montant (AMOUNT, Montant, crédit/débit, etc.)
+    const volume = extractRecordAmount(record);
     
     // Recherche de date avec plusieurs noms possibles
     const date = getValueWithFallback(['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'created', 'Created', 'CREATED']);
@@ -540,10 +586,10 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   }
 
   calculateTotalVolumeBoOnly(): number {
-    return this.filteredBoOnly.reduce((total, record) => {
-      const info = this.getBoOnlyAgencyAndService(record);
-      return total + (info.volume || 0);
-    }, 0);
+    return this.filteredBoOnly.reduce(
+      (total, record) => total + extractRecordAmount(record),
+      0
+    );
   }
 
   async exportResults(): Promise<void> {

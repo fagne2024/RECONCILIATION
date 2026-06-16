@@ -1,0 +1,18 @@
+{
+  "generatedAt": "2026-06-11T08:32:47.880Z",
+  "baseUrl": "https://localhost:4200",
+  "realLogin": true,
+  "username": "admin",
+  "files": [
+    "01-login.png",
+    "02-reconciliation-launcher.png",
+    "03-column-selection.png",
+    "04-results.png",
+    "05-ecart-bo.png",
+    "06-comptes.png",
+    "07-ecart-solde.png",
+    "08-impact-op.png",
+    "09-dashboard.png",
+    "06b-releve-compte.png"
+  ]
+}

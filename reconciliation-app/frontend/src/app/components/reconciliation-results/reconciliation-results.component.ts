@@ -20,6 +20,12 @@ import { CompteService } from '../../services/compte.service';
 import { OperationService } from '../../services/operation.service';
 import { OperationCreateRequest } from '../../models/operation.model';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import { extractRecordAmount } from '../../utils/record-amount.util';
+import {
+    filterRecordsByMagicPartition,
+    recordMatchesMagicPartition,
+    hasMagicPartitionTags
+} from '../../utils/magic-partition.util';
 import { MagicServiceSummary } from '../../services/magic-reconciliation.service';
 import {
     formatSpreadsheetDateValue,
@@ -4195,9 +4201,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         );
         
         if (hasExistingData && this.matchesLoaded && this.boOnlyLoaded && this.partnerOnlyLoaded) {
-            console.log('✅ [NGONINIT] Données déjà chargées, skip réinitialisation complète');
+            console.log('✅ [NGONINIT] Données déjà chargées, rafraîchissement du cloisonnement magique');
+            this.refreshMagicServicePartitioning();
             const skipInitDuration = performance.now() - initStartTime;
-            console.log('⏱️ [NGONINIT] Skip réinitialisation:', `${skipInitDuration.toFixed(2)}ms`);
+            console.log('⏱️ [NGONINIT] Rafraîchissement cloisonnement:', `${skipInitDuration.toFixed(2)}ms`);
             return;
         }
         
@@ -4477,6 +4484,11 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
         this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
         this.reconciliationTabsService.setFilteredMismatches(this.response?.mismatches || []);
+        this.syncMagicViewContextToTabsService();
+        if (!this.isMagicServiceView() && !this.shouldApplyServicePartition()) {
+            this.reconciliationTabsService.setMagicViewContext('', '');
+            this.appStateService.setSelectedMagicService('');
+        }
         console.log('⏱️ Partage données avec service:', `${(performance.now() - shareDataStartTime).toFixed(2)}ms`);
         
         const totalDuration = performance.now() - startTime;
@@ -4561,7 +4573,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private generateCacheKey(): string {
         if (!this.response) return '';
-        return `${this.response.totalMatches}_${this.response.totalBoOnly}_${this.response.totalPartnerOnly}_${this.response.totalMismatches}`;
+        const magicScope = this.isMagicServiceView() || this.getActiveServiceFilter()
+            ? `${this.getActiveServiceFilter()}|${this.selectedMagicPartnerFile || ''}`
+            : '';
+        return `${this.response.totalMatches}_${this.response.totalBoOnly}_${this.response.totalPartnerOnly}_${this.response.totalMismatches}_${magicScope}`;
     }
     
     /**
@@ -4615,40 +4630,39 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     onSearch() {
         const searchStartTime = performance.now();
-        const searchTerm = this.searchKey.toLowerCase();
+        const searchTerm = this.searchKey.toLowerCase().trim();
         
         if (this.activeTab === 'matches') {
-            this.filteredMatches = (this.response?.matches || []).filter(match => 
-                match.key.toLowerCase().includes(searchTerm)
-            );
+            const base = this.getFilteredMatches();
+            this.filteredMatches = searchTerm
+                ? base.filter(match => match.key.toLowerCase().includes(searchTerm))
+                : base;
             this.matchesPage = 1;
-            this.cachedPagedMatches = null; // Invalider le cache
-            // Partager les données filtrées
+            this.cachedPagedMatches = null;
             this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
         } else if (this.activeTab === 'boOnly') {
-            // Pour TRXBO/OPPART, utiliser mismatches au lieu de boOnly
-            const mismatches = this.response?.mismatches || [];
-            const boOnly = this.response?.boOnly || [];
-            const allMismatches = [...mismatches, ...boOnly];
-            
-            this.filteredBoOnly = allMismatches.filter(record => 
-                Object.values(record).some(value => 
-                    value.toString().toLowerCase().includes(searchTerm)
+            const base = this.getFilteredBoOnly();
+            this.filteredBoOnly = searchTerm
+                ? base.filter(record =>
+                    Object.values(record).some(value =>
+                        value.toString().toLowerCase().includes(searchTerm)
+                    )
                 )
-            );
+                : base;
             this.boOnlyPage = 1;
-            this.cachedPagedBoOnly = null; // Invalider le cache
-            // Partager les données filtrées
+            this.cachedPagedBoOnly = null;
             this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
         } else if (this.activeTab === 'partnerOnly') {
-            this.filteredPartnerOnly = (this.response?.partnerOnly || []).filter(record => 
-                Object.values(record).some(value => 
-                    value.toString().toLowerCase().includes(searchTerm)
+            const base = this.getFilteredPartnerOnly();
+            this.filteredPartnerOnly = searchTerm
+                ? base.filter(record =>
+                    Object.values(record).some(value =>
+                        value.toString().toLowerCase().includes(searchTerm)
+                    )
                 )
-            );
+                : base;
             this.partnerOnlyPage = 1;
-            this.cachedPagedPartnerOnly = null; // Invalider le cache
-            // Partager les données filtrées
+            this.cachedPagedPartnerOnly = null;
             this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
         }
         
@@ -7642,12 +7656,10 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     calculateTotalVolumeBoOnly(): number {
         if (!this.filteredBoOnly || this.filteredBoOnly.length === 0) return 0;
-        const amountColumn = this.findAmountColumn('bo');
-        if (!amountColumn) return 0;
-        return this.filteredBoOnly.reduce((total, record) => {
-            const amount = parseFloat(record[amountColumn] || '0');
-            return total + (isNaN(amount) ? 0 : amount);
-        }, 0);
+        return this.filteredBoOnly.reduce(
+            (total, record) => total + extractRecordAmount(record),
+            0
+        );
     }
 
     calculateTotalVolumePartnerOnly(): number {
@@ -7676,39 +7688,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     getPartnerOnlyVolume(record: Record<string, string>): number {
-        // Liste exhaustive des colonnes qui peuvent contenir des montants
-        const possibleAmountColumns = [
-            'amount', 'Amount', 'AMOUNT',
-            'montant', 'Montant', 'MONTANT',
-            'debit', 'Debit', 'DEBIT', 'débit', 'Débit', 'DÉBIT',
-            'credit', 'Credit', 'CREDIT', 'crédit', 'Crédit', 'CRÉDIT',
-            'valeur', 'Valeur', 'VALEUR',
-            'value', 'Value', 'VALUE',
-            'somme', 'Somme', 'SOMME',
-            'sum', 'Sum', 'SUM',
-            'total', 'Total', 'TOTAL',
-            'montant_credit', 'montant_debit', 'montant_débit', 'montant_crédit',
-            'montant_operation', 'montant_opération', 'montant_transaction',
-            'montant_credit_operation', 'montant_débit_operation',
-            'external_amount', 'External amount', 'EXTERNAL_AMOUNT',
-            'externalAmount', 'ExternalAmount',
-            'balance', 'Balance', 'BALANCE'
-        ];
-        
-        let total = 0;
-        
-        // Parcourir toutes les colonnes et sommer tous les montants trouvés en valeur absolue
-        for (const column of Object.keys(record)) {
-            const lowerColumn = column.toLowerCase();
-            if (possibleAmountColumns.some(name => lowerColumn.includes(name.toLowerCase()))) {
-                const amount = parseFloat(record[column] || '0');
-                if (!isNaN(amount)) {
-                    total += Math.abs(amount);
-                }
-            }
-        }
-        
-        return total;
+        return extractRecordAmount(record);
     }
 
     // Cache pour getBoAgencyAndService par match key (évite les recalculs dans le template)
@@ -8398,7 +8378,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const step1Duration = performance.now() - step1Start;
         console.log(`🟡 [GET_FILTERED_MATCHES] Étape 1: Récupération matches: ${step1Duration.toFixed(2)}ms (${totalMatches} matches)`);
 
-        if (!this.getActiveServiceFilter() && !this.isMagicServiceView()) {
+        if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
             const totalDuration = performance.now() - startTime;
             console.log(`🟡 [GET_FILTERED_MATCHES] Pas de filtre service, retour direct: ${totalDuration.toFixed(2)}ms`);
             console.log('🟡 [GET_FILTERED_MATCHES] ============================================');
@@ -8443,7 +8423,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const allMismatches = [...mismatches, ...boOnly];
         const combineDuration = performance.now() - combineStartTime;
 
-        if (!this.getActiveServiceFilter() && !this.isMagicServiceView()) {
+        if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
             const totalDuration = performance.now() - startTime;
             console.log(`🟠 [TEMPLATE] getFilteredBoOnly (pas de filtre): ${totalDuration.toFixed(2)}ms (${allMismatches.length} éléments)`);
             return allMismatches;
@@ -8473,7 +8453,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const partnerOnly = this.response?.partnerOnly || [];
         const totalPartnerOnly = partnerOnly.length;
         
-        if (!this.getActiveServiceFilter() && !this.isMagicServiceView()) {
+        if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
             console.log('⏱️ getFilteredPartnerOnly (pas de filtre):', `${(performance.now() - startTime).toFixed(2)}ms`, `(${totalPartnerOnly} éléments)`);
             return partnerOnly;
         }
@@ -8500,6 +8480,64 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.cachedTotalVolume = null;
         this.cachedTotalRecords = null;
         this.lastAgencySummaryHash = '';
+        this.clearFilterDataCaches();
+    }
+
+    /** Invalide les caches matches / boOnly / partnerOnly (cloisonnement magique inclus). */
+    private clearFilterDataCaches(): void {
+        this.matchesCache = null;
+        this.boOnlyCache = null;
+        this.partnerOnlyCache = null;
+        this.cacheKey = null;
+        this.cachedPagedMatches = null;
+        this.cachedPagedBoOnly = null;
+        this.cachedPagedPartnerOnly = null;
+    }
+
+    /** Réapplique le cloisonnement par service (réconciliation magique) sans recharger toute la page. */
+    private refreshMagicServicePartitioning(): void {
+        if (!this.response) {
+            return;
+        }
+        this.filteredMatches = this.getFilteredMatches();
+        this.filteredBoOnly = this.getFilteredBoOnly();
+        this.filteredPartnerOnly = this.getFilteredPartnerOnly();
+        this.syncMagicViewContextToTabsService();
+        this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+        this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+        this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+        this.clearFilterDataCaches();
+        if (this.filteredMatches.length) {
+            this.setCache('matches', this.filteredMatches);
+        }
+        if (this.filteredBoOnly.length || this.response.mismatches?.length || this.response.boOnly?.length) {
+            this.setCache('boOnly', this.filteredBoOnly);
+        }
+        if (this.filteredPartnerOnly.length || this.response.partnerOnly?.length) {
+            this.setCache('partnerOnly', this.filteredPartnerOnly);
+        }
+        this.updateCalculatedProperties();
+        this.cdr.markForCheck();
+    }
+
+    private syncMagicViewContextToTabsService(): void {
+        const service = this.getActiveServiceFilter();
+        const partnerFile = this.selectedMagicPartnerFile
+            || this.appStateService.getSelectedMagicPartnerFile()
+            || '';
+        if (service || this.isMagicServiceView()) {
+            this.reconciliationTabsService.setMagicViewContext(service || this.selectedMagicService, partnerFile);
+            if (service) {
+                this.appStateService.setSelectedMagicService(service);
+            }
+            if (partnerFile) {
+                this.appStateService.setSelectedMagicPartnerFile(partnerFile);
+            }
+        }
+    }
+
+    private shouldApplyServicePartition(): boolean {
+        return !!(this.getActiveServiceFilter() || (this.isMagicServiceView() && this.selectedMagicPartnerFile));
     }
 
     applyServiceFilter() {
@@ -8626,6 +8664,13 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         // Utiliser setActiveTab pour avoir le même comportement que les autres boutons
         // Cela garantit un comportement cohérent et une navigation immédiate
         this.setActiveTab('boOnly');
+        if (this.isMagicServiceView()) {
+            this.syncMagicViewContextToTabsService();
+            this.reconciliationTabsService.setFilteredBoOnly(this.getFilteredBoOnly());
+        } else if (this.shouldApplyServicePartition()) {
+            this.syncMagicViewContextToTabsService();
+            this.reconciliationTabsService.setFilteredBoOnly(this.getFilteredBoOnly());
+        }
         const setActiveTabDuration = performance.now() - setActiveTabStartTime;
         console.log('⏱️ [BOUTON] goToEcartBo - setActiveTab terminé:', `${setActiveTabDuration.toFixed(2)}ms`);
         
@@ -8660,6 +8705,10 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         // Utiliser setActiveTab pour avoir le même comportement que les autres boutons
         // Cela garantit un comportement cohérent et une navigation immédiate
         this.setActiveTab('partnerOnly');
+        if (this.isMagicServiceView() || this.shouldApplyServicePartition()) {
+            this.syncMagicViewContextToTabsService();
+            this.reconciliationTabsService.setFilteredPartnerOnly(this.getFilteredPartnerOnly());
+        }
         const setActiveTabDuration = performance.now() - setActiveTabStartTime;
         console.log('⏱️ [BOUTON] goToEcartPartner - setActiveTab terminé:', `${setActiveTabDuration.toFixed(2)}ms`);
         
@@ -9008,7 +9057,19 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     private getMagicServiceTag(record: Record<string, string>): string {
-        return (record['_magicService'] || record['Service'] || '').trim();
+        const magicTag = String(record['_magicService'] || '').trim();
+        if (magicTag) {
+            return magicTag;
+        }
+        return (
+            record['Service'] ||
+            record['service'] ||
+            record['TRANS TYPE'] ||
+            record['Trans Type'] ||
+            record['TYPE'] ||
+            record['Type'] ||
+            ''
+        ).trim();
     }
 
     private getMagicPartnerTag(record: Record<string, string>): string {
@@ -9016,14 +9077,22 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     private recordMatchesMagicFilter(record: Record<string, string>): boolean {
-        if (!this.isMagicServiceView()) {
-            return true;
-        }
-        if (this.selectedMagicPartnerFile && this.getMagicPartnerTag(record) !== this.selectedMagicPartnerFile) {
-            return false;
-        }
+        const partnerFileFilter = this.selectedMagicPartnerFile
+            || this.appStateService.getSelectedMagicPartnerFile()
+            || '';
         const serviceFilter = this.getActiveServiceFilter();
-        return !serviceFilter || this.getMagicServiceTag(record) === serviceFilter;
+        const partnerOnly = this.response?.partnerOnly || [];
+        const magicTaggedDataset = hasMagicPartitionTags(partnerOnly)
+            || hasMagicPartitionTags(this.response?.boOnly || [])
+            || hasMagicPartitionTags(this.response?.mismatches || [])
+            || this.magicServiceSummaries.length > 0;
+
+        return recordMatchesMagicPartition(
+            record,
+            serviceFilter,
+            partnerFileFilter,
+            magicTaggedDataset
+        );
     }
 
     selectMagicPartnerFile(fileName: string): void {
@@ -9041,12 +9110,15 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     selectMagicService(service: string): void {
         this.selectedMagicService = service;
         this.selectedService = service;
+        this.appStateService.setSelectedMagicService(service);
+        this.reconciliationTabsService.setMagicViewContext(service, this.selectedMagicPartnerFile || '');
         this.cachedTotalTransactions = null;
         this.cachedMatchRate = null;
         this.matchesPage = 1;
         this.boOnlyPage = 1;
         this.partnerOnlyPage = 1;
         this.initializeFilteredData();
+        this.clearFilterDataCaches();
         this.invalidateCache();
         this.cdr.markForCheck();
     }

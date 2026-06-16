@@ -74,6 +74,9 @@ export class AppStateService {
     private selectedMagicPartnerFileSubject = new BehaviorSubject<string>('');
     selectedMagicPartnerFile$ = this.selectedMagicPartnerFileSubject.asObservable();
 
+    private selectedMagicServiceSubject = new BehaviorSubject<string>('');
+    selectedMagicService$ = this.selectedMagicServiceSubject.asObservable();
+
     // Gestion de la progression de la réconciliation
     private reconciliationProgressSubject = new BehaviorSubject<boolean>(false);
     private reconciliationStartTimeSubject = new BehaviorSubject<number>(0);
@@ -293,6 +296,7 @@ export class AppStateService {
         this.magicServiceSummariesSubject.next([]);
         this.magicPartnerFileNamesSubject.next([]);
         this.selectedMagicPartnerFileSubject.next('');
+        this.selectedMagicServiceSubject.next('');
     }
 
     setMagicServiceSummaries(summaries: MagicServiceSummary[]) {
@@ -317,6 +321,14 @@ export class AppStateService {
 
     getSelectedMagicPartnerFile(): string {
         return this.selectedMagicPartnerFileSubject.value;
+    }
+
+    setSelectedMagicService(service: string) {
+        this.selectedMagicServiceSubject.next(service || '');
+    }
+
+    getSelectedMagicService(): string {
+        return this.selectedMagicServiceSubject.value;
     }
 
     // Gestion de la progression de la réconciliation
@@ -473,6 +485,37 @@ export class AppStateService {
         const profilUpper = profil.toUpperCase();
         // Vérifier toutes les variations possibles : ADMIN, ADMINISTRATEUR, Admin
         return profilUpper === 'ADMIN' || profilUpper === 'ADMINISTRATEUR';
+    }
+
+    /** Profil métier « Contrôle Interne » (sans inclure l'admin). */
+    isControleInterneProfil(): boolean {
+        const token = this.normalizeProfilToken(this.userRights?.profil);
+        if (!token) {
+            return false;
+        }
+        return token === 'CONTROLEINTERNE'
+            || (token.includes('CONTROLE') && token.includes('INTERNE'));
+    }
+
+    /** Validation contrôle interne BO vs Partenaire : admin ou profil Contrôle Interne. */
+    canValidateControleInterneBoPartenaire(): boolean {
+        return this.isAdmin() || this.isControleInterneProfil();
+    }
+
+    /** Annulation d'une validation : administrateur uniquement. */
+    canRevokeControleInterneBoPartenaire(): boolean {
+        return this.isAdmin();
+    }
+
+    private normalizeProfilToken(profil?: string | null): string {
+        if (!profil) {
+            return '';
+        }
+        return profil
+            .normalize('NFD')
+            .replace(/\p{M}/gu, '')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '');
     }
 
     isModuleAllowed(module: string): boolean {

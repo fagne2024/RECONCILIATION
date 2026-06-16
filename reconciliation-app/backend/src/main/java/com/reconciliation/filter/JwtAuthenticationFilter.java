@@ -79,6 +79,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 
                 // Valider le token
                 if (jwtService.validateToken(jwt, username)) {
+                    if (!userDetails.isEnabled()) {
+                        SecurityContextHolder.clearContext();
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        return;
+                    }
                     // Créer l'authentification
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                             userDetails,

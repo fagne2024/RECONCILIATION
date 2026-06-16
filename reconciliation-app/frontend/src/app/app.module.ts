@@ -97,6 +97,7 @@ import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-
 import { CertificationSoldeComponent } from './components/certification-solde/certification-solde.component';
 import { RedevanceLoterieComponent } from './components/redevance-loterie/redevance-loterie.component';
 import { RapportReconciliationBoPartenaireComponent } from './components/rapport-reconciliation-bo-partenaire/rapport-reconciliation-bo-partenaire.component';
+import { ControleInterneBoPartenaireComponent } from './components/controle-interne-bo-partenaire/controle-interne-bo-partenaire.component';
 import { StatsReportComponent } from './components/stats-report/stats-report.component';
 import { StatsReportGraphComponent } from './components/stats-report-graph/stats-report-graph.component';
 
@@ -163,6 +164,7 @@ import { StatsReportGraphComponent } from './components/stats-report-graph/stats
                 CertificationSoldeComponent,
                 RedevanceLoterieComponent,
                 RapportReconciliationBoPartenaireComponent,
+                ControleInterneBoPartenaireComponent,
                 StatsReportComponent,
                 StatsReportGraphComponent
     ],

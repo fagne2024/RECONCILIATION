@@ -35,6 +35,7 @@ export class UsersComponent implements OnInit {
   Math = Math;
   user2FAStatus: Map<number, { enabled: boolean; hasSecret: boolean }> = new Map();
   loading2FAStatus: Set<number> = new Set();
+  togglingUserStatus: Set<number> = new Set();
 
   constructor(
     private userService: UserService, 
@@ -209,6 +210,41 @@ export class UsersComponent implements OnInit {
         }
       });
     }
+  }
+
+  isUserEnabled(user: User): boolean {
+    return user.enabled !== false;
+  }
+
+  async toggleUserEnabled(user: User): Promise<void> {
+    if (!user.id) return;
+
+    const isEnabled = this.isUserEnabled(user);
+    const action = isEnabled ? 'désactiver' : 'activer';
+    const confirmed = await this.popupService.showConfirmDialog(
+      `Êtes-vous sûr de vouloir ${action} le compte de "${user.username}" ?`,
+      isEnabled ? 'Désactivation du compte' : 'Activation du compte'
+    );
+
+    if (!confirmed) return;
+
+    this.togglingUserStatus.add(user.id);
+    this.userService.setUserEnabled(user.id, !isEnabled).subscribe({
+      next: async (response) => {
+        const index = this.users.findIndex(u => u.id === user.id);
+        if (index !== -1) {
+          this.users[index] = response.user;
+        }
+        this.applyFilters();
+        this.togglingUserStatus.delete(user.id);
+        await this.popupService.showSuccess(response.message, isEnabled ? 'Compte désactivé' : 'Compte activé');
+      },
+      error: async (error) => {
+        this.togglingUserStatus.delete(user.id);
+        const errorMsg = error.error?.error || error.message || `Erreur lors de la ${action} du compte`;
+        await this.popupService.showError(errorMsg, 'Erreur');
+      }
+    });
   }
 
   async deleteUser(user: User): Promise<void> {

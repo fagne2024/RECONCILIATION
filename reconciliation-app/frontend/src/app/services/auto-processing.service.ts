@@ -63,6 +63,14 @@ export interface ModelPreProcessingConfig {
   formatActions?: ModelFormatAction[];
   columnConcatRules?: ModelColumnConcatRule[];
   valueMappings?: ModelColumnValueMapping[];
+  columnRenameRules?: ModelColumnRenameRule[];
+}
+
+export interface ModelColumnRenameRule {
+  id: string;
+  sourceColumn: string;
+  targetColumn: string;
+  enabled: boolean;
 }
 
 export interface ModelColumnConcatRule {
@@ -167,6 +175,10 @@ export interface BOColumnFilter {
 export class AutoProcessingService {
   private processingModels: AutoProcessingModel[] = [];
   private apiUrl = '/api';
+  /** Contexte permission pour les appels liés à la réconciliation (header ASCII) */
+  static readonly RECONCILIATION_MODULE = 'Reconciliation';
+  /** Contexte permission pour la gestion des modèles */
+  static readonly MODELES_MODULE = 'Modeles';
   
   // Cache pour optimiser les performances
   private modelsCache: AutoProcessingModel[] = [];
@@ -270,6 +282,17 @@ export class AutoProcessingService {
     }
   }
 
+  /**
+   * Charge les modèles dans le contexte réconciliation (permissions module Réconciliation).
+   */
+  async getAllModelsUnrestricted(forceRefresh: boolean = false): Promise<AutoProcessingModel[]> {
+    if (forceRefresh) {
+      this.modelsCache = [];
+      this.cacheTimestamp = 0;
+    }
+    return this.getAllModels(AutoProcessingService.RECONCILIATION_MODULE);
+  }
+
   // Normaliser les modèles reçus du backend
   private normalizeModels(models: any[]): AutoProcessingModel[] {
     return models.map(model => this.normalizeModel(model));
@@ -289,8 +312,10 @@ export class AutoProcessingService {
     return this.getAllModels();
   }
 
-  getModelById(id: string): Promise<AutoProcessingModel> {
-    return this.http.get<any>(`${this.apiUrl}/auto-processing/models/${id}`).toPromise()
+  getModelById(id: string, moduleContext: string = AutoProcessingService.RECONCILIATION_MODULE): Promise<AutoProcessingModel> {
+    return this.http.get<any>(`${this.apiUrl}/auto-processing/models/${id}`, {
+      headers: this.buildContextHeaders(moduleContext)
+    }).toPromise()
       .then(response => {
         if (response && response.success && response.model) {
           return this.normalizeModel(response.model);
@@ -601,22 +626,28 @@ export class AutoProcessingService {
   }
 
   // Traiter des données avec les règles d'un modèle
-  processDataWithRules(modelId: string, data: any[]): Promise<any[]> {
-    return this.http.post<{success: boolean, processedData: any[]}>(`${this.apiUrl}/auto-processing/process-data/${modelId}`, data)
+  processDataWithRules(modelId: string, data: any[], moduleContext: string = AutoProcessingService.RECONCILIATION_MODULE): Promise<any[]> {
+    return this.http.post<{success: boolean, processedData: any[]}>(`${this.apiUrl}/auto-processing/process-data/${modelId}`, data, {
+      headers: this.buildContextHeaders(moduleContext)
+    })
       .toPromise()
       .then(response => response?.processedData || []);
   }
 
   // Traiter une ligne unique avec les règles d'un modèle
-  processSingleRowWithRules(modelId: string, row: any): Promise<any> {
-    return this.http.post<{success: boolean, processedData: any}>(`${this.apiUrl}/auto-processing/process-single-row/${modelId}`, row)
+  processSingleRowWithRules(modelId: string, row: any, moduleContext: string = AutoProcessingService.RECONCILIATION_MODULE): Promise<any> {
+    return this.http.post<{success: boolean, processedData: any}>(`${this.apiUrl}/auto-processing/process-single-row/${modelId}`, row, {
+      headers: this.buildContextHeaders(moduleContext)
+    })
       .toPromise()
       .then(response => response?.processedData);
   }
 
   // Obtenir les colonnes cibles d'un modèle
-  getTargetColumns(modelId: string): Promise<string[]> {
-    return this.http.get<{success: boolean, targetColumns: string[]}>(`${this.apiUrl}/auto-processing/models/${modelId}/target-columns`)
+  getTargetColumns(modelId: string, moduleContext: string = AutoProcessingService.RECONCILIATION_MODULE): Promise<string[]> {
+    return this.http.get<{success: boolean, targetColumns: string[]}>(`${this.apiUrl}/auto-processing/models/${modelId}/target-columns`, {
+      headers: this.buildContextHeaders(moduleContext)
+    })
       .toPromise()
       .then(response => response?.targetColumns || []);
   }

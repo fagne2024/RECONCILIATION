@@ -11,6 +11,9 @@ import { CompteService } from '../../services/compte.service';
 import { ImpactOP } from '../../models/impact-op.model';
 import { OperationCreateRequest } from '../../models/operation.model';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
+import { extractRecordAmount } from '../../utils/record-amount.util';
+import { filterRecordsByMagicPartition } from '../../utils/magic-partition.util';
 
 @Component({
   selector: 'app-ecart-partner-table',
@@ -65,6 +68,8 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
   // Chargement progressif
   isLoading = false;
   loadProgress = 0;
+  private lastProcessedSignature = '';
+  magicServiceFilterLocked = '';
 
   // Scroll to top
   showScrollTopBtn = false;
@@ -84,6 +89,7 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
     private impactOPService: ImpactOPService,
     private operationService: OperationService,
     private compteService: CompteService,
+    private reconciliationTabsService: ReconciliationTabsService,
     private el: ElementRef
   ) {}
 
@@ -94,10 +100,22 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.syncMagicContextFromAppState();
     this.subscription.add(
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
         if (response) {
           this.response = response;
+          this.syncMagicContextFromAppState();
+          this.loadPartnerOnly();
+        }
+      })
+    );
+
+    this.subscription.add(
+      this.appStateService.selectedMagicService$.subscribe(() => {
+        this.syncMagicContextFromAppState();
+        if (this.response) {
+          this.lastProcessedSignature = '';
           this.loadPartnerOnly();
         }
       })
@@ -123,69 +141,96 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
     document.removeEventListener('click', this.handleDocumentClick.bind(this));
   }
 
+  private syncMagicContextFromAppState(): void {
+    const service = this.appStateService.getSelectedMagicService();
+    const partnerFile = this.appStateService.getSelectedMagicPartnerFile();
+    if (service || partnerFile) {
+      this.reconciliationTabsService.setMagicViewContext(service, partnerFile);
+      if (service) {
+        this.magicServiceFilterLocked = service;
+      }
+    }
+  }
+
+  private resolvePartnerOnlyForDisplay(): Record<string, string>[] {
+    const partnerOnly = this.response?.partnerOnly || [];
+    const service = this.appStateService.getSelectedMagicService()
+      || this.reconciliationTabsService.getMagicViewContext().service;
+    const partnerFile = this.appStateService.getSelectedMagicPartnerFile()
+      || this.reconciliationTabsService.getMagicViewContext().partnerFile;
+
+    if (!service && !partnerFile) {
+      return partnerOnly;
+    }
+
+    this.reconciliationTabsService.setMagicViewContext(service || '', partnerFile || '');
+    this.magicServiceFilterLocked = (service || '').trim();
+
+    const strictFiltered = filterRecordsByMagicPartition(partnerOnly, service || '', partnerFile || '');
+    return strictFiltered;
+  }
+
   private async loadPartnerOnly(): Promise<void> {
     this.isLoading = true;
     this.loadProgress = 0;
     this.cdr.markForCheck();
-    
+
     try {
-      const partnerOnly = this.response?.partnerOnly || [];
-      const total = partnerOnly.length;
+      this.syncMagicContextFromAppState();
+      const allData = this.resolvePartnerOnlyForDisplay();
+      this.lastProcessedSignature = `${this.response?.partnerOnly?.length || 0}_${this.appStateService.getSelectedMagicService()}_${this.appStateService.getSelectedMagicPartnerFile()}`;
+      this.reconciliationTabsService.setFilteredPartnerOnly(allData);
+      await this.loadPartnerOnlyProgressively(allData);
+    } finally {
+      this.isLoading = false;
+      this.loadProgress = 100;
+      this.cdr.markForCheck();
+      setTimeout(() => this.updateTableScrollState(), 100);
+    }
+  }
+
+  getPartnerOnlyVolume(record: Record<string, string>): number {
+    return extractRecordAmount(record);
+  }
+
+  private async loadPartnerOnlyProgressively(allData: Record<string, string>[]): Promise<void> {
+      const total = allData.length;
       
       if (total === 0) {
         this.filteredPartnerOnly = [];
-        this.isLoading = false;
         this.loadProgress = 100;
         this.initializeColumns();
         this.applyFilters();
-        this.cdr.markForCheck();
         return;
       }
 
-      // Chargement progressif par chunks pour éviter de bloquer l'UI
       const chunkSize = 500;
       this.filteredPartnerOnly = [];
       
-      // Charger immédiatement un petit échantillon pour l'initialisation rapide
-      if (partnerOnly.length > 0) {
+      if (allData.length > 0) {
         const sampleSize = Math.min(50, total);
-        const sample = partnerOnly.slice(0, sampleSize);
-        this.filteredPartnerOnly.push(...sample);
+        this.filteredPartnerOnly.push(...allData.slice(0, sampleSize));
         this.loadProgress = 2;
         this.initializeColumns();
         this.applyFilters();
         this.cdr.markForCheck();
-        
-        // Permettre au navigateur de mettre à jour l'UI immédiatement
         await new Promise(resolve => setTimeout(resolve, 0));
       }
       
-      // Charger le reste par chunks pour un feedback régulier
       for (let i = 50; i < total; i += chunkSize) {
-        const chunk = partnerOnly.slice(i, Math.min(i + chunkSize, total));
+        const chunk = allData.slice(i, Math.min(i + chunkSize, total));
         this.filteredPartnerOnly.push(...chunk);
-        this.loadProgress = Math.round(((i + chunk.length) / total) * 98 + 2); // 2-100%
+        this.loadProgress = Math.round(((i + chunk.length) / total) * 98 + 2);
         
-        // Réappliquer les filtres seulement tous les 3 chunks pour optimiser
         if ((i / chunkSize) % 3 === 0) {
           this.applyFilters();
         }
         
         this.cdr.markForCheck();
-        
-        // Permettre au navigateur de mettre à jour l'UI
         await new Promise(resolve => setTimeout(resolve, 0));
       }
       
-      // Finaliser les filtres une dernière fois
       this.applyFilters();
-    } finally {
-      this.isLoading = false;
-      this.loadProgress = 100;
-      this.cdr.markForCheck();
-      // Recalcul de l'état du scroll horizontal après chargement
-      setTimeout(() => this.updateTableScrollState(), 100);
-    }
   }
 
   private initializeColumns(): void {
@@ -487,17 +532,17 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
 
     return {
       agency: getValue(['Agence', 'AGENCE', 'agence']),
-      service: getValue(['Service', 'SERVICE', 'service']),
-      volume: parseFloat(getValue(['montant', 'Montant', 'MONTANT', 'Volume', 'volume'])) || 0,
-      date: getValue(['Date', 'date', 'DATE', 'Date opération', 'dateOperation'])
+      service: getValue(['Service', 'SERVICE', 'service', 'TRANS TYPE', 'Trans Type', 'TYPE', 'Type']),
+      volume: this.getPartnerOnlyVolume(record),
+      date: getValue(['Date', 'date', 'DATE', 'Date opération', 'dateOperation', 'TIMESTAMP', 'Timestamp'])
     };
   }
 
   calculateTotalVolumePartnerOnly(): number {
-    return this.filteredPartnerOnly.reduce((total, record) => {
-      const info = this.getPartnerOnlyAgencyAndService(record);
-      return total + (info.volume || 0);
-    }, 0);
+    return this.filteredPartnerOnly.reduce(
+      (total, record) => total + this.getPartnerOnlyVolume(record),
+      0
+    );
   }
 
   // Vérifier si un enregistrement est éligible pour créer une OP

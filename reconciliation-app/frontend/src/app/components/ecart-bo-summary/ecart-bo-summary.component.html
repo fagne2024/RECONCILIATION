@@ -183,10 +183,13 @@
       </div>
       <div class="filter-item">
         <label>Service</label>
-        <select [(ngModel)]="selectedService" (change)="applyFilters()" class="filter-select">
+        <select [(ngModel)]="selectedService" (change)="applyFilters()" class="filter-select" [disabled]="!!magicServiceFilterLocked">
           <option value="">Tous</option>
           <option *ngFor="let service of filterOptionsServices; trackBy: trackByString" [value]="service">{{service}}</option>
         </select>
+        <small class="magic-filter-hint" *ngIf="magicServiceFilterLocked">
+          Cloisonné : {{ magicServiceFilterLocked }} (réconciliation magique)
+        </small>
       </div>
       <div class="filter-item">
         <label>Pays</label>

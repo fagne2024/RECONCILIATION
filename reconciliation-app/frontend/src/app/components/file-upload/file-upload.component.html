@@ -228,7 +228,7 @@
                 <!-- Recherche -->
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
-                    <input type="text" class="agency-search-input" placeholder="Rechercher par code agence ou nombre de lignes..."
+                    <input type="text" class="agency-search-input" placeholder="Rechercher par code agence… (ex. AFRBT0021, CASBT0025)"
                            [(ngModel)]="agencySearchFilter"
                            (ngModelChange)="onAgencySearchFilterChange($event)">
                     <span class="agency-search-count" *ngIf="agencySearchFilter?.trim()">
@@ -308,7 +308,7 @@
             <div class="manual-service-selection-content">
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
-                    <input type="text" class="agency-search-input" placeholder="Rechercher une agence ou le nombre de lignes..."
+                    <input type="text" class="agency-search-input" placeholder="Rechercher une agence… (plusieurs séparées par ,)"
                            [(ngModel)]="partnerAgencySearchFilter"
                            (ngModelChange)="onPartnerAgencySearchFilterChange($event)">
                     <span class="agency-search-count" *ngIf="partnerAgencySearchFilter?.trim()">
@@ -391,7 +391,7 @@
                 <!-- Recherche -->
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
-                    <input type="text" class="agency-search-input" placeholder="Rechercher un service ou nombre de lignes..."
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un service… (plusieurs séparés par ,)"
                            [(ngModel)]="manualServiceSearchFilter"
                            (ngModelChange)="onManualServiceSearchFilterChange($event)">
                     <span class="agency-search-count" *ngIf="manualServiceSearchFilter?.trim()">
@@ -475,7 +475,7 @@
                 <!-- Recherche -->
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
-                    <input type="text" class="agency-search-input" placeholder="Rechercher un statut ou nombre de lignes..."
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un statut… (plusieurs séparés par ,)"
                            [(ngModel)]="manualStatusSearchFilter">
                     <span class="agency-search-count" *ngIf="manualStatusSearchFilter?.trim()">
                         {{ filteredManualAvailableStatuses.length }} / {{ manualAvailableStatuses.length }}
@@ -739,7 +739,7 @@
                     <!-- Recherche -->
                     <div class="agency-search-wrap">
                         <i class="fas fa-search agency-search-icon"></i>
-                        <input type="text" class="agency-search-input" placeholder="Rechercher par code agence ou nombre de lignes..."
+                        <input type="text" class="agency-search-input" placeholder="Rechercher par code agence… (ex. AFRBT0021, CASBT0025)"
                                [(ngModel)]="agencySearchFilter"
                                (ngModelChange)="onAgencySearchFilterChange($event)">
                         <span class="agency-search-count" *ngIf="agencySearchFilter?.trim()">
@@ -821,7 +821,7 @@
                     <!-- Recherche -->
                     <div class="agency-search-wrap">
                         <i class="fas fa-search agency-search-icon"></i>
-                        <input type="text" class="agency-search-input" placeholder="Rechercher un service ou nombre de lignes..."
+                        <input type="text" class="agency-search-input" placeholder="Rechercher un service… (plusieurs séparés par ,)"
                                [(ngModel)]="serviceSearchFilter"
                                (ngModelChange)="onServiceSearchFilterChange($event)">
                         <span class="agency-search-count" *ngIf="serviceSearchFilter?.trim()">
@@ -901,7 +901,7 @@
             <div class="service-selection-content">
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
-                    <input type="text" class="agency-search-input" placeholder="Rechercher un statut ou nombre de lignes..."
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un statut… (plusieurs séparés par ,)"
                            [(ngModel)]="autoStatusSearchFilter">
                     <span class="agency-search-count" *ngIf="autoStatusSearchFilter?.trim()">
                         {{ filteredAutoAvailableStatuses.length }} / {{ autoAvailableStatuses.length }}
@@ -978,7 +978,7 @@
                 <!-- Recherche -->
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
-                    <input type="text" class="agency-search-input" placeholder="Rechercher un service/type ou nombre de lignes..."
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un service/type… (plusieurs séparés par ,)"
                            [(ngModel)]="partnerServiceSearchFilter"
                            (ngModelChange)="onPartnerServiceSearchFilterChange($event)">
                     <span class="agency-search-count" *ngIf="partnerServiceSearchFilter?.trim()">
@@ -1058,7 +1058,7 @@
                 <!-- Recherche -->
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
-                    <input type="text" class="agency-search-input" placeholder="Rechercher un statut ou nombre de lignes..."
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un statut… (plusieurs séparés par ,)"
                            [(ngModel)]="partnerStatusSearchFilter">
                     <span class="agency-search-count" *ngIf="partnerStatusSearchFilter?.trim()">
                         {{ filteredPartnerAvailableStatuses.length }} / {{ partnerAvailableStatuses.length }}
@@ -1137,7 +1137,7 @@
                 <!-- Recherche -->
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
-                    <input type="text" class="agency-search-input" placeholder="Rechercher un paiement ou nombre de lignes..."
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un paiement… (plusieurs séparés par ,)"
                            [(ngModel)]="partnerPaymentSearchFilter">
                     <span class="agency-search-count" *ngIf="partnerPaymentSearchFilter?.trim()">
                         {{ filteredPartnerAvailablePayments.length }} / {{ partnerAvailablePayments.length }}

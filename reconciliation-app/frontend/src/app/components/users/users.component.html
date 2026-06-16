@@ -223,15 +223,16 @@
     </div>
     
     <div *ngIf="filteredUsers.length > 0" class="users-grid">
-      <div *ngFor="let user of pagedUsers" class="user-card">
+      <div *ngFor="let user of pagedUsers" class="user-card" [class.user-card-disabled]="!isUserEnabled(user)">
         <div class="user-card-header">
-          <div class="user-avatar">
+          <div class="user-avatar" [class.disabled]="!isUserEnabled(user)">
             <i class="fas fa-user"></i>
           </div>
           <div class="user-info">
             <h3 class="username">
               {{ user.username }}
               <span *ngIf="user.username === 'admin'" class="badge badge-primary">Admin</span>
+              <span *ngIf="!isUserEnabled(user)" class="badge badge-disabled">Désactivé</span>
             </h3>
             <p class="user-id">ID: {{ user.id }}</p>
           </div>
@@ -246,6 +247,13 @@
             <i class="fas fa-envelope"></i>
             <span class="label">Email:</span>
             <span class="value">{{ user.email }}</span>
+          </div>
+          <div class="user-detail">
+            <i class="fas fa-circle" [class.enabled]="isUserEnabled(user)" [class.disabled]="!isUserEnabled(user)"></i>
+            <span class="label">Statut:</span>
+            <span class="value" [class.enabled]="isUserEnabled(user)" [class.disabled]="!isUserEnabled(user)">
+              {{ isUserEnabled(user) ? 'Actif' : 'Désactivé' }}
+            </span>
           </div>
           <div class="user-detail" *ngIf="getUser2FAStatus(user.id)">
             <i class="fas fa-shield-alt" [class.enabled]="getUser2FAStatus(user.id)?.enabled" [class.disabled]="!getUser2FAStatus(user.id)?.enabled"></i>
@@ -294,6 +302,18 @@
             <i class="fas fa-redo" *ngIf="!loading2FAStatus.has(user.id)"></i>
             <i class="fas fa-spinner fa-spin" *ngIf="loading2FAStatus.has(user.id)"></i>
             Réinitialiser 2FA
+          </button>
+          <button 
+            class="btn btn-action btn-toggle-status" 
+            [class.btn-status-active]="isUserEnabled(user)"
+            [class.btn-status-inactive]="!isUserEnabled(user)"
+            (click)="toggleUserEnabled(user)"
+            [disabled]="togglingUserStatus.has(user.id) || user.username === 'admin'"
+            [title]="user.username === 'admin' ? 'Impossible de désactiver l\'administrateur' : (isUserEnabled(user) ? 'Désactiver le compte' : 'Activer le compte')">
+            <i class="fas fa-user-slash" *ngIf="isUserEnabled(user) && !togglingUserStatus.has(user.id)"></i>
+            <i class="fas fa-user-check" *ngIf="!isUserEnabled(user) && !togglingUserStatus.has(user.id)"></i>
+            <i class="fas fa-spinner fa-spin" *ngIf="togglingUserStatus.has(user.id)"></i>
+            {{ isUserEnabled(user) ? 'Désactiver' : 'Activer' }}
           </button>
           <button 
             class="btn btn-action btn-delete" 

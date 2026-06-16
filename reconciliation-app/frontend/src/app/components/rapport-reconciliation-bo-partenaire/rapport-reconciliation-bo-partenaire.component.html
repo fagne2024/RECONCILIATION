@@ -12,6 +12,14 @@
     <div class="nav-actions">
       <button
         type="button"
+        class="nav-btn primary"
+        (click)="ouvrirControleInterne()"
+        title="Contrôle interne — agrégation mensuelle"
+      >
+        <i class="fas fa-clipboard-check"></i> Contrôle Interne
+      </button>
+      <button
+        type="button"
         class="nav-btn secondary"
         (click)="refreshRapportData()"
         [disabled]="loading"

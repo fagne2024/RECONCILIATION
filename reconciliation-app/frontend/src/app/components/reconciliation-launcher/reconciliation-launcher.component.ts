@@ -11,6 +11,7 @@ import { MagicReconciliationService } from '../../services/magic-reconciliation.
 import { Subscription } from 'rxjs';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../../utils/search-filter.util';
 
 @Component({
   selector: 'app-reconciliation-launcher',
@@ -144,7 +145,7 @@ import * as XLSX from 'xlsx';
           </div>
           <div class="selection-content">
             <div class="search-wrap">
-              <input type="text" class="search-input" placeholder="Rechercher une agence..." [(ngModel)]="agencySearchFilter">
+              <input type="text" class="search-input" placeholder="Rechercher une agence… (ex. AFRBT0021, CASBT0025)" [(ngModel)]="agencySearchFilter">
             </div>
             <div class="selection-controls">
               <button class="sel-btn" (click)="selectAllAgencies()">Tout sélectionner</button>
@@ -172,7 +173,7 @@ import * as XLSX from 'xlsx';
           </div>
           <div class="selection-content">
             <div class="search-wrap">
-              <input type="text" class="search-input" placeholder="Rechercher un service..." [(ngModel)]="serviceSearchFilter">
+              <input type="text" class="search-input" placeholder="Rechercher un service… (plusieurs séparés par ,)" [(ngModel)]="serviceSearchFilter">
             </div>
             <div class="selection-controls">
               <button class="sel-btn" (click)="selectAllServices()">Tout sélectionner</button>
@@ -200,7 +201,7 @@ import * as XLSX from 'xlsx';
           </div>
           <div class="selection-content">
             <div class="search-wrap">
-              <input type="text" class="search-input" placeholder="Rechercher un service..." [(ngModel)]="manualServiceSearchFilter">
+              <input type="text" class="search-input" placeholder="Rechercher un service… (plusieurs séparés par ,)" [(ngModel)]="manualServiceSearchFilter">
             </div>
             <div class="selection-controls">
               <button class="sel-btn" (click)="selectAllManualServices()">Tout sélectionner</button>
@@ -228,7 +229,7 @@ import * as XLSX from 'xlsx';
           </div>
           <div class="selection-content">
             <div class="search-wrap">
-              <input type="text" class="search-input" placeholder="Rechercher un statut..." [(ngModel)]="manualStatusSearchFilter">
+              <input type="text" class="search-input" placeholder="Rechercher un statut… (plusieurs séparés par ,)" [(ngModel)]="manualStatusSearchFilter">
             </div>
             <div class="selection-controls">
               <button class="sel-btn" (click)="selectAllManualStatuses()">Tout sélectionner</button>
@@ -256,7 +257,7 @@ import * as XLSX from 'xlsx';
           </div>
           <div class="selection-content">
             <div class="search-wrap">
-              <input type="text" class="search-input" placeholder="Rechercher un service..." [(ngModel)]="partnerServiceSearchFilter">
+              <input type="text" class="search-input" placeholder="Rechercher un service… (plusieurs séparés par ,)" [(ngModel)]="partnerServiceSearchFilter">
             </div>
             <div class="selection-controls">
               <button class="sel-btn" (click)="selectAllPartnerServices()">Tout sélectionner</button>
@@ -284,7 +285,7 @@ import * as XLSX from 'xlsx';
           </div>
           <div class="selection-content">
             <div class="search-wrap">
-              <input type="text" class="search-input" placeholder="Rechercher un statut..." [(ngModel)]="partnerStatusSearchFilter">
+              <input type="text" class="search-input" placeholder="Rechercher un statut… (plusieurs séparés par ,)" [(ngModel)]="partnerStatusSearchFilter">
             </div>
             <div class="selection-controls">
               <button class="sel-btn" (click)="selectAllPartnerStatuses()">Tout sélectionner</button>
@@ -312,7 +313,7 @@ import * as XLSX from 'xlsx';
           </div>
           <div class="selection-content">
             <div class="search-wrap">
-              <input type="text" class="search-input" placeholder="Rechercher un paiement..." [(ngModel)]="partnerPaymentSearchFilter">
+              <input type="text" class="search-input" placeholder="Rechercher un paiement… (plusieurs séparés par ,)" [(ngModel)]="partnerPaymentSearchFilter">
             </div>
             <div class="selection-controls">
               <button class="sel-btn" (click)="selectAllPartnerPayments()">Tout sélectionner</button>
@@ -895,7 +896,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     let columnProcessingRules: any[] = [];
     
     try {
-      const models = await this.autoProcessingService.getAllModels('Réconciliation');
+      const models = await this.autoProcessingService.getAllModels(AutoProcessingService.RECONCILIATION_MODULE);
       
       // Trouver les modèles correspondants aux fichiers
       const boModel = models.find(m => 
@@ -914,7 +915,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       // Récupérer les règles de traitement
       if (boModel?.modelId) {
         try {
-          const boRules = await this.autoProcessingService.getColumnProcessingRules(boModel.modelId, 'Réconciliation');
+          const boRules = await this.autoProcessingService.getColumnProcessingRules(boModel.modelId, AutoProcessingService.RECONCILIATION_MODULE);
           console.log('🔧 Règles BO récupérées:', boRules.length);
           columnProcessingRules.push(...boRules);
         } catch (error) {
@@ -924,7 +925,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       
       if (partnerModel?.modelId) {
         try {
-          const partnerRules = await this.autoProcessingService.getColumnProcessingRules(partnerModel.modelId, 'Réconciliation');
+          const partnerRules = await this.autoProcessingService.getColumnProcessingRules(partnerModel.modelId, AutoProcessingService.RECONCILIATION_MODULE);
           console.log('🔧 Règles Partenaire récupérées:', partnerRules.length);
           columnProcessingRules.push(...partnerRules);
         } catch (error) {
@@ -2789,38 +2790,52 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   // ─── Getters filtrés ──────────────────────────────────────────────────────
 
   get filteredAvailableAgencies(): string[] {
-    const t = this.agencySearchFilter?.trim().toLowerCase() || '';
-    return t ? this.availableAgencies.filter(a => a.toLowerCase().includes(t)) : this.availableAgencies;
+    if (!hasCommaSeparatedSearchFilter(this.agencySearchFilter)) return this.availableAgencies;
+    return this.availableAgencies.filter(a =>
+      matchesCommaSeparatedFilter(this.agencySearchFilter, a, this.getAgencyCount(a))
+    );
   }
 
   get filteredAvailableServices(): string[] {
-    const t = this.serviceSearchFilter?.trim().toLowerCase() || '';
-    return t ? this.availableServices.filter(s => s.toLowerCase().includes(t)) : this.availableServices;
+    if (!hasCommaSeparatedSearchFilter(this.serviceSearchFilter)) return this.availableServices;
+    return this.availableServices.filter(s =>
+      matchesCommaSeparatedFilter(this.serviceSearchFilter, s, this.getServiceCount(s))
+    );
   }
 
   get filteredManualAvailableServices(): string[] {
-    const t = this.manualServiceSearchFilter?.trim().toLowerCase() || '';
-    return t ? this.manualAvailableServices.filter(s => s.toLowerCase().includes(t)) : this.manualAvailableServices;
+    if (!hasCommaSeparatedSearchFilter(this.manualServiceSearchFilter)) return this.manualAvailableServices;
+    return this.manualAvailableServices.filter(s =>
+      matchesCommaSeparatedFilter(this.manualServiceSearchFilter, s, this.getManualServiceCount(s))
+    );
   }
 
   get filteredManualAvailableStatuses(): string[] {
-    const t = this.manualStatusSearchFilter?.trim().toLowerCase() || '';
-    return t ? this.manualAvailableStatuses.filter(s => s.toLowerCase().includes(t)) : this.manualAvailableStatuses;
+    if (!hasCommaSeparatedSearchFilter(this.manualStatusSearchFilter)) return this.manualAvailableStatuses;
+    return this.manualAvailableStatuses.filter(s =>
+      matchesCommaSeparatedFilter(this.manualStatusSearchFilter, s, this.getManualStatusCount(s))
+    );
   }
 
   get filteredPartnerAvailableServices(): string[] {
-    const t = this.partnerServiceSearchFilter?.trim().toLowerCase() || '';
-    return t ? this.partnerAvailableServices.filter(s => s.toLowerCase().includes(t)) : this.partnerAvailableServices;
+    if (!hasCommaSeparatedSearchFilter(this.partnerServiceSearchFilter)) return this.partnerAvailableServices;
+    return this.partnerAvailableServices.filter(s =>
+      matchesCommaSeparatedFilter(this.partnerServiceSearchFilter, s, this.getPartnerServiceCount(s))
+    );
   }
 
   get filteredPartnerAvailableStatuses(): string[] {
-    const t = this.partnerStatusSearchFilter?.trim().toLowerCase() || '';
-    return t ? this.partnerAvailableStatuses.filter(s => s.toLowerCase().includes(t)) : this.partnerAvailableStatuses;
+    if (!hasCommaSeparatedSearchFilter(this.partnerStatusSearchFilter)) return this.partnerAvailableStatuses;
+    return this.partnerAvailableStatuses.filter(s =>
+      matchesCommaSeparatedFilter(this.partnerStatusSearchFilter, s, this.getPartnerStatusCount(s))
+    );
   }
 
   get filteredPartnerAvailablePayments(): string[] {
-    const t = this.partnerPaymentSearchFilter?.trim().toLowerCase() || '';
-    return t ? this.partnerAvailablePayments.filter(p => p.toLowerCase().includes(t)) : this.partnerAvailablePayments;
+    if (!hasCommaSeparatedSearchFilter(this.partnerPaymentSearchFilter)) return this.partnerAvailablePayments;
+    return this.partnerAvailablePayments.filter(p =>
+      matchesCommaSeparatedFilter(this.partnerPaymentSearchFilter, p, this.getPartnerPaymentCount(p))
+    );
   }
 
   // ─── Compteurs lignes ─────────────────────────────────────────────────────
