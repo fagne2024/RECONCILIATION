@@ -719,8 +719,8 @@
 
         <!-- Boutons pour le mode automatique -->
         <div class="button-container" [class.assisted-actions]="isAssistedLike" *ngIf="reconciliationMode === 'automatic'">
-            <button class="btn proceed-btn" [class.reconciliation-launch-btn]="isAssistedLike" [disabled]="!canProceedAuto() || autoProceedBusy" (click)="onAutoProceed()">
-                {{ autoProceedBusy ? 'Préparation en cours...' : (certificationMode ? 'Lancer la certification' : (assistedOnly ? 'Lancer la réconciliation' : '🔄 Lancer la Réconciliation Automatique')) }}
+            <button class="btn proceed-btn" [class.reconciliation-launch-btn]="isAssistedLike" [class.processing]="isAssistedReconciliationActive()" [disabled]="!canProceedAuto()" (click)="onAutoProceed()">
+                {{ getAutoProceedButtonLabel() }}
             </button>
             <button
                 *ngIf="isAssistedLike"
@@ -1444,7 +1444,8 @@
                             type="radio"
                             name="traitementModel"
                             [value]="model.id"
-                            [(ngModel)]="selectedTraitementModelId">
+                            [(ngModel)]="selectedTraitementModelId"
+                            (ngModelChange)="onTraitementModelSelectionChange()">
                         <span class="model-info">
                             <strong>{{ model.name }}</strong>
                             <small>Pattern : {{ model.filePattern }} — {{ model.fileType === 'bo' ? 'BO' : model.fileType === 'partner' ? 'Partenaire' : 'BO / Partenaire' }}</small>
@@ -1461,8 +1462,68 @@
             </ng-container>
         </div>
 
+        <div class="traitement-section" *ngIf="selectedTraitementModelId">
+            <label class="traitement-section-title">3. Colonnes à garder ou supprimer <span class="traitement-optional-badge">(optionnel)</span></label>
+            <label class="traitement-column-filter-toggle">
+                <input
+                    type="checkbox"
+                    [checked]="traitementColumnFilterEnabled"
+                    [disabled]="traitementProcessing"
+                    (change)="onTraitementColumnFilterToggle($any($event.target).checked)">
+                <span>Filtrer les colonnes à l'export</span>
+            </label>
+            <p class="traitement-columns-intro" *ngIf="!traitementColumnFilterEnabled">
+                Par défaut, toutes les colonnes traitées sont exportées. Activez l'option ci-dessus pour choisir celles à conserver.
+            </p>
+            <ng-container *ngIf="traitementColumnFilterEnabled">
+                <p class="traitement-columns-intro">
+                    Toutes les colonnes du modèle sont listées ci-dessous. Décochez celles à exclure de l'export.
+                </p>
+                <div class="traitement-columns-loading" *ngIf="traitementOutputColumnsLoading">
+                    <i class="fas fa-spinner fa-spin"></i> Chargement des colonnes du modèle...
+                </div>
+                <div class="traitement-columns-empty" *ngIf="!traitementOutputColumnsLoading && traitementOutputColumns.length === 0">
+                    Aucune colonne détectée pour ce modèle — toutes les colonnes traitées seront exportées.
+                </div>
+                <ng-container *ngIf="!traitementOutputColumnsLoading && traitementOutputColumns.length > 0">
+                    <div class="traitement-columns-toolbar">
+                        <span class="traitement-columns-count">
+                            {{ getTraitementColumnsKeptCount() }} / {{ traitementOutputColumns.length }} colonne(s) conservée(s)
+                        </span>
+                        <div class="traitement-columns-actions">
+                            <button type="button" class="traitement-columns-action-btn" [disabled]="traitementProcessing" (click)="setAllTraitementColumnsKept(true)">
+                                Tout garder
+                            </button>
+                            <button type="button" class="traitement-columns-action-btn" [disabled]="traitementProcessing" (click)="setAllTraitementColumnsKept(false)">
+                                Tout supprimer
+                            </button>
+                            <button type="button" class="traitement-columns-action-btn" [disabled]="traitementProcessing" (click)="resetTraitementColumnKeepDefaults()">
+                                Réinitialiser
+                            </button>
+                        </div>
+                    </div>
+                    <div class="traitement-columns-list">
+                        <label
+                            class="traitement-column-item"
+                            *ngFor="let col of traitementOutputColumns"
+                            [class.traitement-column-item-excluded]="!isTraitementColumnKept(col)">
+                            <input
+                                type="checkbox"
+                                [checked]="isTraitementColumnKept(col)"
+                                [disabled]="traitementProcessing"
+                                (change)="toggleTraitementColumnKeep(col, $any($event.target).checked)">
+                            <span class="traitement-column-name">{{ col }}</span>
+                            <span class="traitement-column-badge" [class.badge-keep]="isTraitementColumnKept(col)" [class.badge-drop]="!isTraitementColumnKept(col)">
+                                {{ isTraitementColumnKept(col) ? 'Garder' : 'Supprimer' }}
+                            </span>
+                        </label>
+                    </div>
+                </ng-container>
+            </ng-container>
+        </div>
+
         <div class="traitement-section">
-            <label class="traitement-section-title" for="traitementOutputDate">3. Nom du fichier produit</label>
+            <label class="traitement-section-title" for="traitementOutputDate">4. Nom du fichier produit</label>
             <div class="traitement-date-row">
                 <input
                     id="traitementOutputDate"

@@ -402,11 +402,12 @@ import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../.
               Annuler
             </button>
             <button type="button" class="magic-btn-launch"
-                    [class.is-ready]="canLaunchMagic && !magicPipelineRunning"
-                    [disabled]="!canLaunchMagic || magicPipelineRunning"
-                    (click)="startMagicReconciliationFromModal()">
+                    [class.is-ready]="canLaunchMagic || magicPipelineRunning"
+                    [class.processing]="magicPipelineRunning"
+                    [disabled]="!canLaunchMagic && !magicPipelineRunning"
+                    (click)="onMagicLaunchClick()">
               <i class="fas fa-play"></i>
-              Lancer la réconciliation
+              {{ getMagicLaunchButtonLabel() }}
             </button>
           </div>
         </div>
@@ -670,12 +671,26 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     });
   }
 
-  async startMagicReconciliationFromModal(): Promise<void> {
-    if (!this.canLaunchMagic || this.magicPipelineRunning) {
+  getMagicLaunchButtonLabel(): string {
+    if (this.magicPipelineRunning) {
+      return 'Réconciliation en cours — voir la progression';
+    }
+    return 'Lancer la réconciliation';
+  }
+
+  async onMagicLaunchClick(): Promise<void> {
+    if (this.magicPipelineRunning) {
+      return;
+    }
+    if (!this.canLaunchMagic) {
       return;
     }
     this.showMagicUploadModal = false;
     await this.launchMagicReconciliation();
+  }
+
+  async startMagicReconciliationFromModal(): Promise<void> {
+    await this.onMagicLaunchClick();
   }
 
   private ensureFilesOrRedirectToUpload(mode?: string): boolean {

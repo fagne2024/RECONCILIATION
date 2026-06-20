@@ -1,6 +1,6 @@
 import { Injectable, OnInit, OnDestroy } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
-import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout, of } from 'rxjs';
+import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout, of, defer } from 'rxjs';
 import { catchError, tap, map, finalize, retry, takeUntil, switchMap, retryWhen, delay, concatMap } from 'rxjs/operators';
 import { ReconciliationRequest } from '../models/reconciliation-request.model';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
@@ -56,6 +56,10 @@ export class ReconciliationService implements OnInit, OnDestroy {
     });
     
     public progress$ = this.progressSubject.asObservable();
+
+    /** Indique si un appel reconcile() est en cours (tous modes). */
+    private reconciliationRunningSubject = new BehaviorSubject<boolean>(false);
+    public reconciliationRunning$ = this.reconciliationRunningSubject.asObservable();
     
     // Job management
     private currentJobId: string | null = null;
@@ -949,6 +953,19 @@ export class ReconciliationService implements OnInit, OnDestroy {
         return this.currentJobId !== null;
     }
 
+    isReconciliationRunning(): boolean {
+        return this.reconciliationRunningSubject.value;
+    }
+
+    private markReconciliationRun<T>(source: Observable<T>): Observable<T> {
+        return defer(() => {
+            this.reconciliationRunningSubject.next(true);
+            return source;
+        }).pipe(
+            finalize(() => this.reconciliationRunningSubject.next(false))
+        );
+    }
+
     /**
      * Méthode de réconciliation classique (sans WebSocket)
      */
@@ -971,7 +988,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 boDataLength: boDataLength,
                 partnerDataLength: partnerDataLength
             });
-            return this.reconcileWithBackendChunks(request);
+            return this.markReconciliationRun(this.reconcileWithBackendChunks(request));
         }
         
         this.updateProgress({
@@ -985,24 +1002,26 @@ export class ReconciliationService implements OnInit, OnDestroy {
         // Timeout de 60 minutes (3600000ms) pour les très gros fichiers (augmenté de 30 à 60 minutes)
         const RECONCILIATION_TIMEOUT = 3600000; // 60 minutes
         
-        return this.with429Retry(() => this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request, {
-            headers: new HttpHeaders({
-                'Content-Type': 'application/json'
-            })
-        })).pipe(
-            timeout(RECONCILIATION_TIMEOUT),
-            tap(response => {
-                console.log('✅ Réconciliation terminée:', response);
-                
-                this.updateProgress({
-                    percentage: 100,
-                    processed: response.totalBoRecords + response.totalPartnerRecords,
-                    total: response.totalBoRecords + response.totalPartnerRecords,
-                    step: 'Terminé',
-                    estimatedTimeRemaining: 0
-                });
-            }),
-            catchError(this.handleError)
+        return this.markReconciliationRun(
+            this.with429Retry(() => this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request, {
+                headers: new HttpHeaders({
+                    'Content-Type': 'application/json'
+                })
+            })).pipe(
+                timeout(RECONCILIATION_TIMEOUT),
+                tap(response => {
+                    console.log('✅ Réconciliation terminée:', response);
+                    
+                    this.updateProgress({
+                        percentage: 100,
+                        processed: response.totalBoRecords + response.totalPartnerRecords,
+                        total: response.totalBoRecords + response.totalPartnerRecords,
+                        step: 'Terminé',
+                        estimatedTimeRemaining: 0
+                    });
+                }),
+                catchError(this.handleError)
+            )
         );
     }
 

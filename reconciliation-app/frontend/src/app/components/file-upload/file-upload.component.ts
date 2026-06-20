@@ -29,9 +29,10 @@ import * as XLSX from 'xlsx';
 import { Router, ActivatedRoute } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
-import { forkJoin, Subscription } from 'rxjs';
+import { forkJoin, Subscription, firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { PopupService } from '../../services/popup.service';
+import { FileWatcherService } from '../../services/file-watcher.service';
 import { ProgressIndicatorService } from '../../services/progress-indicator.service';
 import { applyColumnProcessingRulesAsync } from '../../utils/column-processing.util';
 import { readCsvFileUltraFast, readCsvContentUltraFast } from '../../utils/fast-csv-reader.util';
@@ -95,6 +96,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     traitementProcessing = false;
     traitementProgressMessage = '';
     traitementAutoSelectedModelHint = '';
+    /** Colonnes de sortie déduites du modèle (section « garder / supprimer »). */
+    traitementOutputColumns: string[] = [];
+    traitementColumnKeepMap: Record<string, boolean> = {};
+    traitementColumnFilterEnabled = false;
+    traitementOutputColumnsLoading = false;
+    private availableTemplateFiles: Array<{ fileName: string; columns?: string[] }> | null = null;
     private treatmentProgressLastUi = 0;
 
     /** Modèle partenaire mémorisé après traitement assisté (évite la re-détection par nom de fichier). */
@@ -253,6 +260,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         private progressIndicatorService: ProgressIndicatorService,
         private exportOptimizationService: ExportOptimizationService,
         private modelPreProcessingService: ModelPreProcessingService,
+        private fileWatcherService: FileWatcherService,
         private cd: ChangeDetectorRef,
         private ngZone: NgZone
     ) {
@@ -315,6 +323,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.traitementOutputNameSuffix = '';
         this.traitementProgressMessage = '';
         this.traitementAutoSelectedModelHint = '';
+        this.resetTraitementColumnSelectionState();
         await this.loadTraitementModels();
         this.cd.detectChanges();
     }
@@ -330,6 +339,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.traitementOutputNameSuffix = '';
         this.traitementProgressMessage = '';
         this.traitementAutoSelectedModelHint = '';
+        this.resetTraitementColumnSelectionState();
         this.resetFileInput(this.traitementFileInputRef);
         this.cd.detectChanges();
     }
@@ -609,6 +619,135 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return `${model.name} — pattern: ${model.filePattern} (${typeLabel})`;
     }
 
+    onTraitementModelSelectionChange(): void {
+        this.traitementColumnFilterEnabled = false;
+        this.clearTraitementColumnCatalog();
+    }
+
+    private resetTraitementColumnSelectionState(): void {
+        this.clearTraitementColumnCatalog();
+        this.traitementColumnFilterEnabled = false;
+    }
+
+    private clearTraitementColumnCatalog(): void {
+        this.traitementOutputColumns = [];
+        this.traitementColumnKeepMap = {};
+        this.traitementOutputColumnsLoading = false;
+    }
+
+    onTraitementColumnFilterToggle(enabled: boolean): void {
+        this.traitementColumnFilterEnabled = enabled;
+        if (enabled && this.selectedTraitementModelId && !this.traitementOutputColumns.length) {
+            void this.loadTraitementOutputColumns();
+        }
+        this.cd.detectChanges();
+    }
+
+    private async resolveModelTemplateColumns(model: AutoProcessingModel): Promise<string[]> {
+        const defaultColumns = this.modelPreProcessingService.getDefaultTemplateColumns(
+            model.templateFile,
+            model.filePattern
+        );
+        if (defaultColumns.length) {
+            return defaultColumns;
+        }
+
+        const templateFile = model.templateFile?.trim();
+        if (!templateFile) {
+            return [];
+        }
+
+        try {
+            if (!this.availableTemplateFiles) {
+                this.availableTemplateFiles = await firstValueFrom(
+                    this.fileWatcherService.getAvailableFiles()
+                ) ?? [];
+            }
+
+            const cached = this.availableTemplateFiles.find(f => f.fileName === templateFile);
+            if (cached?.columns?.length) {
+                return cached.columns.map(col => String(col).trim()).filter(Boolean);
+            }
+
+            const analyzed = await firstValueFrom(this.fileWatcherService.analyzeFile(templateFile));
+            if (analyzed?.columns?.length) {
+                return analyzed.columns.map((col: string) => String(col).trim()).filter(Boolean);
+            }
+        } catch (error) {
+            console.warn('Impossible de charger les colonnes du fichier modèle:', error);
+        }
+
+        return [];
+    }
+
+    async loadTraitementOutputColumns(): Promise<void> {
+        this.clearTraitementColumnCatalog();
+
+        const model = this.traitementModels.find(m => m.id === this.selectedTraitementModelId);
+        if (!model?.id) {
+            this.cd.detectChanges();
+            return;
+        }
+
+        this.traitementOutputColumnsLoading = true;
+        this.cd.detectChanges();
+
+        try {
+            const columnRules = await this.autoProcessingService.getColumnProcessingRules(
+                model.id,
+                AutoProcessingService.RECONCILIATION_MODULE
+            );
+            const templateColumns = await this.resolveModelTemplateColumns(model);
+            this.traitementOutputColumns = this.modelPreProcessingService.buildAssistedExportColumnCatalog(
+                model,
+                columnRules,
+                templateColumns
+            );
+            for (const col of this.traitementOutputColumns) {
+                this.traitementColumnKeepMap[col] = true;
+            }
+        } catch (error) {
+            console.warn('Impossible de charger les colonnes du modèle:', error);
+        } finally {
+            this.traitementOutputColumnsLoading = false;
+            this.cd.detectChanges();
+        }
+    }
+
+    getTraitementColumnsKeptCount(): number {
+        return this.traitementOutputColumns.filter(col => this.traitementColumnKeepMap[col] !== false).length;
+    }
+
+    setAllTraitementColumnsKept(keep: boolean): void {
+        for (const col of this.traitementOutputColumns) {
+            this.traitementColumnKeepMap[col] = keep;
+        }
+        this.cd.detectChanges();
+    }
+
+    resetTraitementColumnKeepDefaults(): void {
+        for (const col of this.traitementOutputColumns) {
+            this.traitementColumnKeepMap[col] = true;
+        }
+        this.cd.detectChanges();
+    }
+
+    isTraitementColumnKept(column: string): boolean {
+        return this.traitementColumnKeepMap[column] !== false;
+    }
+
+    toggleTraitementColumnKeep(column: string, keep: boolean): void {
+        this.traitementColumnKeepMap[column] = keep;
+        this.cd.detectChanges();
+    }
+
+    getSelectedTraitementExportColumns(): string[] {
+        if (!this.traitementColumnFilterEnabled) {
+            return [];
+        }
+        return this.traitementOutputColumns.filter(col => this.traitementColumnKeepMap[col] !== false);
+    }
+
     canApplyTraitement(): boolean {
         return !this.traitementProcessing
             && this.traitementFiles.length > 0
@@ -790,11 +929,37 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 return;
             }
 
+            const exportColumns = this.getSelectedTraitementExportColumns();
+            if (this.traitementColumnFilterEnabled && this.traitementOutputColumns.length > 0 && exportColumns.length === 0) {
+                await this.popupService.showWarning(
+                    'Sélectionnez au moins une colonne à conserver dans le fichier final.',
+                    'Colonnes du modèle'
+                );
+                return;
+            }
+
+            let exportRows = uniqueProcessed;
+            if (exportColumns.length) {
+                exportRows = this.modelPreProcessingService.projectRowsToExportColumns(
+                    uniqueProcessed,
+                    exportColumns,
+                    columnRules,
+                    model
+                );
+                perf.mark('Projection colonnes export', {
+                    colonnes: exportColumns.length,
+                    totalModele: this.traitementOutputColumns.length
+                });
+            }
+
             const outputName = this.buildProcessedOutputFileName(model, compiled.referenceFile);
 
             await this.updateTraitementProgress(`Téléchargement : ${outputName}`);
             const exportStart = performance.now();
-            await this.downloadProcessedTreatmentFile(uniqueProcessed, outputName, { skipNormalize: true });
+            await this.downloadProcessedTreatmentFile(exportRows, outputName, {
+                skipNormalize: true,
+                columns: exportColumns.length ? exportColumns : undefined
+            });
             perf.mark('Export fichier', { nom: outputName, dureeMs: Math.round(performance.now() - exportStart) });
 
             const duplicateInfo = dedupResult.duplicatesRemoved > 0
@@ -844,7 +1009,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             const side: 'bo' | 'partner' = sideChoice.startsWith('BO') ? 'bo' : 'partner';
             this.closeTraitementModal(true, { keepProcessing: true });
             await this.updateTraitementProgress('Assignation du fichier en cours...', { force: true });
-            await this.assignProcessedTreatmentDataAsync(uniqueProcessed, outputName, side, model.id);
+            await this.assignProcessedTreatmentDataAsync(exportRows, outputName, side, model.id);
 
             const bothReady = this.canProceedAuto();
             this.traitementProcessing = false;
@@ -2340,7 +2505,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     private async downloadProcessedTreatmentFile(
         data: Record<string, string>[],
         outputBaseName: string,
-        options?: { skipNormalize?: boolean }
+        options?: { skipNormalize?: boolean; columns?: string[] }
     ): Promise<void> {
         let exportRows = data;
         if (!options?.skipNormalize && data.length > 3000) {
@@ -2353,7 +2518,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             exportRows = this.normalizeData(data);
         }
 
-        const columns = this.getColumnsFromData(exportRows);
+        const columns = options?.columns?.length
+            ? options.columns
+            : this.getColumnsFromData(exportRows);
         const lowerName = outputBaseName.toLowerCase();
         const exportOptions = {
             chunkSize: exportRows.length > 100000 ? 5000 : exportRows.length > 20000 ? 2000 : 1000,
@@ -7665,15 +7832,51 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
 
     canProceedAuto(): boolean {
-        return this.autoBoData.length > 0 && this.autoPartnerData.length > 0 && !this.autoProceedBusy;
+        return this.autoBoData.length > 0 && this.autoPartnerData.length > 0;
+    }
+
+    isAssistedReconciliationActive(): boolean {
+        return this.autoProceedBusy;
+    }
+
+    getAutoProceedButtonLabel(): string {
+        if (this.isAssistedReconciliationActive()) {
+            return 'Réconciliation en cours — voir la progression';
+        }
+        if (this.certificationMode) {
+            return 'Lancer la certification';
+        }
+        if (this.assistedOnly) {
+            return 'Lancer la réconciliation';
+        }
+        return '🔄 Lancer la Réconciliation Automatique';
     }
 
     async onAutoProceed(): Promise<void> {
-        if (!this.autoBoData.length || !this.autoPartnerData.length || this.autoProceedBusy) {
+        if (!this.canProceedAuto()) {
             return;
         }
-        if (this.canProceedAuto()) {
-            this.autoProceedBusy = true;
+
+        if (this.isAssistedReconciliationActive()) {
+            this.showReconciliationProgress = true;
+            this.cd.detectChanges();
+            return;
+        }
+
+        if (
+            this.reconciliationProgress.percentage === 100 &&
+            this.appStateService.getReconciliationResults()
+        ) {
+            this.showReconciliationProgress = true;
+            this.cd.detectChanges();
+            return;
+        }
+
+        await this.startAssistedReconciliation();
+    }
+
+    private async startAssistedReconciliation(): Promise<void> {
+        this.autoProceedBusy = true;
             this.appStateService.setReconciliationLaunchMode('assisted');
             this.appStateService.setReconciliationEntryPath('/upload-assisted');
             this.loading = false; // Ne pas utiliser loading pour ne pas masquer la barre de progression
@@ -7945,7 +8148,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
                 await this.popupService.showError(message, 'Réconciliation impossible');
             }
-        }
     }
 
     // Méthodes pour la sélection de service en mode manuel

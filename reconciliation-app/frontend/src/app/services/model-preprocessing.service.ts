@@ -1176,6 +1176,121 @@ export class ModelPreProcessingService {
     return merged;
   }
 
+  /** Colonnes connues pour les fichiers modèles standards (TRXBO, OPPART, USSDPART). */
+  getDefaultTemplateColumns(
+    templateFile?: string | null,
+    filePattern?: string | null
+  ): string[] {
+    const key = `${templateFile || ''} ${filePattern || ''}`.toLowerCase();
+
+    if (key.includes('trxbo')) {
+      return [
+        'ID', 'IDTransaction', 'téléphone client', 'montant', 'Service',
+        'Moyen de Paiement', 'Agence', 'Agent', 'Type agent', 'PIXI',
+        'Date', 'Numéro Trans GU', 'GRX', 'Statut', 'Latitude',
+        'Longitude', 'ID Partenaire DIST', 'Expéditeur', 'Pays provenance',
+        'Bénéficiaire', 'Canal de distribution'
+      ];
+    }
+
+    if (key.includes('oppart')) {
+      return [
+        'ID Opération', 'Type Opération', 'Montant', 'Solde avant', 'Solde après',
+        'Code propriétaire', 'Téléphone', 'Statut', 'ID Transaction', 'Num bordereau',
+        'Date opération', 'Date de versement', 'Banque appro', 'Login demandeur Appro',
+        'Login valideur Appro', 'Motif rejet', 'Frais connexion', 'Numéro Trans GU',
+        'Agent', 'Motif régularisation', 'groupe de réseau'
+      ];
+    }
+
+    if (key.includes('ussdpart')) {
+      return [
+        'ID', 'Groupe Réseaux', 'Code réseau', 'Agence', 'Code PIXI',
+        'Code de Proxy', 'Code service', 'Numéro Trans GU', 'Destinataire',
+        'Login agent', 'Type agent', 'date de création', 'Date d\'envoi vers part',
+        'Etat', 'Type', 'Token', 'SMS', 'Action faite', 'Statut',
+        'Utilisateur', 'Montant', 'Date dernier traitement', 'Latitude',
+        'Longitude', 'Partenaire dist ID', 'Agence SC', 'Groupe reseau SC',
+        'Agent SC', 'PDA SC'
+      ];
+    }
+
+    return [];
+  }
+
+  resolveExportColumnName(
+    column: string,
+    renameRules: ModelColumnRenameRule[]
+  ): string {
+    const trimmed = (column || '').trim();
+    if (!trimmed || !renameRules.length) {
+      return trimmed;
+    }
+
+    const renameMap = new Map<string, string>();
+    for (const rule of renameRules) {
+      if (rule.sourceColumn && rule.targetColumn?.trim()) {
+        renameMap.set(rule.sourceColumn, rule.targetColumn.trim());
+      }
+    }
+
+    let current = trimmed;
+    let guard = 0;
+    while (renameMap.has(current) && guard < 10) {
+      current = renameMap.get(current)!;
+      guard++;
+    }
+    return current;
+  }
+
+  /**
+   * Catalogue complet des colonnes exportables : template + règles du modèle,
+   * avec les noms finaux après renommage d'en-têtes.
+   */
+  buildAssistedExportColumnCatalog(
+    model: AutoProcessingModel,
+    columnRules: ColumnProcessingRule[],
+    templateColumns: string[] = []
+  ): string[] {
+    const cfg = model.preProcessingConfig;
+    const renameRules = this.getActiveColumnRenameRules(cfg?.columnRenameRules);
+    const catalog: string[] = [];
+    const seen = new Set<string>();
+
+    const add = (col?: string | null) => {
+      const exportName = this.resolveExportColumnName((col || '').trim(), renameRules);
+      if (exportName && !seen.has(exportName)) {
+        seen.add(exportName);
+        catalog.push(exportName);
+      }
+    };
+
+    const defaults = templateColumns.length
+      ? templateColumns
+      : this.getDefaultTemplateColumns(model.templateFile, model.filePattern);
+    for (const col of defaults) {
+      add(col);
+    }
+
+    for (const rule of this.getActiveColumnConcatRules(cfg?.columnConcatRules)) {
+      add(rule.targetColumn);
+    }
+
+    const sortedRules = [...(columnRules || [])].sort(
+      (a, b) => (a.ruleOrder ?? 0) - (b.ruleOrder ?? 0)
+    );
+    for (const rule of sortedRules) {
+      add(rule.targetColumn || rule.sourceColumn);
+      add(rule.sourceColumn);
+    }
+
+    for (const col of this.collectReferencedColumns(cfg)) {
+      add(col);
+    }
+
+    return catalog;
+  }
+
   private applyRenameRulesToOutputColumns(
     columns: string[],
     renameRules: ModelColumnRenameRule[]
@@ -1286,6 +1401,17 @@ export class ModelPreProcessingService {
       if (aliases.size) {
         map.set(target, [...aliases]);
       }
+    }
+
+    for (const rename of renameRules) {
+      const renameSource = (rename.sourceColumn || '').trim();
+      const renameTarget = (rename.targetColumn || '').trim();
+      if (!renameSource || !renameTarget || renameSource === renameTarget) {
+        continue;
+      }
+      const existing = new Set(map.get(renameTarget) || []);
+      existing.add(renameSource);
+      map.set(renameTarget, [...existing]);
     }
 
     return map;

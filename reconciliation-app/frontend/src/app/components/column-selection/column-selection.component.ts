@@ -198,11 +198,11 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
             <div class="validation-section">
                 <button 
                     class="validate-btn" 
-                    [disabled]="!isValid || isReconciliationInProgress"
-                    [class.processing]="isReconciliationInProgress"
+                    [disabled]="!isValid"
+                    [class.processing]="isReconciliationActive()"
                     (click)="proceedWithReconciliation()">
-                    <span *ngIf="!isReconciliationInProgress">🚀 Lancer la réconciliation</span>
-                    <span *ngIf="isReconciliationInProgress">⏳ Réconciliation en cours...</span>
+                    <span *ngIf="!isReconciliationActive()">🚀 Lancer la réconciliation</span>
+                    <span *ngIf="isReconciliationActive()">⏳ Réconciliation en cours — voir la progression</span>
                 </button>
             </div>
         </div>
@@ -795,6 +795,11 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 this.cdr.detectChanges();
             })
         );
+
+        if (this.reconciliationService.isReconciliationRunning()) {
+            this.isReconciliationInProgress = true;
+            this.appStateService.setReconciliationProgress(true);
+        }
 
         this.loadDataFromService();
     }
@@ -1485,7 +1490,18 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         });
     }
 
+    isReconciliationActive(): boolean {
+        return this.isReconciliationInProgress || this.reconciliationService.isReconciliationRunning();
+    }
+
     proceedWithReconciliation() {
+        if (this.isReconciliationActive()) {
+            this.isReconciliationInProgress = true;
+            this.appStateService.setReconciliationProgress(true);
+            this.cdr.detectChanges();
+            return;
+        }
+
         if (!this.validateSelection()) {
             console.error('❌ Sélection invalide, impossible de procéder');
             return;
