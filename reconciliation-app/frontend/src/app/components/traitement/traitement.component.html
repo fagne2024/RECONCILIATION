@@ -98,6 +98,27 @@
   </div>
   <div *ngIf="successMsg.upload" class="success-msg" [innerHTML]="successMsg.upload"></div>
 
+<div class="auto-treatment-section">
+  <div class="section-header">
+    <h4>
+      <i class="fas fa-magic"></i> Traitement Automatique
+      <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('autoTreatment')">
+        <i class="fas fa-eye" *ngIf="!showSections.autoTreatment"></i>
+        <i class="fas fa-eye-slash" *ngIf="showSections.autoTreatment"></i>
+        {{ showSections.autoTreatment ? 'Masquer' : 'Afficher' }}
+      </button>
+    </h4>
+  </div>
+
+  <div *ngIf="showSections.autoTreatment" class="section-content auto-treatment-content">
+    <p class="auto-treatment-intro">
+      Normalisez et formatez vos fichiers via les modèles de traitement (même logique que le mode assisté).
+      Détection automatique des en-têtes, compilation multi-fichiers, application des règles du modèle, puis téléchargement.
+    </p>
+    <app-file-upload [embedTraitementSection]="true"></app-file-upload>
+  </div>
+</div>
+
 <div class="total-energie-section">
   <div class="section-header">
     <h4>

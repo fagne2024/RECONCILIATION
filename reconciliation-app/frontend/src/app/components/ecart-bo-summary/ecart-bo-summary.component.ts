@@ -13,6 +13,10 @@ import {
 import { PopupService } from '../../services/popup.service';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import {
+  BILINGUAL_COLUMN_ALIASES,
+  getRecordValueByAliases
+} from '../../utils/bilingual-column.util';
 import { ModernPopupComponent } from '../modern-popup/modern-popup.component';
 import {
   RECONCILIATION_ENV_OPTIONS,
@@ -38,6 +42,10 @@ export interface EcartBoSummaryItem {
   commentaire?: string; // Commentaire pour identifier l'origine
   linkedId?: number; // ID de la ligne liée (paire BO/PARTENAIRE)
   token?: string; // Lien entre lignes BO et PARTENAIRE (statut OK) pour recherche rapide
+  /** Ligne détectée comme doublon (liste locale ou base). */
+  isDuplicate?: boolean;
+  /** Détail lisible du doublon (critères correspondants). */
+  duplicateHint?: string;
 }
 
 @Component({
@@ -97,6 +105,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   isExporting = false;
   /** Clés locales des lignes sélectionnées (sauvegarde ou suppression). */
   selectedRowKeys = new Set<string>();
+  /** Aperçu des doublons détectés dans la liste (affiché dans la bannière). */
+  duplicateBannerLines: string[] = [];
   
   // Édition
   showEditModal = false;
@@ -292,6 +302,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
     this.refreshUniqueEnvCodes();
+    this.markAndFilterDuplicateSummaryItems(false);
     this.applyFilters();
     this.cdr.markForCheck();
   }
@@ -451,6 +462,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
     this.refreshUniqueEnvCodes();
+    this.markAndFilterDuplicateSummaryItems(false);
     this.linkMatchingPairs(true);
   }
 
@@ -501,29 +513,16 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       const boOnly = this.response?.boOnly || [];
       let allData = this.applyMagicReconciliationFilter([...mismatches, ...boOnly]);
       
-      // Fonction helper pour extraire les valeurs
-      const getValue = (record: Record<string, string>, keys: string[]): string => {
-        for (const key of keys) {
-          const originalKey = Object.keys(record).find(k => 
-            fixGarbledCharacters(k).toLowerCase() === key.toLowerCase() || 
-            k.toLowerCase() === key.toLowerCase()
-          );
-          if (originalKey && record[originalKey]) {
-            return record[originalKey].toString();
-          }
-          if (record[key]) {
-            return record[key].toString();
-          }
-        }
-        return '';
-      };
+      // Fonction helper pour extraire les valeurs (colonnes FR / EN)
+      const getValue = (record: Record<string, string>, aliasGroup: readonly string[]): string =>
+        getRecordValueByAliases(record, aliasGroup);
 
       // Regrouper par agence + service + pays : une ligne par combinaison (agrégat nombre + volume)
-      const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction'];
-      const montantKeys = ['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME'];
-      const agenceKeys = ['Agence', 'agence', 'AGENCE', 'agency', 'Agency'];
-      const serviceKeys = ['Service', 'service', 'SERVICE', 'serv', 'Serv'];
-      const paysKeys = ['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx'];
+      const dateKeys = BILINGUAL_COLUMN_ALIASES.date;
+      const montantKeys = BILINGUAL_COLUMN_ALIASES.montant;
+      const agenceKeys = BILINGUAL_COLUMN_ALIASES.agence;
+      const serviceKeys = BILINGUAL_COLUMN_ALIASES.service;
+      const paysKeys = BILINGUAL_COLUMN_ALIASES.pays;
 
       const groupedByAgence = new Map<string, {
         agence: string;
@@ -603,6 +602,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       }
       this.selectedRowKeys.clear();
       this.summaryItems = items;
+
+      this.markAndFilterDuplicateSummaryItems(false);
 
       // Lier les paires correspondantes (BO/PARTENAIRE) et mettre à jour les statuts
       this.linkMatchingPairs(false);
@@ -887,6 +888,207 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     return `${y}-${m}-${d}`;
   }
 
+  /** Format attendu par le backend (LocalDateTime sans fuseau : yyyy-MM-ddTHH:mm:ss). */
+  private formatLocalDateTimeForBackend(dateStr: string): string {
+    if (!dateStr || !dateStr.trim()) {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T00:00:00`;
+    }
+
+    let trimmed = dateStr.trim().replace(/Z$/i, '').replace(/[+-]\d{2}:?\d{2}$/, '');
+    trimmed = trimmed.replace(/\.\d+$/, '');
+
+    if (trimmed.includes('T')) {
+      return trimmed;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return `${trimmed}T00:00:00`;
+    }
+    if (/^\d{4}-\d{2}-\d{2}\s+\d/.test(trimmed)) {
+      return trimmed.replace(' ', 'T');
+    }
+
+    const parsed = this.parseDate(trimmed);
+    if (parsed) {
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const d = String(parsed.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}T00:00:00`;
+    }
+
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T00:00:00`;
+  }
+
+  private extractHttpErrorMessage(error: any, fallback: string): string {
+    const backendMessage = error?.error?.message;
+    if (backendMessage && typeof backendMessage === 'string') {
+      return backendMessage;
+    }
+    if (error?.message && typeof error.message === 'string') {
+      return error.message;
+    }
+    return fallback;
+  }
+
+  /** Clé de dédoublonnage : date + agence + service + pays + plateforme + ENV + nombre + montant. */
+  buildSummaryDuplicateKey(
+    item: Pick<EcartBoSummaryItem, 'date' | 'agence' | 'service' | 'pays' | 'nombre' | 'montant' | 'env' | 'envCode'>,
+    dateOverride?: string
+  ): string {
+    const dateKey = this.toSummaryDayKey(dateOverride ?? item.date);
+    const env = (item.env || 'BO').toUpperCase();
+    const envCode = (item.envCode || '').trim().toUpperCase();
+    const montant = Number.isFinite(item.montant) ? item.montant.toFixed(2) : '0.00';
+    return [
+      dateKey,
+      (item.agence || '').trim(),
+      (item.service || '').trim(),
+      (item.pays || '').trim(),
+      env,
+      envCode,
+      String(item.nombre ?? 0),
+      montant
+    ].join('|');
+  }
+
+  private toSummaryDayKey(dateStr: string): string {
+    const parsed = this.parseDate(dateStr);
+    if (parsed) {
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const d = String(parsed.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    return (dateStr || '').trim().slice(0, 10);
+  }
+
+  /** Marque ou retire les doublons dans la liste affichée. */
+  private markAndFilterDuplicateSummaryItems(removeDuplicates: boolean): number {
+    const seen = new Map<string, EcartBoSummaryItem>();
+    let duplicateCount = 0;
+    const nextItems: EcartBoSummaryItem[] = [];
+
+    for (const item of this.summaryItems) {
+      const key = this.buildSummaryDuplicateKey(item);
+      if (seen.has(key)) {
+        duplicateCount += 1;
+        const reference = seen.get(key)!;
+        const hint = `Doublon de : ${this.formatSummaryItemDuplicateLine(reference)}`;
+        if (removeDuplicates) {
+          continue;
+        }
+        nextItems.push({ ...item, isDuplicate: true, duplicateHint: hint });
+        continue;
+      }
+      seen.set(key, item);
+      nextItems.push({ ...item, isDuplicate: false, duplicateHint: undefined });
+    }
+
+    if (removeDuplicates && duplicateCount > 0) {
+      this.summaryItems = nextItems;
+    } else if (!removeDuplicates) {
+      this.summaryItems = nextItems;
+    }
+
+    this.refreshDuplicateBannerState();
+    return duplicateCount;
+  }
+
+  /** Nombre de doublons visibles après filtrage. */
+  get visibleDuplicateCount(): number {
+    return this.filteredItems.filter(item => item.isDuplicate).length;
+  }
+
+  getDuplicateCriteriaText(): string {
+    return 'date, agence, service, pays, plateforme (BO/Partenaire), ENV, nombre de transactions et montant total';
+  }
+
+  private getDuplicateCriteriaBullets(): string {
+    return [
+      '• Date de transaction',
+      '• Agence, service et pays',
+      '• Plateforme (BO / Partenaire) et ENV',
+      '• Nombre de transactions et montant total'
+    ].join('\n');
+  }
+
+  formatSummaryItemDuplicateLine(item: Pick<EcartBoSummaryItem, 'date' | 'agence' | 'service' | 'pays' | 'nombre' | 'montant' | 'env' | 'envCode'>): string {
+    const date = this.formatSummaryDate(item.date) || item.date || '—';
+    const env = item.env || 'BO';
+    const envCode = item.envCode?.trim() ? ` / ${item.envCode.trim()}` : '';
+    const montant = Number.isFinite(item.montant) ? item.montant.toLocaleString('fr-FR') : '0';
+    return `${date} · ${item.agence || '—'} · ${item.service || '—'} · ${item.pays || '—'} · ${env}${envCode} · ${item.nombre ?? 0} trx · ${montant}`;
+  }
+
+  private formatDuplicateRecordSummary(dup: {
+    agence?: string;
+    service?: string;
+    pays?: string;
+    dateTransaction?: string;
+    nombreTransactions?: number;
+    montant?: number;
+    env?: string;
+    envCode?: string | null;
+    idExistant?: number | null;
+    message?: string;
+  }): string {
+    const line = this.formatSummaryItemDuplicateLine({
+      date: dup.dateTransaction || '',
+      agence: String(dup.agence || ''),
+      service: String(dup.service || ''),
+      pays: String(dup.pays || ''),
+      nombre: Number(dup.nombreTransactions || 0),
+      montant: Number(dup.montant || 0),
+      env: (dup.env as 'BO' | 'PARTENAIRE') || 'BO',
+      envCode: dup.envCode != null ? String(dup.envCode) : undefined
+    });
+
+    if (dup.message?.includes('lot envoyé')) {
+      return `Doublon dans votre sélection — ${line}`;
+    }
+    if (dup.idExistant) {
+      return `Déjà enregistré (n° ${dup.idExistant}) — ${line}`;
+    }
+    return line;
+  }
+
+  private refreshDuplicateBannerState(): void {
+    const duplicates = this.summaryItems.filter(item => item.isDuplicate);
+    this.duplicateBannerLines = duplicates
+      .slice(0, 5)
+      .map(item => this.formatSummaryItemDuplicateLine(item));
+    if (duplicates.length > 5) {
+      this.duplicateBannerLines.push(`… et ${duplicates.length - 5} autre(s) doublon(s) dans la liste.`);
+    }
+  }
+
+  private showDuplicateConflictPopup(
+    existing: EcartBoSummaryItem,
+    action: 'ajout' | 'modification'
+  ): void {
+    void this.popupService.showWarning(
+      `Impossible de ${action === 'ajout' ? 'ajouter' : 'enregistrer'} cette ligne : ` +
+      `une entrée identique existe déjà.\n\n` +
+      `Ligne en conflit :\n${this.formatSummaryItemDuplicateLine(existing)}\n\n` +
+      `Un doublon correspond à la même combinaison :\n${this.getDuplicateCriteriaBullets()}`,
+      'Doublon détecté'
+    );
+  }
+
+  private findDuplicateSummaryItem(
+    candidate: Pick<EcartBoSummaryItem, 'date' | 'agence' | 'service' | 'pays' | 'nombre' | 'montant' | 'env' | 'envCode' | 'id'>,
+    dateOverride?: string
+  ): EcartBoSummaryItem | undefined {
+    const key = this.buildSummaryDuplicateKey(candidate, dateOverride);
+    return this.summaryItems.find(item => {
+      if (candidate.id != null && item.id === candidate.id) {
+        return false;
+      }
+      return this.buildSummaryDuplicateKey(item, dateOverride) === key;
+    });
+  }
+
   private datesWithinLinkWindow(dateA: string, dateB: string): boolean {
     const parsedA = this.parseDate(dateA);
     const parsedB = this.parseDate(dateB);
@@ -1152,12 +1354,34 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const payload = [...uniqueById.values()].map(item => ({
-      id: item.id!,
-      statut: item.statut === 'ok' ? 'OK' : 'EN_COURS',
-      token: item.token ?? null,
-      env: item.env || 'BO'
-    }));
+    const changedItems = [...uniqueById.values()].filter(item => {
+      const itemAny = item as any;
+      return itemAny.__originalStatut !== item.statut || itemAny.__originalToken !== item.token;
+    });
+    if (changedItems.length === 0) {
+      return;
+    }
+
+    const payload = changedItems.map(item => {
+      const row: {
+        id: number;
+        statut: string;
+        env: string;
+        token?: string;
+        envCode?: string;
+      } = {
+        id: item.id!,
+        statut: item.statut === 'ok' ? 'OK' : 'EN_COURS',
+        env: item.env || 'BO'
+      };
+      if (item.token != null && String(item.token).trim() !== '') {
+        row.token = String(item.token).trim();
+      }
+      if (item.envCode != null && String(item.envCode).trim() !== '') {
+        row.envCode = String(item.envCode).trim();
+      }
+      return row;
+    });
 
     this.isPersistingLinks = true;
     this.subscription.add(
@@ -1552,23 +1776,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     try {
       // Si c'est un item sauvegardé (avec ID), mettre à jour via l'API
       if (this.editingItem.id) {
-        // Formater la date pour le backend
-        const formatDateForBackend = (dateStr: string): string => {
-          if (!dateStr) return new Date().toISOString();
-          if (dateStr.includes('T')) return dateStr;
-          if (dateStr.includes('-')) {
-            const cleanedDate = dateStr.replace(/\.\d+$/, '');
-            return cleanedDate.replace(' ', 'T');
-          }
-          const parsedDate = new Date(dateStr);
-          if (!isNaN(parsedDate.getTime())) {
-            return parsedDate.toISOString();
-          }
-          return new Date().toISOString();
-        };
-
         const updatedData: any = {
-          dateTransaction: formatDateForBackend(this.editForm.date),
+          dateTransaction: this.formatLocalDateTimeForBackend(this.editForm.date),
           agence: this.editForm.agence,
           service: this.editForm.service,
           pays: this.editForm.pays,
@@ -1576,10 +1785,33 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           montantTotal: this.editForm.volume || 0,
           statut: this.editForm.statut === 'ok' ? 'OK' : 'EN_COURS',
           env: this.editForm.env || 'BO',
-          envCode: this.editForm.envCode != null && this.editForm.envCode.trim() !== '' ? this.editForm.envCode.trim() : ''
+          envCode: this.editForm.envCode != null && this.editForm.envCode.trim() !== ''
+            ? this.editForm.envCode.trim()
+            : null
         };
         if (this.editForm.token !== undefined) {
           updatedData.token = this.editForm.token && this.editForm.token.trim() ? this.editForm.token.trim() : null;
+        }
+
+        const duplicate = this.findDuplicateSummaryItem(
+          {
+            id: this.editingItem.id,
+            date: this.editForm.date,
+            agence: this.editForm.agence,
+            service: this.editForm.service,
+            pays: this.editForm.pays,
+            nombre: this.editForm.nombre,
+            montant: this.editForm.volume || 0,
+            env: this.editForm.env,
+            envCode: this.editForm.envCode
+          },
+          this.editForm.date
+        );
+        if (duplicate) {
+          this.showDuplicateConflictPopup(duplicate, 'modification');
+          this.isUpdating = false;
+          this.cdr.markForCheck();
+          return;
         }
 
         const updated = await firstValueFrom(this.ecartBoSummaryService.updateEcartBoSummary(this.editingItem.id, updatedData));
@@ -1644,7 +1876,9 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       this.closeEditModal();
     } catch (error: any) {
       console.error('Erreur lors de la modification:', error);
-      this.popupService.showError(`❌ Erreur: ${error.message || 'Erreur inconnue lors de la modification'}`);
+      this.popupService.showError(
+        `❌ Erreur: ${this.extractHttpErrorMessage(error, 'Erreur inconnue lors de la modification')}`
+      );
     } finally {
       this.isUpdating = false;
       this.cdr.markForCheck();
@@ -1690,12 +1924,47 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
     if (!confirmed) return;
 
+    const batchKeys = new Set<string>();
+    const dedupedItemsToSave: EcartBoSummaryItem[] = [];
+    let inBatchDuplicates = 0;
+    for (const item of itemsToSave) {
+      const key = this.buildSummaryDuplicateKey({ ...item, date: selectedDate });
+      if (batchKeys.has(key)) {
+        inBatchDuplicates += 1;
+        continue;
+      }
+      batchKeys.add(key);
+      dedupedItemsToSave.push(item);
+    }
+
+    if (inBatchDuplicates > 0) {
+      const proceedWithDedup = await this.popupService.showConfirm(
+        `${inBatchDuplicates} doublon(s) dans votre sélection.\n\n` +
+        `Deux lignes sont considérées identiques si elles ont la même ${this.getDuplicateCriteriaText()}.\n\n` +
+        `Seules ${dedupedItemsToSave.length} ligne(s) unique(s) seront envoyées à la sauvegarde. Continuer ?`,
+        'Doublons dans la sélection'
+      );
+      if (!proceedWithDedup) {
+        return;
+      }
+    }
+
+    if (dedupedItemsToSave.length === 0) {
+      await this.popupService.showWarning(
+        `Toutes les lignes sélectionnées sont des doublons.\n\n` +
+        `Critères : ${this.getDuplicateCriteriaText()}.\n\n` +
+        `Modifiez ou supprimez les lignes en double avant de sauvegarder.`,
+        'Aucune ligne unique à enregistrer'
+      );
+      return;
+    }
+
     this.isSaving = true;
     this.cdr.markForCheck();
 
     try {
       // Préparer les données regroupées par agence + service + pays pour la sauvegarde
-      const serviceSummaryData = itemsToSave.map((item) => ({
+      const serviceSummaryData = dedupedItemsToSave.map((item) => ({
         agence: item.agence,
         service: item.service,
         pays: item.pays,
@@ -1759,28 +2028,29 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
       const result = await this.ecartBoSummaryService.saveEcartBoSummary(formattedData);
 
-      const toDayKey = (dateStr: string): string => {
-        const normalized = formatDateForBackend(dateStr);
-        if (normalized.includes('T')) {
-          return normalized.split('T')[0];
-        }
-        return normalized.slice(0, 10);
-      };
-
       const buildSaveIdentity = (payload: {
         agence: string;
         service: string;
         pays: string;
         date: string;
         nombreTransactions: number;
+        montant?: number;
+        env?: string;
+        envCode?: string;
       }): string =>
-        [
-          toDayKey(payload.date),
-          payload.agence || '',
-          payload.service || '',
-          payload.pays || '',
-          String(payload.nombreTransactions ?? 0)
-        ].join('|');
+        this.buildSummaryDuplicateKey(
+          {
+            date: payload.date,
+            agence: payload.agence,
+            service: payload.service,
+            pays: payload.pays,
+            nombre: payload.nombreTransactions,
+            montant: payload.montant ?? 0,
+            env: (payload.env as 'BO' | 'PARTENAIRE') || 'BO',
+            envCode: payload.envCode
+          },
+          payload.date
+        );
 
       const duplicateSignatureCounts = new Map<string, number>();
       (result.duplicateRecords || []).forEach(dup => {
@@ -1788,20 +2058,26 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           agence: String(dup.agence || ''),
           service: String(dup.service || ''),
           pays: String(dup.pays || ''),
-          date: String(dup.dateTransaction || ''),
-          nombreTransactions: Number(dup.nombreTransactions || 0)
+          date: String(dup.dateTransaction || selectedDate),
+          nombreTransactions: Number(dup.nombreTransactions || 0),
+          montant: Number(dup.montant || 0),
+          env: String(dup.env || 'BO'),
+          envCode: dup.envCode != null ? String(dup.envCode) : undefined
         });
         duplicateSignatureCounts.set(signature, (duplicateSignatureCounts.get(signature) || 0) + 1);
       });
 
       const savedItems: EcartBoSummaryItem[] = [];
-      itemsToSave.forEach((item, index) => {
+      dedupedItemsToSave.forEach((item, index) => {
         const signature = buildSaveIdentity({
           agence: formattedData[index].agence,
           service: formattedData[index].service,
           pays: formattedData[index].pays,
           date: formattedData[index].date,
-          nombreTransactions: formattedData[index].nombreTransactions
+          nombreTransactions: formattedData[index].nombreTransactions,
+          montant: formattedData[index].montant,
+          env: formattedData[index].env,
+          envCode: formattedData[index].envCode
         });
         const duplicateCount = duplicateSignatureCounts.get(signature) || 0;
         if (duplicateCount > 0) {
@@ -1811,38 +2087,24 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         savedItems.push(item);
       });
       const savedSelectionKeys = new Set(savedItems.map(item => item.selectionKey));
-      const keptDuplicateCount = Math.max(itemsToSave.length - savedItems.length, 0);
+      const keptDuplicateCount = Math.max(dedupedItemsToSave.length - savedItems.length, 0);
       
       // Construire le message de résultat avec les informations sur les doublons
       if (result.duplicates > 0) {
-        let message = `⚠️ DOUBLONS DÉTECTÉS LORS DE LA SAUVEGARDE\n\n`;
-        message += `📊 Résumé:\n`;
-        message += `  ✅ Enregistrements créés: ${savedItems.length}\n`;
-        message += `  ❌ Doublons détectés: ${result.duplicates}\n`;
-        message += `  👁️ Doublons conservés à l'écran: ${keptDuplicateCount}\n`;
-        message += `  📥 Total reçu: ${result.totalReceived}\n\n`;
-        message += `📋 DÉTAILS DES DOUBLONS:\n`;
-        message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-        
-        if (result.duplicateRecords && result.duplicateRecords.length > 0) {
-          result.duplicateRecords.forEach((dup, index) => {
-            message += `${index + 1}. ${dup.message}\n`;
-            if (index < result.duplicateRecords.length - 1) {
-              message += `\n`;
-            }
-          });
+        let message = `${result.duplicates} doublon(s) n'ont pas été enregistrés.\n\n`;
+        message += `Résumé :\n`;
+        message += `  • ${savedItems.length} ligne(s) créée(s)\n`;
+        message += `  • ${result.duplicates} doublon(s) refusé(s)\n`;
+        if (keptDuplicateCount > 0) {
+          message += `  • ${keptDuplicateCount} doublon(s) conservé(s) à l'écran\n`;
         }
-        
-        message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-        message += `ℹ️ Les doublons sont détectés sur la base de:\n`;
-        message += `   • Date de transaction\n`;
-        message += `   • Agence\n`;
-        message += `   • Service\n`;
-        message += `   • Pays\n`;
-        message += `   • Nombre de transactions`;
-        
-        // Afficher un message d'avertissement avec les détails
-        await this.popupService.showWarning(message, '⚠️ Doublons détectés');
+        message += `\nDétail des doublons :\n`;
+        (result.duplicateRecords || []).forEach((dup, index) => {
+          message += `\n${index + 1}. ${this.formatDuplicateRecordSummary(dup)}`;
+        });
+        message += `\n\nCritères appliqués :\n${this.getDuplicateCriteriaBullets()}`;
+
+        await this.popupService.showWarning(message, 'Doublons lors de la sauvegarde');
       } else {
         const count = savedItems.length;
         const message = `✅ ${count} ligne(s) ${saveScopeLabel} sauvegardée(s) avec succès !`;
@@ -1943,15 +2205,27 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const duplicate = this.findDuplicateSummaryItem({
+      date: this.addForm.date,
+      agence: this.addForm.agence,
+      service: this.addForm.service,
+      pays: this.addForm.pays,
+      nombre: this.addForm.nombre,
+      montant: this.addForm.volume || 0,
+      env: this.addForm.env,
+      envCode: this.addForm.envCode
+    });
+    if (duplicate) {
+      this.showDuplicateConflictPopup(duplicate, 'ajout');
+      return;
+    }
+
     this.isAdding = true;
     this.cdr.markForCheck();
 
     try {
       // Formater la date pour le backend
-      let formattedDate = this.addForm.date;
-      if (formattedDate && !formattedDate.includes('T')) {
-        formattedDate = formattedDate + 'T00:00:00';
-      }
+      const formattedDate = this.formatLocalDateTimeForBackend(this.addForm.date);
 
       // Créer l'objet pour le backend
       const summaryData: any = {
@@ -1973,12 +2247,42 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       }
 
       // Sauvegarder en base de données
-      await firstValueFrom(this.ecartBoSummaryService.createEcartBoSummary(summaryData));
-      
+      const result = await this.ecartBoSummaryService.createEcartBoSummary(summaryData);
+
+      if (result.count === 0 && result.duplicates > 0) {
+        const dup = result.duplicateRecords?.[0];
+        let message = `Cette ligne n'a pas été ajoutée : elle existe déjà en base.\n\n`;
+        if (dup) {
+          message += `${this.formatDuplicateRecordSummary(dup)}\n\n`;
+        } else {
+          message += `${this.formatSummaryItemDuplicateLine({
+            date: this.addForm.date,
+            agence: this.addForm.agence,
+            service: this.addForm.service,
+            pays: this.addForm.pays,
+            nombre: this.addForm.nombre,
+            montant: this.addForm.volume || 0,
+            env: this.addForm.env,
+            envCode: this.addForm.envCode
+          })}\n\n`;
+        }
+        message += `Critères de doublon :\n${this.getDuplicateCriteriaBullets()}`;
+        await this.popupService.showWarning(message, 'Doublon — ligne non ajoutée');
+        return;
+      }
+
+      if (result.count === 0) {
+        await this.popupService.showWarning(
+          'Aucune ligne n\'a été enregistrée. Vérifiez les données saisies.',
+          'Ajout non effectué'
+        );
+        return;
+      }
+
       // Recharger les données sauvegardées pour afficher la nouvelle ligne
       this.loadSavedSummaryData();
-      
-      this.popupService.showSuccess('✅ Ligne ajoutée et sauvegardée avec succès !');
+
+      await this.popupService.showSuccess('Ligne ajoutée et sauvegardée avec succès !');
       this.closeAddModal();
     } catch (error: any) {
       console.error('Erreur lors de l\'ajout:', error);

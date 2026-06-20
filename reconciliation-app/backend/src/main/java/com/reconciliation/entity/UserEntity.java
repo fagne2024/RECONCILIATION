@@ -35,6 +35,12 @@ public class UserEntity {
     @Column(name = "enabled", nullable = false)
     private Boolean enabled = true;
 
+    @Column(name = "failed_login_attempts", nullable = false)
+    private Integer failedLoginAttempts = 0;
+
+    @Column(name = "account_locked_until")
+    private java.time.LocalDateTime accountLockedUntil;
+
     // Getters et setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -54,4 +60,8 @@ public class UserEntity {
     public void setEmail(String email) { this.email = email; }
     public Boolean getEnabled() { return enabled == null || enabled; }
     public void setEnabled(Boolean enabled) { this.enabled = enabled != null ? enabled : true; }
+    public Integer getFailedLoginAttempts() { return failedLoginAttempts != null ? failedLoginAttempts : 0; }
+    public void setFailedLoginAttempts(Integer failedLoginAttempts) { this.failedLoginAttempts = failedLoginAttempts != null ? failedLoginAttempts : 0; }
+    public java.time.LocalDateTime getAccountLockedUntil() { return accountLockedUntil; }
+    public void setAccountLockedUntil(java.time.LocalDateTime accountLockedUntil) { this.accountLockedUntil = accountLockedUntil; }
 } 

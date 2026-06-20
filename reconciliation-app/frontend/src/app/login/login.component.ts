@@ -118,8 +118,7 @@ export class LoginComponent implements OnInit {
         },
         error: (err) => {
           this.loading = false;
-          if (err.status === 401 || err.status === 403) {
-            // Le backend renvoie {"error": "Identifiants invalides"} ou un message similaire
+          if (err.status === 423 || err.status === 401 || err.status === 403) {
             if (err.error && err.error.error) {
               this.error = err.error.error;
             } else {
@@ -268,9 +267,8 @@ export class LoginComponent implements OnInit {
       },
       error: (err) => {
         this.loading = false;
-        if (err.status === 401) {
+        if (err.status === 423 || err.status === 401) {
           this.error = err.error?.error || 'Code d\'authentification invalide. Veuillez réessayer.';
-          // Réinitialiser le formulaire 2FA
           this.twoFactorForm.patchValue({ code: '' });
         } else {
           this.error = 'Une erreur est survenue lors de la vérification du code. Veuillez réessayer.';

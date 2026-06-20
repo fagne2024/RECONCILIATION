@@ -31,6 +31,8 @@ public class ProfilService {
     @Autowired
     private UserRepository userRepository;
     @Autowired
+    private ProfilPaysRepository profilPaysRepository;
+    @Autowired
     private EntityManager entityManager;
 
     // CRUD Profil
@@ -46,13 +48,11 @@ public class ProfilService {
     public void deleteProfil(Long id) {
         System.out.println("💾 Tentative de suppression du profil ID: " + id);
 
-        // Vérifier si le profil existe
         if (!profilRepository.existsById(id)) {
             System.out.println("❌ Profil non trouvé avec l'ID: " + id);
             throw new RuntimeException("Profil non trouvé avec l'ID: " + id);
         }
 
-        // Vérifier si le profil est utilisé par des utilisateurs
         List<UserEntity> usersWithProfil = userRepository.findByProfilId(id);
         if (!usersWithProfil.isEmpty()) {
             System.out.println("❌ Impossible de supprimer le profil: " + usersWithProfil.size() + " utilisateur(s) l'utilisent");
@@ -71,29 +71,39 @@ public class ProfilService {
             throw new RuntimeException(message);
         }
 
-        System.out.println("✅ Profil trouvé, suppression des permissions et actions associées...");
+        System.out.println("✅ Profil trouvé, suppression des dépendances associées...");
 
-        // Supprimer d'abord les permissions associées au profil
-        List<ProfilPermissionEntity> permissions = profilPermissionRepository.findByProfilId(id);
+        profilPermissionRepository.deleteByProfilId(id);
+        System.out.println("🗑️ Permissions du profil supprimées");
 
-        System.out.println("🗑️ Suppression de " + permissions.size() + " permissions associées");
-        profilPermissionRepository.deleteAll(permissions);
+        profilPaysRepository.deleteByProfilId(id);
+        System.out.println("🗑️ Associations pays du profil supprimées");
 
-        // Supprimer les actions associées au profil (table profil_action)
-        System.out.println("🗑️ Suppression des actions associées au profil");
-        try {
-            int deletedActions = entityManager.createNativeQuery("DELETE FROM profil_action WHERE profil_id = :profilId")
-                .setParameter("profilId", id)
-                .executeUpdate();
-            System.out.println("🗑️ Suppression de " + deletedActions + " actions associées");
-        } catch (Exception e) {
-            System.out.println("⚠️ Aucune action à supprimer ou table inexistante: " + e.getMessage());
-        }
-
-        System.out.println("✅ Permissions et actions supprimées, suppression du profil...");
+        deleteProfilActionsIfTableExists(id);
 
         profilRepository.deleteById(id);
         System.out.println("✅ Profil supprimé avec succès: ID " + id);
+    }
+
+    private void deleteProfilActionsIfTableExists(Long profilId) {
+        if (!databaseTableExists("profil_action")) {
+            System.out.println("ℹ️ Table profil_action absente, aucune action à supprimer");
+            return;
+        }
+
+        int deletedActions = entityManager.createNativeQuery("DELETE FROM profil_action WHERE profil_id = :profilId")
+            .setParameter("profilId", profilId)
+            .executeUpdate();
+        System.out.println("🗑️ Suppression de " + deletedActions + " actions associées");
+    }
+
+    private boolean databaseTableExists(String tableName) {
+        Number count = (Number) entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM information_schema.tables " +
+                "WHERE table_schema = DATABASE() AND table_name = :tableName")
+            .setParameter("tableName", tableName)
+            .getSingleResult();
+        return count.longValue() > 0;
     }
 
     // Modules

@@ -23,6 +23,11 @@ export interface AllRankings {
   servicesByFees: RankingItem[];
 }
 
+export interface RankingsBundle {
+  agencies: RankingItem[];
+  services: RankingItem[];
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -46,10 +51,15 @@ export class RankingService {
   }
 
   /**
-   * Classement des agences par nombre de transactions
+   * Classements agences + services en une seule requête
    */
-  getAgencyRankingByTransactions(countries?: string[], period: string = 'month', startDate?: string, endDate?: string): Observable<RankingItem[]> {
-    let url = `${this.apiUrl}/agencies/transactions?period=${period}`;
+  getRankingsBundle(
+    countries?: string[],
+    period: string = 'month',
+    startDate?: string,
+    endDate?: string
+  ): Observable<RankingsBundle> {
+    let url = `${this.apiUrl}/bundle?period=${period}`;
     if (countries && countries.length > 0 && !countries.includes('Tous les pays')) {
       const countryParams = countries.map(c => `country=${encodeURIComponent(c)}`).join('&');
       url += `&${countryParams}`;
@@ -57,82 +67,61 @@ export class RankingService {
     if (startDate && endDate) {
       url += `&startDate=${startDate}&endDate=${endDate}`;
     }
-    return this.http.get<RankingItem[]>(url);
+    return this.http.get<RankingsBundle>(url);
+  }
+
+  private buildRankingUrl(path: string, countries?: string[], period: string = 'month', startDate?: string, endDate?: string): string {
+    let url = `${this.apiUrl}/${path}?period=${period}`;
+    if (countries && countries.length > 0 && !countries.includes('Tous les pays')) {
+      const countryParams = countries.map(c => `country=${encodeURIComponent(c)}`).join('&');
+      url += `&${countryParams}`;
+    }
+    if (startDate && endDate) {
+      url += `&startDate=${startDate}&endDate=${endDate}`;
+    }
+    return url;
+  }
+
+  /**
+   * Classement des agences par nombre de transactions
+   */
+  getAgencyRankingByTransactions(countries?: string[], period: string = 'month', startDate?: string, endDate?: string): Observable<RankingItem[]> {
+    return this.http.get<RankingItem[]>(this.buildRankingUrl('agencies/transactions', countries, period, startDate, endDate));
   }
 
   /**
    * Classement des agences par volume
    */
   getAgencyRankingByVolume(countries?: string[], period: string = 'month', startDate?: string, endDate?: string): Observable<RankingItem[]> {
-    let url = `${this.apiUrl}/agencies/volume?period=${period}`;
-    if (countries && countries.length > 0 && !countries.includes('Tous les pays')) {
-      const countryParams = countries.map(c => `country=${encodeURIComponent(c)}`).join('&');
-      url += `&${countryParams}`;
-    }
-    if (startDate && endDate) {
-      url += `&startDate=${startDate}&endDate=${endDate}`;
-    }
-    return this.http.get<RankingItem[]>(url);
+    return this.http.get<RankingItem[]>(this.buildRankingUrl('agencies/volume', countries, period, startDate, endDate));
   }
 
   /**
    * Classement des agences par frais
    */
   getAgencyRankingByFees(countries?: string[], period: string = 'month', startDate?: string, endDate?: string): Observable<RankingItem[]> {
-    let url = `${this.apiUrl}/agencies/fees?period=${period}`;
-    if (countries && countries.length > 0 && !countries.includes('Tous les pays')) {
-      const countryParams = countries.map(c => `country=${encodeURIComponent(c)}`).join('&');
-      url += `&${countryParams}`;
-    }
-    if (startDate && endDate) {
-      url += `&startDate=${startDate}&endDate=${endDate}`;
-    }
-    return this.http.get<RankingItem[]>(url);
+    return this.http.get<RankingItem[]>(this.buildRankingUrl('agencies/fees', countries, period, startDate, endDate));
   }
 
   /**
    * Classement des services par nombre de transactions
    */
   getServiceRankingByTransactions(countries?: string[], period: string = 'month', startDate?: string, endDate?: string): Observable<RankingItem[]> {
-    let url = `${this.apiUrl}/services/transactions?period=${period}`;
-    if (countries && countries.length > 0 && !countries.includes('Tous les pays')) {
-      const countryParams = countries.map(c => `country=${encodeURIComponent(c)}`).join('&');
-      url += `&${countryParams}`;
-    }
-    if (startDate && endDate) {
-      url += `&startDate=${startDate}&endDate=${endDate}`;
-    }
-    return this.http.get<RankingItem[]>(url);
+    return this.http.get<RankingItem[]>(this.buildRankingUrl('services/transactions', countries, period, startDate, endDate));
   }
 
   /**
    * Classement des services par volume
    */
   getServiceRankingByVolume(countries?: string[], period: string = 'month', startDate?: string, endDate?: string): Observable<RankingItem[]> {
-    let url = `${this.apiUrl}/services/volume?period=${period}`;
-    if (countries && countries.length > 0 && !countries.includes('Tous les pays')) {
-      const countryParams = countries.map(c => `country=${encodeURIComponent(c)}`).join('&');
-      url += `&${countryParams}`;
-    }
-    if (startDate && endDate) {
-      url += `&startDate=${startDate}&endDate=${endDate}`;
-    }
-    return this.http.get<RankingItem[]>(url);
+    return this.http.get<RankingItem[]>(this.buildRankingUrl('services/volume', countries, period, startDate, endDate));
   }
 
   /**
    * Classement des services par frais
    */
   getServiceRankingByFees(countries?: string[], period: string = 'month', startDate?: string, endDate?: string): Observable<RankingItem[]> {
-    let url = `${this.apiUrl}/services/fees?period=${period}`;
-    if (countries && countries.length > 0 && !countries.includes('Tous les pays')) {
-      const countryParams = countries.map(c => `country=${encodeURIComponent(c)}`).join('&');
-      url += `&${countryParams}`;
-    }
-    if (startDate && endDate) {
-      url += `&startDate=${startDate}&endDate=${endDate}`;
-    }
-    return this.http.get<RankingItem[]>(url);
+    return this.http.get<RankingItem[]>(this.buildRankingUrl('services/fees', countries, period, startDate, endDate));
   }
 
   /**

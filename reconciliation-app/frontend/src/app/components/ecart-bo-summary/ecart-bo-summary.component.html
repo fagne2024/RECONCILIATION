@@ -260,6 +260,22 @@
     </div>
   </div>
 
+  <!-- Alerte doublons -->
+  <div class="duplicate-alert-banner" *ngIf="visibleDuplicateCount > 0 && !isLoading">
+    <div class="duplicate-alert-header">
+      <i class="fas fa-exclamation-triangle"></i>
+      <strong>{{ visibleDuplicateCount }} doublon(s) détecté(s)</strong>
+      <span class="duplicate-alert-subtitle">dans la liste affichée</span>
+    </div>
+    <p class="duplicate-alert-criteria">
+      Deux lignes sont identiques si elles ont la même <strong>{{ getDuplicateCriteriaText() }}</strong>.
+      Les lignes concernées sont surlignées en orange dans le tableau.
+    </p>
+    <ul class="duplicate-alert-list" *ngIf="duplicateBannerLines.length > 0">
+      <li *ngFor="let line of duplicateBannerLines">{{ line }}</li>
+    </ul>
+  </div>
+
   <!-- Tableau -->
   <div class="table-section" *ngIf="!isLoading">
     <div class="table-container">
@@ -289,7 +305,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let item of pagedItems; trackBy: trackBySelectionKey" [class.manual-row]="item.isManual" [class.linked-row]="item.linkedId" [class.row-selected]="isSelected(item)">
+          <tr *ngFor="let item of pagedItems; trackBy: trackBySelectionKey" [class.manual-row]="item.isManual" [class.linked-row]="item.linkedId" [class.duplicate-row]="item.isDuplicate" [class.row-selected]="isSelected(item)">
             <td class="td-checkbox">
               <input 
                 *ngIf="item.id || item.statut === 'en cours'"
@@ -301,7 +317,15 @@
               <span *ngIf="!item.id && item.statut !== 'en cours'" class="no-checkbox">—</span>
             </td>
             <td>{{ item.date || '-' }}</td>
-            <td>{{ item.agence || '-' }}</td>
+            <td>
+              {{ item.agence || '-' }}
+              <span
+                class="duplicate-badge"
+                *ngIf="item.isDuplicate"
+                [title]="item.duplicateHint || 'Ligne en doublon'">
+                Doublon
+              </span>
+            </td>
             <td>{{ item.service || '-' }}</td>
             <td>{{ item.pays || '-' }}</td>
             <td>{{ item.env || 'BO' }}</td>

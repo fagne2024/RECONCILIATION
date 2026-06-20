@@ -7,14 +7,342 @@ import {
   ModelRowFilter,
   ModelColumnValueMapping,
   ModelColumnConcatRule,
-  ModelColumnRenameRule
+  ModelColumnRenameRule,
+  matchesConditionValues,
+  parseConditionValues
 } from './auto-processing.service';
 import { buildConcatenatedValue } from '../utils/concat.util';
+import {
+  normalizeColumnKey,
+  renameKeyPreservingOrder,
+  resolveColumnKeyInRow,
+  resolveCanonicalColumnKeysInRow
+} from '../utils/row-column.util';
+import { fixCellEncoding, fixCellEncodingIfNeeded } from '../utils/encoding-fixer';
+
+interface PrecomputedFormatTarget {
+  keys: readonly string[];
+  action: ModelFormatAction;
+  conditionColumnKey: string | null;
+  expectedValues: ReadonlySet<string> | null;
+}
 
 @Injectable({
   providedIn: 'root'
 })
 export class ModelPreProcessingService {
+
+  async applyPreProcessingAsync(
+    rows: Record<string, string>[],
+    config?: ModelPreProcessingConfig | null,
+    options?: {
+      batchSize?: number;
+      onProgress?: (message: string, done: number, total: number) => void | Promise<void>;
+      yieldFn?: () => Promise<void>;
+    }
+  ): Promise<Record<string, string>[]> {
+    if (!config || !rows?.length) {
+      return rows;
+    }
+
+    const batchSize = options?.batchSize ?? (rows.length > 100000 ? 10000 : 5000);
+    let result = rows;
+
+    if (config.rowFilters?.length) {
+      await options?.onProgress?.('Filtres du modèle...', 0, result.length);
+      await options?.yieldFn?.();
+      result = await this.applyRowFiltersAsync(result, config.rowFilters, batchSize, options);
+    }
+
+    if (config.formatActions?.length) {
+      result = await this.applyFormatActionsAsync(result, config.formatActions, batchSize, options);
+    }
+
+    if (config.columnConcatRules?.length) {
+      result = await this.mapRowsBatched(
+        result,
+        batchSize,
+        row => this.applyColumnConcatRulesToRow(row, config.columnConcatRules!),
+        'Concaténation du modèle...',
+        options
+      );
+    }
+
+    if (config.valueMappings?.length) {
+      result = await this.mapRowsBatched(
+        result,
+        batchSize,
+        row => this.applyValueMappingsToRow(row, config.valueMappings!),
+        'Renommage des valeurs...',
+        options
+      );
+    }
+
+    if (config.columnRenameRules?.length) {
+      result = await this.mapRowsBatched(
+        result,
+        batchSize,
+        row => this.applyColumnRenameRulesToRow(row, config.columnRenameRules!),
+        'Renommage des en-têtes...',
+        options
+      );
+    }
+
+    return result;
+  }
+
+  private async mapRowsBatched(
+    rows: Record<string, string>[],
+    batchSize: number,
+    mapRow: (row: Record<string, string>) => Record<string, string>,
+    message: string,
+    options?: {
+      onProgress?: (message: string, done: number, total: number) => void | Promise<void>;
+      yieldFn?: () => Promise<void>;
+    }
+  ): Promise<Record<string, string>[]> {
+    if (!rows.length) {
+      return rows;
+    }
+
+    const effectiveBatch = rows.length > 50000 ? batchSize : Math.min(batchSize, 500);
+    for (let start = 0; start < rows.length; start += effectiveBatch) {
+      await options?.onProgress?.(message, start, rows.length);
+      await options?.yieldFn?.();
+      const end = Math.min(start + effectiveBatch, rows.length);
+      for (let i = start; i < end; i++) {
+        const updated = mapRow(rows[i]);
+        if (updated !== rows[i]) {
+          rows[i] = updated;
+        }
+      }
+      await options?.onProgress?.(message, end, rows.length);
+      await options?.yieldFn?.();
+    }
+    return rows;
+  }
+
+  private async applyFormatActionsAsync(
+    rows: Record<string, string>[],
+    actions: ModelFormatAction[],
+    batchSize: number,
+    options?: {
+      onProgress?: (message: string, done: number, total: number) => void | Promise<void>;
+      yieldFn?: () => Promise<void>;
+    }
+  ): Promise<Record<string, string>[]> {
+    const enabledActions = actions.filter(action => action.enabled && action.columns?.length);
+    if (!enabledActions.length) {
+      return rows;
+    }
+
+    const orderedActions = [...enabledActions].sort(
+      (a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER)
+    );
+
+    const plan = this.buildFormatActionPlan(rows[0], orderedActions);
+    if (!plan.length) {
+      return rows;
+    }
+
+    const macroBatch = rows.length > 50000 ? batchSize : Math.min(batchSize, 200);
+    const microBatch = rows.length > 50000 ? 200 : 50;
+    const progressMessage = 'Formatage du modèle...';
+
+    for (let start = 0; start < rows.length; start += macroBatch) {
+      const macroEnd = Math.min(start + macroBatch, rows.length);
+      for (let micro = start; micro < macroEnd; micro += microBatch) {
+        const microEnd = Math.min(micro + microBatch, macroEnd);
+        await options?.onProgress?.(progressMessage, micro, rows.length);
+        await options?.yieldFn?.();
+        this.applyFormatPlanToRows(rows, plan, micro, microEnd);
+        await options?.onProgress?.(progressMessage, microEnd, rows.length);
+        await options?.yieldFn?.();
+      }
+    }
+
+    return rows;
+  }
+
+  private buildFormatActionPlan(
+    sampleRow: Record<string, string>,
+    orderedActions: ModelFormatAction[]
+  ): PrecomputedFormatTarget[] {
+    const targets: PrecomputedFormatTarget[] = [];
+
+    for (const action of orderedActions) {
+      for (const column of action.columns) {
+        const keys = resolveCanonicalColumnKeysInRow(sampleRow, column);
+        if (!keys.length) {
+          continue;
+        }
+
+        const merged = this.mergeFormatActionForColumn(action, column);
+        const columnSettings = this.findFormatColumnSettings(action, column);
+        let conditionColumnKey: string | null = null;
+        let expectedValues: ReadonlySet<string> | null = null;
+
+        if (columnSettings?.applyConditionEnabled === true) {
+          const conditionColumn = (columnSettings.conditionColumn ?? '').trim();
+          if (conditionColumn) {
+            conditionColumnKey = resolveColumnKeyInRow(sampleRow, conditionColumn);
+            const parsed = parseConditionValues(columnSettings.conditionValue);
+            expectedValues = parsed.length ? new Set(parsed) : null;
+          }
+        } else if (action.applyConditionEnabled) {
+          const conditionColumn = (action.conditionColumn ?? '').trim();
+          if (conditionColumn) {
+            conditionColumnKey = resolveColumnKeyInRow(sampleRow, conditionColumn);
+            const parsed = parseConditionValues(action.conditionValue);
+            expectedValues = parsed.length ? new Set(parsed) : null;
+          }
+        }
+
+        targets.push({
+          keys,
+          action: merged,
+          conditionColumnKey,
+          expectedValues
+        });
+      }
+    }
+
+    return targets;
+  }
+
+  private applyFormatPlanToRows(
+    rows: Record<string, string>[],
+    plan: PrecomputedFormatTarget[],
+    start: number,
+    end: number
+  ): void {
+    for (let i = start; i < end; i++) {
+      const row = rows[i];
+      for (const target of plan) {
+        if (target.conditionColumnKey && target.expectedValues?.size) {
+          const conditionValue = String(row[target.conditionColumnKey] ?? '').trim();
+          if (!target.expectedValues.has(conditionValue)) {
+            continue;
+          }
+        }
+
+        const primaryKey = target.keys[0];
+        const rawValue = row[primaryKey];
+        if (rawValue === undefined || rawValue === null) {
+          continue;
+        }
+
+        const formattedValue = this.applyFormatActionToValue(
+          this.coerceFormatCellValueFast(rawValue),
+          target.action
+        );
+
+        for (const key of target.keys) {
+          row[key] = formattedValue;
+        }
+      }
+    }
+  }
+
+  private applyFormatActionsToRow(
+    row: Record<string, string>,
+    orderedActions: ModelFormatAction[]
+  ): Record<string, string> {
+    for (const action of orderedActions) {
+      for (const column of action.columns) {
+        const merged = this.mergeFormatActionForColumn(action, column);
+        if (!this.isFormatActionConditionMet(row, action, column)) {
+          continue;
+        }
+
+        const key = resolveColumnKeyInRow(row, column);
+        if (!key) {
+          continue;
+        }
+
+        const rawValue = row[key];
+        if (rawValue === undefined || rawValue === null) {
+          continue;
+        }
+
+        const formattedValue = this.applyFormatActionToValue(
+          this.coerceFormatCellValue(rawValue),
+          merged
+        );
+
+        for (const aliasKey of resolveCanonicalColumnKeysInRow(row, column)) {
+          row[aliasKey] = formattedValue;
+        }
+      }
+    }
+
+    return row;
+  }
+
+  private applyColumnConcatRulesToRow(
+    row: Record<string, string>,
+    rules: ModelColumnConcatRule[]
+  ): Record<string, string> {
+    const activeRules = this.getActiveColumnConcatRules(rules);
+    if (!activeRules.length) {
+      return row;
+    }
+
+    const newRow = row;
+    for (const rule of activeRules) {
+      newRow[rule.targetColumn] = buildConcatenatedValue(
+        rule.sourceColumns.map(column => newRow[column]),
+        rule.separator ?? ''
+      );
+    }
+    return newRow;
+  }
+
+  private applyValueMappingsToRow(
+    row: Record<string, string>,
+    mappings: ModelColumnValueMapping[]
+  ): Record<string, string> {
+    const activeMappings = this.getActiveValueMappings(mappings);
+    if (!activeMappings.length) {
+      return row;
+    }
+
+    for (const mapping of activeMappings) {
+      const key = resolveColumnKeyInRow(row, mapping.column);
+      if (!key || row[key] === undefined || row[key] === null) {
+        continue;
+      }
+      const currentValue = String(row[key]);
+      if (currentValue === mapping.fromValue) {
+        row[key] = mapping.toValue;
+      }
+    }
+    return row;
+  }
+
+  private applyColumnRenameRulesToRow(
+    row: Record<string, string>,
+    rules: ModelColumnRenameRule[]
+  ): Record<string, string> {
+    const activeRules = this.getActiveColumnRenameRules(rules);
+    if (!activeRules.length) {
+      return row;
+    }
+
+    let newRow = { ...row };
+    for (const rule of activeRules) {
+      const targetColumn = rule.targetColumn?.trim();
+      if (!rule.sourceColumn || !targetColumn) {
+        continue;
+      }
+      const sourceKey = resolveColumnKeyInRow(newRow, rule.sourceColumn);
+      if (!sourceKey || sourceKey === targetColumn) {
+        continue;
+      }
+      newRow = renameKeyPreservingOrder(newRow, sourceKey, targetColumn);
+    }
+    return newRow;
+  }
 
   applyPreProcessing(
     rows: Record<string, string>[],
@@ -68,9 +396,54 @@ export class ModelPreProcessingService {
         continue;
       }
 
-      filtered = filtered.filter(row =>
-        filter.selectedValues.includes(String(row[filter.column] ?? ''))
-      );
+      filtered = filtered.filter(row => {
+        const key = resolveColumnKeyInRow(row, filter.column);
+        if (!key) {
+          return false;
+        }
+        return filter.selectedValues.includes(String(row[key] ?? ''));
+      });
+    }
+
+    return filtered;
+  }
+
+  private async applyRowFiltersAsync(
+    rows: Record<string, string>[],
+    filters: ModelRowFilter[],
+    batchSize: number,
+    options?: {
+      onProgress?: (message: string, done: number, total: number) => void | Promise<void>;
+      yieldFn?: () => Promise<void>;
+    }
+  ): Promise<Record<string, string>[]> {
+    if (!filters.length || !rows.length) {
+      return rows;
+    }
+
+    let filtered = rows;
+    for (const filter of filters) {
+      if (!filter.enabled || !filter.column || !filter.selectedValues?.length) {
+        continue;
+      }
+      if (filter.selectedValues.includes('__TOUS__')) {
+        continue;
+      }
+
+      const next: Record<string, string>[] = [];
+      for (let start = 0; start < filtered.length; start += batchSize) {
+        const end = Math.min(start + batchSize, filtered.length);
+        for (let i = start; i < end; i++) {
+          const row = filtered[i];
+          const key = resolveColumnKeyInRow(row, filter.column);
+          if (key && filter.selectedValues.includes(String(row[key] ?? ''))) {
+            next.push(row);
+          }
+        }
+        await options?.onProgress?.('Filtres du modèle...', end, filtered.length);
+        await options?.yieldFn?.();
+      }
+      filtered = next;
     }
 
     return filtered;
@@ -85,21 +458,20 @@ export class ModelPreProcessingService {
       return rows;
     }
 
-    return rows.map(row => {
-      const newRow = { ...row };
+    const orderedActions = [...enabledActions].sort(
+      (a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER)
+    );
 
-      for (const action of enabledActions) {
-        for (const column of action.columns) {
-          if (newRow[column] === undefined || newRow[column] === null) {
-            continue;
-          }
+    const plan = this.buildFormatActionPlan(rows[0], orderedActions);
+    if (!plan.length) {
+      return rows;
+    }
 
-          newRow[column] = this.applyFormatActionToValue(String(newRow[column]), action);
-        }
-      }
+    for (let i = 0; i < rows.length; i++) {
+      this.applyFormatPlanToRows(rows, plan, i, i + 1);
+    }
 
-      return newRow;
-    });
+    return rows;
   }
 
   applyColumnConcatRules(
@@ -111,18 +483,7 @@ export class ModelPreProcessingService {
       return rows;
     }
 
-    return rows.map(row => {
-      const newRow = { ...row };
-
-      for (const rule of activeRules) {
-        newRow[rule.targetColumn] = buildConcatenatedValue(
-          rule.sourceColumns.map(column => newRow[column]),
-          rule.separator ?? ''
-        );
-      }
-
-      return newRow;
-    });
+    return rows.map(row => this.applyColumnConcatRulesToRow(row, rules));
   }
 
   applyColumnRenameRules(
@@ -134,24 +495,7 @@ export class ModelPreProcessingService {
       return rows;
     }
 
-    return rows.map(row => {
-      const newRow = { ...row };
-
-      for (const rule of activeRules) {
-        const sourceColumn = rule.sourceColumn;
-        const targetColumn = rule.targetColumn?.trim();
-        if (!sourceColumn || !targetColumn || sourceColumn === targetColumn) {
-          continue;
-        }
-
-        if (Object.prototype.hasOwnProperty.call(newRow, sourceColumn)) {
-          newRow[targetColumn] = newRow[sourceColumn];
-          delete newRow[sourceColumn];
-        }
-      }
-
-      return newRow;
-    });
+    return rows.map(row => this.applyColumnRenameRulesToRow(row, rules));
   }
 
   applyValueMappings(
@@ -163,22 +507,107 @@ export class ModelPreProcessingService {
       return rows;
     }
 
-    return rows.map(row => {
-      const newRow = { ...row };
+    return rows.map(row => this.applyValueMappingsToRow(row, mappings));
+  }
 
-      for (const mapping of activeMappings) {
-        if (newRow[mapping.column] === undefined || newRow[mapping.column] === null) {
-          continue;
-        }
+  private mergeFormatActionForColumn(action: ModelFormatAction, column: string): ModelFormatAction {
+    const overrides = this.findFormatColumnSettings(action, column);
+    if (!overrides) {
+      return action;
+    }
+    return {
+      ...action,
+      ...overrides,
+      type: action.type,
+      enabled: action.enabled,
+      columns: action.columns,
+      order: action.order,
+      columnSettings: action.columnSettings
+    };
+  }
 
-        const currentValue = String(newRow[mapping.column]);
-        if (currentValue === mapping.fromValue) {
-          newRow[mapping.column] = mapping.toValue;
-        }
+  private findFormatColumnSettings(
+    action: ModelFormatAction,
+    column: string
+  ): ModelFormatAction['columnSettings'] extends Record<string, infer S> ? S | undefined : undefined {
+    if (!action.columnSettings) {
+      return undefined;
+    }
+    if (action.columnSettings[column]) {
+      return action.columnSettings[column];
+    }
+    const targetKey = this.normalizeColumnKey(column);
+    for (const [key, settings] of Object.entries(action.columnSettings)) {
+      if (this.normalizeColumnKey(key) === targetKey) {
+        return settings;
       }
+    }
+    return undefined;
+  }
 
-      return newRow;
-    });
+  /** Vérifie la condition optionnelle (action ou colonne) avant d'appliquer le formatage. */
+  private isFormatActionConditionMet(
+    row: Record<string, string>,
+    action: ModelFormatAction,
+    targetColumn: string
+  ): boolean {
+    const columnSettings = this.findFormatColumnSettings(action, targetColumn);
+
+    let conditionColumn = '';
+    let conditionValue = '';
+
+    if (columnSettings?.applyConditionEnabled === true) {
+      conditionColumn = (columnSettings.conditionColumn ?? '').trim();
+      conditionValue = String(columnSettings.conditionValue ?? '').trim();
+    } else if (action.applyConditionEnabled) {
+      conditionColumn = (action.conditionColumn ?? '').trim();
+      conditionValue = String(action.conditionValue ?? '').trim();
+    } else {
+      return true;
+    }
+
+    if (!conditionColumn) {
+      return true;
+    }
+
+    const key = resolveColumnKeyInRow(row, conditionColumn);
+    if (!key) {
+      return false;
+    }
+
+    return matchesConditionValues(String(row[key] ?? ''), conditionValue);
+  }
+
+  private coerceFormatCellValueFast(value: unknown): string {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) {
+        return '';
+      }
+      return String(value);
+    }
+
+    const asString = String(value);
+    if (!/Ã.|Â.|ï¿½|\uFFFD/.test(asString)) {
+      return asString.trim();
+    }
+
+    return fixCellEncodingIfNeeded(asString).trim();
+  }
+
+  private coerceFormatCellValue(value: unknown): string {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) {
+        return '';
+      }
+      return String(value);
+    }
+    return fixCellEncodingIfNeeded(String(value)).trim();
   }
 
   private applyFormatActionToValue(value: string, action: ModelFormatAction): string {
@@ -291,30 +720,65 @@ export class ModelPreProcessingService {
 
   private applyRemoveDecimals(value: string, action: ModelFormatAction): string {
     const trimmed = value.trim();
-    const separator = action.decimalSeparator ?? ',';
-    const keepTrailingZeros = action.keepTrailingZeros ?? false;
-
-    if (separator === ',') {
-      const frenchPattern = /^([\d\s]+)\s*,\s*(\d+)\s*$/;
-      const match = trimmed.match(frenchPattern);
-      if (match) {
-        const decimalPart = match[2];
-        if (keepTrailingZeros && !/^0+$/.test(decimalPart)) {
-          return trimmed;
-        }
-        return match[1].replace(/\s/g, '');
-      }
-      return trimmed;
+    if (!trimmed) {
+      return value;
     }
 
-    const englishPattern = /^([\d,]+)\s*\.\s*(\d+)\s*$/;
-    const match = trimmed.match(englishPattern);
-    if (match) {
-      const decimalPart = match[2];
+    const keepTrailingZeros = action.keepTrailingZeros ?? false;
+    const preferredSeparator = action.decimalSeparator ?? ',';
+    const sign = trimmed.startsWith('-') ? '-' : trimmed.startsWith('+') ? '+' : '';
+    const unsigned = sign ? trimmed.slice(1).trim() : trimmed;
+
+    const stripDecimalPart = (integerPart: string, decimalPart: string): string | null => {
       if (keepTrailingZeros && !/^0+$/.test(decimalPart)) {
-        return trimmed;
+        return null;
       }
-      return match[1].replace(/,/g, '');
+      return integerPart;
+    };
+
+    const tryFrench = (input: string): string | null => {
+      const match = input.match(/^([\d\s]+)\s*,\s*(\d+)\s*$/);
+      if (!match) {
+        return null;
+      }
+      const result = stripDecimalPart(match[1].replace(/\s/g, ''), match[2]);
+      return result;
+    };
+
+    const tryEnglish = (input: string): string | null => {
+      const match = input.match(/^([\d,]+)\s*\.\s*(\d+)\s*$/);
+      if (!match) {
+        return null;
+      }
+      const result = stripDecimalPart(match[1].replace(/,/g, ''), match[2]);
+      return result;
+    };
+
+    const tryPlainDot = (input: string): string | null => {
+      const match = input.match(/^(\d+)\.(\d+)$/);
+      if (!match) {
+        return null;
+      }
+      return stripDecimalPart(match[1], match[2]);
+    };
+
+    const tryPlainComma = (input: string): string | null => {
+      const match = input.match(/^(\d+),(\d+)$/);
+      if (!match) {
+        return null;
+      }
+      return stripDecimalPart(match[1], match[2]);
+    };
+
+    const attempts = preferredSeparator === '.'
+      ? [tryEnglish, tryPlainDot, tryFrench, tryPlainComma]
+      : [tryFrench, tryPlainComma, tryEnglish, tryPlainDot];
+
+    for (const attempt of attempts) {
+      const result = attempt(unsigned);
+      if (result !== null) {
+        return `${sign}${result}`;
+      }
     }
 
     return trimmed;
@@ -360,6 +824,96 @@ export class ModelPreProcessingService {
       || this.getActiveColumnConcatRules(config?.columnConcatRules).length > 0
       || this.getActiveValueMappings(config?.valueMappings).length > 0
       || this.getActiveColumnRenameRules(config?.columnRenameRules).length > 0;
+  }
+
+  /** Colonnes référencées par la config pré-traitement (filtres, formatage, etc.). */
+  collectReferencedColumns(config?: ModelPreProcessingConfig | null): string[] {
+    const columns = new Set<string>();
+
+    for (const filter of this.getActiveFilters(config)) {
+      if (filter.column) {
+        columns.add(filter.column);
+      }
+    }
+
+    for (const action of this.getActiveFormatActions(config)) {
+      action.columns?.forEach(column => columns.add(column));
+      if (action.conditionColumn) {
+        columns.add(action.conditionColumn);
+      }
+      Object.values(action.columnSettings ?? {}).forEach(settings => {
+        if (settings.conditionColumn) {
+          columns.add(settings.conditionColumn);
+        }
+      });
+    }
+
+    for (const rule of this.getActiveColumnConcatRules(config?.columnConcatRules)) {
+      rule.sourceColumns?.forEach(column => columns.add(column));
+      if (rule.targetColumn) {
+        columns.add(rule.targetColumn);
+      }
+    }
+
+    for (const mapping of this.getActiveValueMappings(config?.valueMappings)) {
+      if (mapping.column) {
+        columns.add(mapping.column);
+      }
+    }
+
+    for (const rule of this.getActiveColumnRenameRules(config?.columnRenameRules)) {
+      if (rule.sourceColumn) {
+        columns.add(rule.sourceColumn);
+      }
+      if (rule.targetColumn) {
+        columns.add(rule.targetColumn);
+      }
+    }
+
+    return Array.from(columns);
+  }
+
+  /**
+   * Colonnes sources requises avant traitement (exclut les cibles créées par renommage / concaténation).
+   */
+  collectInputColumns(config?: ModelPreProcessingConfig | null): string[] {
+    const columns = new Set<string>();
+
+    for (const filter of this.getActiveFilters(config)) {
+      if (filter.column) {
+        columns.add(filter.column);
+      }
+    }
+
+    for (const action of this.getActiveFormatActions(config)) {
+      action.columns?.forEach(column => columns.add(column));
+      if (action.conditionColumn) {
+        columns.add(action.conditionColumn);
+      }
+      Object.values(action.columnSettings ?? {}).forEach(settings => {
+        if (settings.conditionColumn) {
+          columns.add(settings.conditionColumn);
+        }
+      });
+    }
+
+    for (const rule of this.getActiveColumnConcatRules(config?.columnConcatRules)) {
+      rule.sourceColumns?.forEach(column => columns.add(column));
+    }
+
+    for (const mapping of this.getActiveValueMappings(config?.valueMappings)) {
+      if (mapping.column) {
+        columns.add(mapping.column);
+      }
+    }
+
+    for (const rule of this.getActiveColumnRenameRules(config?.columnRenameRules)) {
+      if (rule.sourceColumn) {
+        columns.add(rule.sourceColumn);
+      }
+    }
+
+    return Array.from(columns);
   }
 
   getActiveFilters(config?: ModelPreProcessingConfig | null): ModelRowFilter[] {
@@ -486,10 +1040,11 @@ export class ModelPreProcessingService {
 
   private describeFormatAction(action: ModelFormatAction): string {
     const columns = action.columns.join(', ');
+    const conditionSuffix = this.describeFormatActionCondition(action);
 
     switch (action.type) {
       case 'removeSpecialStrings':
-        return `${columns} — supprimer « ${action.specialStringToRemove ?? ''} » (${action.specialStringRemovalMode ?? 'all'})`;
+        return `${columns} — supprimer « ${action.specialStringToRemove ?? ''} » (${action.specialStringRemovalMode ?? 'all'})${conditionSuffix}`;
       case 'removeCharacters': {
         const mode = action.removeCharMode === 'keep' ? 'conserver' : 'supprimer';
         const position = action.removeCharPosition === 'end'
@@ -497,23 +1052,33 @@ export class ModelPreProcessingService {
           : action.removeCharPosition === 'specific'
             ? `position ${action.removeCharSpecificPosition ?? 1}`
             : 'début';
-        return `${columns} — ${mode} ${action.removeCharCount ?? 1} caractère(s) depuis la ${position}`;
+        return `${columns} — ${mode} ${action.removeCharCount ?? 1} caractère(s) depuis la ${position}${conditionSuffix}`;
       }
       case 'removeNumbers':
-        return `${columns} — supprimer les chiffres`;
+        return `${columns} — supprimer les chiffres${conditionSuffix}`;
       case 'removeIndicatif':
-        return `${columns} — supprimer indicatif (${action.indicatifType ?? 'international'})`;
+        return `${columns} — supprimer indicatif (${action.indicatifType ?? 'international'})${conditionSuffix}`;
       case 'removeDecimals':
-        return `${columns} — supprimer décimales (séparateur ${action.decimalSeparator ?? ','})`;
+        return `${columns} — supprimer décimales (séparateur ${action.decimalSeparator ?? ','})${conditionSuffix}`;
       case 'keepLastDigits':
-        return `${columns} — garder ${action.keepLastDigitsCount ?? 3} derniers chiffres`;
+        return `${columns} — garder ${action.keepLastDigitsCount ?? 3} derniers chiffres${conditionSuffix}`;
       case 'removeZeroDecimals':
-        return `${columns} — supprimer .0 en fin de valeur`;
+        return `${columns} — supprimer .0 en fin de valeur${conditionSuffix}`;
       case 'removeSpaces':
-        return `${columns} — supprimer espaces (${action.removeSpacesType ?? 'all'})`;
+        return `${columns} — supprimer espaces (${action.removeSpacesType ?? 'all'})${conditionSuffix}`;
       default:
-        return columns;
+        return `${columns}${conditionSuffix}`;
     }
+  }
+
+  private describeFormatActionCondition(action: ModelFormatAction): string {
+    if (!action.applyConditionEnabled || !action.conditionColumn?.trim()) {
+      return '';
+    }
+    const values = (action.conditionValue ?? '').trim();
+    return values.includes(',')
+      ? ` [si ${action.conditionColumn} ∈ { ${values} }]`
+      : ` [si ${action.conditionColumn} = « ${values} »]`;
   }
 
   /** Colonnes nécessaires en entrée / conservées en sortie pour le mode assisté. */
@@ -563,6 +1128,16 @@ export class ModelPreProcessingService {
         for (const column of action.columns || []) {
           addInput(column);
           addOutput(column);
+        }
+        if (action.applyConditionEnabled && action.conditionColumn?.trim()) {
+          addInput(action.conditionColumn.trim());
+        }
+        if (action.columnSettings) {
+          for (const settings of Object.values(action.columnSettings)) {
+            if (settings.applyConditionEnabled && settings.conditionColumn?.trim()) {
+              addInput(settings.conditionColumn.trim());
+            }
+          }
         }
       }
       for (const rule of this.getActiveColumnConcatRules(cfg.columnConcatRules)) {
@@ -634,26 +1209,14 @@ export class ModelPreProcessingService {
   }
 
   private normalizeColumnKey(columnName: string): string {
-    return (columnName || '')
-      .trim()
-      .normalize('NFD')
-      .replace(/\p{M}/gu, '')
-      .toLowerCase()
-      .replace(/\s+/g, ' ');
+    return normalizeColumnKey(columnName);
   }
 
   private resolveRowColumnValue(row: Record<string, string>, column: string): string {
-    if (Object.prototype.hasOwnProperty.call(row, column)) {
-      return row[column] ?? '';
+    const key = resolveColumnKeyInRow(row, column);
+    if (key) {
+      return row[key] ?? '';
     }
-
-    const targetKey = this.normalizeColumnKey(column);
-    for (const [key, value] of Object.entries(row)) {
-      if (this.normalizeColumnKey(key) === targetKey) {
-        return value ?? '';
-      }
-    }
-
     return '';
   }
 

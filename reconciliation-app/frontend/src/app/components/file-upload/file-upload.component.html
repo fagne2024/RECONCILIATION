@@ -1,4 +1,13 @@
-<div class="file-upload-container" [class.assisted-upload-page]="assistedOnly || certificationMode">
+<ng-container *ngIf="!embedTraitementSection">
+<div class="file-upload-container" [class.manual-upload-page]="manualOnly" [class.assisted-upload-page]="assistedOnly || certificationMode">
+    <div class="manual-page-header" *ngIf="manualOnly">
+        <button type="button" class="back-btn" (click)="goBackToManualLauncher()">
+            <i class="fas fa-arrow-left"></i>
+            Retour au lanceur
+        </button>
+        <h2>Mode Manuel</h2>
+        <p>Chargez vos fichiers BO et Partenaire séparément, puis sélectionnez les colonnes clés pour lancer la réconciliation.</p>
+    </div>
     <div class="assisted-page-header" *ngIf="assistedOnly && !certificationMode">
         <button type="button" class="back-btn" (click)="goBackToLauncher()">
             <i class="fas fa-arrow-left"></i>
@@ -16,8 +25,8 @@
         <p>Importez les fichiers TRXBO et OPPART pour réconcilier et certifier le solde (ouverture, clôture, variation et agrégats d'écarts).</p>
     </div>
 
-    <!-- Mode de réconciliation (masqué en mode assisté) -->
-    <div class="reconciliation-mode-selector" *ngIf="!isAssistedLike">
+    <!-- Mode de réconciliation (masqué sur les pages dédiées /upload et /upload-assisted) -->
+    <div class="reconciliation-mode-selector" *ngIf="!isAssistedLike && !manualOnly">
         <h3>🔄 Mode de Réconciliation</h3>
         <div class="mode-options">
             <label class="mode-option">
@@ -48,6 +57,14 @@
         </div>
     </div>
 
+    <div class="manual-option-banner" *ngIf="manualOnly">
+        <i class="fas fa-cogs"></i>
+        <div>
+            <strong>Option 1</strong>
+            <span>Choisissez les fichiers BO et Partenaire séparément, puis sélectionnez les colonnes clés pour définir les critères de correspondance avant de lancer la réconciliation.</span>
+        </div>
+    </div>
+
     <div class="assisted-option-banner" *ngIf="isAssistedLike">
         <i class="fas fa-magic"></i>
         <div>
@@ -57,7 +74,7 @@
     </div>
 
     <!-- Section d'information sur le mode 1-1 -->
-    <div class="info-section" *ngIf="reconciliationMode === 'manual'">
+    <div class="info-section" *ngIf="reconciliationMode === 'manual' && !manualOnly">
         <div class="info-card">
             <div class="info-header">
                 <i class="fas fa-info-circle"></i>
@@ -123,7 +140,7 @@
     -->
 
     <!-- Indicateur discret du mode 1-1 actif -->
-    <div class="reconciliation-mode-indicator" *ngIf="reconciliationMode === 'manual' && reconciliationType === '1-1'">
+    <div class="reconciliation-mode-indicator" *ngIf="reconciliationMode === 'manual' && reconciliationType === '1-1' && !manualOnly">
         <div class="mode-indicator-card">
             <i class="fas fa-balance-scale"></i>
             <span class="mode-text">Mode de réconciliation 1-1 actif</span>
@@ -601,7 +618,7 @@
                 <div class="error-content">
                     <div class="error-text">{{ errorMessage }}</div>
                     <div class="error-actions" *ngIf="errorMessage.includes('Aucun modèle de réconciliation trouvé')">
-                        <button class="btn help-btn" (click)="goToModelConfiguration()">
+                        <button class="btn help-btn" *ngIf="canAccessModelConfiguration()" (click)="goToModelConfiguration()">
                             <i class="fas fa-cog"></i>
                             Configurer les Modèles
                         </button>
@@ -698,8 +715,8 @@
 
         <!-- Boutons pour le mode automatique -->
         <div class="button-container" [class.assisted-actions]="isAssistedLike" *ngIf="reconciliationMode === 'automatic'">
-            <button class="btn proceed-btn" [class.reconciliation-launch-btn]="isAssistedLike" [disabled]="!canProceedAuto()" (click)="onAutoProceed()">
-                {{ certificationMode ? 'Lancer la certification' : (assistedOnly ? 'Lancer la réconciliation' : '🔄 Lancer la Réconciliation Automatique') }}
+            <button class="btn proceed-btn" [class.reconciliation-launch-btn]="isAssistedLike" [disabled]="!canProceedAuto() || autoProceedBusy" (click)="onAutoProceed()">
+                {{ autoProceedBusy ? 'Préparation en cours...' : (certificationMode ? 'Lancer la certification' : (assistedOnly ? 'Lancer la réconciliation' : '🔄 Lancer la Réconciliation Automatique')) }}
             </button>
             <button
                 *ngIf="isAssistedLike"
@@ -987,15 +1004,16 @@
                 </div>
                 <!-- Boutons d'action principaux -->
                 <div class="service-controls">
-                    <button class="modern-btn select-all-btn" (click)="selectAllPartnerServices()">
+                    <button class="modern-btn select-all-btn" [disabled]="partnerSelectionBusy" (click)="selectAllPartnerServices()">
                         <i class="fas fa-check-double"></i>
                         Tout sélectionner
                     </button>
-                    <button class="modern-btn deselect-all-btn" (click)="deselectAllPartnerServices()">
+                    <button class="modern-btn deselect-all-btn" [disabled]="partnerSelectionBusy" (click)="deselectAllPartnerServices()">
                         <i class="fas fa-check-double"></i>
                         Tout désélectionner
                     </button>
                 </div>
+                <p class="partner-selection-progress" *ngIf="partnerSelectionBusy && processingMessage">{{ processingMessage }}</p>
                 
                 <!-- Grille de services en cartes -->
                 <div class="service-grid">
@@ -1031,7 +1049,7 @@
                     Passer
                 </button>
                 <button class="modern-btn confirm-btn" 
-                        [disabled]="partnerSelectedServices.length === 0"
+                        [disabled]="partnerSelectedServices.length === 0 || partnerSelectionBusy"
                         (click)="confirmPartnerServiceSelection()">
                     <i class="fas fa-check"></i>
                     Confirmer la sélection
@@ -1066,15 +1084,16 @@
                 </div>
                 <!-- Boutons d'action principaux -->
                 <div class="service-controls">
-                    <button class="modern-btn select-all-btn" (click)="selectAllPartnerStatuses()">
+                    <button class="modern-btn select-all-btn" [disabled]="partnerSelectionBusy" (click)="selectAllPartnerStatuses()">
                         <i class="fas fa-check-double"></i>
                         Tout sélectionner
                     </button>
-                    <button class="modern-btn deselect-all-btn" (click)="deselectAllPartnerStatuses()">
+                    <button class="modern-btn deselect-all-btn" [disabled]="partnerSelectionBusy" (click)="deselectAllPartnerStatuses()">
                         <i class="fas fa-check-double"></i>
                         Tout désélectionner
                     </button>
                 </div>
+                <p class="partner-selection-progress" *ngIf="partnerSelectionBusy && processingMessage">{{ processingMessage }}</p>
                 
                 <!-- Grille de statuts en cartes -->
                 <div class="service-grid">
@@ -1110,7 +1129,7 @@
                     Passer
                 </button>
                 <button class="modern-btn confirm-btn" 
-                        [disabled]="partnerSelectedStatuses.length === 0"
+                        [disabled]="partnerSelectedStatuses.length === 0 || partnerSelectionBusy"
                         (click)="confirmPartnerStatusSelection()">
                     <i class="fas fa-check"></i>
                     Confirmer la sélection
@@ -1309,8 +1328,8 @@
     </div>
 
     <!-- Boutons pour le mode manuel -->
-    <div class="button-container" *ngIf="reconciliationMode === 'manual'">
-        <div class="debug-info" style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;">
+    <div class="button-container" [class.manual-actions]="manualOnly" *ngIf="reconciliationMode === 'manual'">
+        <div class="debug-info" *ngIf="!manualOnly" style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;">
             <strong>Debug:</strong> BO: {{ boData.length }} lignes | Partenaire: {{ partnerData.length }} lignes | Bouton actif: {{ canProceed() ? 'Oui' : 'Non' }}
         </div>
         
@@ -1326,10 +1345,10 @@
             <strong>Gros fichier détecté:</strong> Le système utilisera un traitement par chunks optimisé pour éviter les erreurs de mémoire. Le traitement peut prendre plus de temps mais sera plus stable.
         </div>
         
-        <button class="btn proceed-btn" [disabled]="!canProceed()" (click)="onProceed()" style="background-color: #4CAF50; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px;">
-            🚀 Lancer la Réconciliation Manuelle
+        <button class="btn proceed-btn" [class.reconciliation-launch-btn]="manualOnly" [class.legacy-manual-proceed-btn]="!manualOnly" [disabled]="!canProceed()" (click)="onProceed()">
+            {{ manualOnly ? 'Lancer la réconciliation' : '🚀 Lancer la Réconciliation Manuelle' }}
         </button>
-        <div class="action-buttons">
+        <div class="action-buttons" *ngIf="!manualOnly">
             <button class="btn dashboard-btn" (click)="goToDashboard()">
                 📈 Dashboard
             </button>
@@ -1339,9 +1358,14 @@
         </div>
     </div>
 </div>
+</ng-container>
+
+<div class="traitement-embed-panel" *ngIf="embedTraitementSection">
+    <ng-container *ngTemplateOutlet="traitementPanelTpl"></ng-container>
+</div>
 
 <!-- Modal traitement de fichier (mode assisté) -->
-<div class="traitement-modal-overlay" *ngIf="showTraitementModal && isAssistedLike" (click)="closeTraitementModal()">
+<div class="traitement-modal-overlay" *ngIf="showTraitementModal && isAssistedLike && !embedTraitementSection" (click)="closeTraitementModal()">
     <div class="traitement-modal" (click)="$event.stopPropagation()">
         <div class="traitement-modal-header">
             <h3><i class="fas fa-file-medical"></i> Traitement de fichier</h3>
@@ -1349,10 +1373,18 @@
                 <i class="fas fa-times"></i>
             </button>
         </div>
+        <ng-container *ngTemplateOutlet="traitementPanelTpl"></ng-container>
+    </div>
+</div>
 
+<ng-template #traitementPanelTpl>
         <p class="traitement-modal-intro">
             Chargez un ou plusieurs fichiers non normalisés : détection automatique de la ligne d'en-tête,
-            suppression des lignes inutiles, compilation en un seul fichier, traitement via le modèle choisi puis téléchargement.
+            suppression des lignes inutiles, traitement via le modèle choisi puis téléchargement.
+            <ng-container *ngIf="traitementFiles.length > 1"> Fusion de plusieurs fichiers en un seul résultat.</ng-container>
+        </p>
+        <p class="traitement-upload-info" *ngIf="embedTraitementSection">
+            <small>⚡ Lecture ultra-rapide — fusion uniquement si plusieurs fichiers ou plusieurs feuilles Excel</small>
         </p>
 
         <div class="traitement-section">
@@ -1392,6 +1424,7 @@
                     <input
                         type="text"
                         [(ngModel)]="traitementModelSearch"
+                        (ngModelChange)="onTraitementModelSearchChange()"
                         placeholder="Rechercher par nom, pattern ou type (BO / Partenaire)..."
                         [disabled]="traitementProcessing">
                 </div>
@@ -1425,7 +1458,7 @@
         </div>
 
         <div class="traitement-section">
-            <label class="traitement-section-title" for="traitementOutputDate">3. Date du fichier produit</label>
+            <label class="traitement-section-title" for="traitementOutputDate">3. Nom du fichier produit</label>
             <div class="traitement-date-row">
                 <input
                     id="traitementOutputDate"
@@ -1433,7 +1466,18 @@
                     class="traitement-date-input"
                     [(ngModel)]="traitementOutputDate"
                     [disabled]="traitementProcessing">
-                <span class="traitement-date-hint">Le fichier sera nommé : <strong>{{ getTraitementOutputPreview() || 'pattern_YYYYMMDD.ext' }}</strong></span>
+                <input
+                    id="traitementOutputNameSuffix"
+                    type="text"
+                    class="traitement-name-suffix-input"
+                    [(ngModel)]="traitementOutputNameSuffix"
+                    placeholder="Texte optionnel (ex. BF, export)"
+                    [disabled]="traitementProcessing"
+                    maxlength="80">
+                <span class="traitement-date-hint">
+                    Le fichier sera nommé :
+                    <strong>{{ getTraitementOutputPreview() || (traitementOutputNameSuffix?.trim() ? 'pattern_texte_YYYYMMDD.ext' : 'pattern_YYYYMMDD.ext') }}</strong>
+                </span>
             </div>
         </div>
 
@@ -1442,8 +1486,12 @@
         </div>
 
         <div class="traitement-modal-actions">
-            <button type="button" class="btn cancel-traitement-btn" [disabled]="traitementProcessing" (click)="closeTraitementModal()">
-                Annuler
+            <button
+                type="button"
+                class="btn cancel-traitement-btn"
+                [disabled]="traitementProcessing"
+                (click)="embedTraitementSection ? resetTraitementPanel() : closeTraitementModal()">
+                {{ embedTraitementSection ? 'Réinitialiser' : 'Annuler' }}
             </button>
             <button
                 type="button"
@@ -1451,8 +1499,7 @@
                 [disabled]="!canApplyTraitement()"
                 (click)="applyAssistedFileTreatment()">
                 <i class="fas fa-cogs"></i>
-                Compiler et appliquer le traitement
+                {{ getTraitementActionLabel() }}
             </button>
         </div>
-    </div>
-</div>
+</ng-template>

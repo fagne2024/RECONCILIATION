@@ -81,7 +81,7 @@ const routes: Routes = [
     path: 'upload',
     component: FileUploadComponent,
     canActivate: [AuthGuard, ModuleAccessGuard],
-    data: { module: 'Réconciliation', permissions: ['consulter'] }
+    data: { module: 'Réconciliation', permissions: ['consulter'], manualOnly: true }
   },
   {
     path: 'upload-assisted',

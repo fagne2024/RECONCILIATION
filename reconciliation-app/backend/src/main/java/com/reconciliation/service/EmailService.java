@@ -20,11 +20,13 @@ public class EmailService {
     
     @Value("${app.url:http://localhost:4200}")
     private String appUrl;
-    
-    private static final String LOGIN_URL = "https://reconciliation.intouchgroup.net:4200/login?returnUrl=%2Freconciliation-launcher";
 
     public String getLoginUrl() {
-        return LOGIN_URL;
+        String base = appUrl != null ? appUrl.trim() : "http://localhost:4200";
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/login?returnUrl=%2Freconciliation-launcher";
     }
 
     /**
@@ -75,7 +77,7 @@ public class EmailService {
                 "Nous vous recommandons de changer votre mot de passe après votre première connexion.\n\n" +
                 "Cordialement,\n" +
                 "L'équipe de réconciliation",
-                username, username, password, LOGIN_URL
+                username, username, password, getLoginUrl()
             ));
             
             mailSender.send(message);
@@ -109,7 +111,7 @@ public class EmailService {
                 "Nous vous recommandons de changer votre mot de passe après votre prochaine connexion.\n\n" +
                 "Cordialement,\n" +
                 "L'équipe de réconciliation",
-                username, username, newPassword, LOGIN_URL
+                username, username, newPassword, getLoginUrl()
             ));
             
             mailSender.send(message);

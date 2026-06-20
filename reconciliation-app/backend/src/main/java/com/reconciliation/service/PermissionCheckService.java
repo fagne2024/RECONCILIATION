@@ -478,6 +478,13 @@ public class PermissionCheckService {
             return true;
         }
 
+        // Lecture des modèles pendant une réconciliation : tout profil pouvant lancer
+        // une réconciliation doit pouvoir consulter les modèles, même sans module Modèles.
+        if ("GET".equalsIgnoreCase(httpMethod)
+            && hasPermission(username, "Réconciliation", "lancer_reconciliation")) {
+            return true;
+        }
+
         if ("POST".equalsIgnoreCase(httpMethod)) {
             return hasPermission(username, "Réconciliation", "lancer_reconciliation");
         }

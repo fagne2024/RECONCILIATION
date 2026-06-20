@@ -518,22 +518,89 @@
               </button>
             </h5>
             <p class="section-description">
-              Actions de formatage appliquées sur les colonnes sélectionnées après les règles de nettoyage.
+              Actions de formatage appliquées sur une ou plusieurs colonnes, avec des paramètres distincts par colonne si besoin.
+              Vous pouvez ajouter plusieurs fois la même action (ex. plusieurs « Supprimer / conserver des caractères » avec des conditions différentes).
+              Glissez les rubriques pour définir l'ordre d'exécution (1 → 2 → 3…).
             </p>
 
             <div *ngIf="showFormatActionsSection">
-              <div class="preprocessing-format-item" *ngFor="let item of formatActionTypes">
-                <ng-container *ngIf="getFormatActionByType(item.type) as action">
+              <div
+                class="format-actions-drop-list"
+                cdkDropList
+                cdkDropListLockAxis="y"
+                (cdkDropListDropped)="onFormatActionDrop($event)">
+                <div
+                  class="preprocessing-format-item"
+                  *ngFor="let action of modelFormatActions; let i = index"
+                  cdkDrag>
+                  <div class="format-action-order-bar">
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary format-order-btn"
+                      [disabled]="i === 0"
+                      (click)="moveFormatActionUp(i)"
+                      title="Monter">
+                      <i class="fas fa-chevron-up"></i>
+                    </button>
+                    <span class="format-action-order-badge" cdkDragHandle title="Glisser pour réordonner">
+                      <i class="fas fa-grip-vertical"></i>
+                      {{ i + 1 }}
+                    </span>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary format-order-btn"
+                      [disabled]="i === modelFormatActions.length - 1"
+                      (click)="moveFormatActionDown(i)"
+                      title="Descendre">
+                      <i class="fas fa-chevron-down"></i>
+                    </button>
+                  </div>
+
                   <div class="format-action-header">
                     <label>
                       <input type="checkbox" [(ngModel)]="action.enabled" [ngModelOptions]="{standalone: true}">
-                      {{ item.label }}
+                      {{ getFormatActionDisplayLabel(action, i) }}
                     </label>
+                    <div class="format-action-header-actions">
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        title="Dupliquer cette action"
+                        (click)="duplicateFormatAction(i)">
+                        <i class="fas fa-copy"></i>
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        title="Supprimer cette action"
+                        (click)="removeFormatAction(i)">
+                        <i class="fas fa-trash"></i>
+                      </button>
+                    </div>
                   </div>
 
                   <div *ngIf="action.enabled" class="format-action-body">
                     <div class="form-group">
-                      <label>Colonnes concernées</label>
+                      <label>Colonnes concernées (plusieurs colonnes possibles)</label>
+                      <div class="format-columns-toolbar" *ngIf="getPreProcessingColumns().length > 0">
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-outline-primary"
+                          (click)="selectAllFormatActionColumns(action)"
+                          [disabled]="areAllFormatActionColumnsSelected(action)">
+                          Tout sélectionner
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-outline-secondary"
+                          (click)="deselectAllFormatActionColumns(action)"
+                          [disabled]="!(action.columns?.length)">
+                          Tout désélectionner
+                        </button>
+                        <span class="format-columns-count" *ngIf="action.columns?.length">
+                          {{ action.columns.length }} colonne(s) sélectionnée(s)
+                        </span>
+                      </div>
                       <div class="columns-checkboxes">
                         <label *ngFor="let col of getPreProcessingColumns()" class="column-checkbox">
                           <input type="checkbox"
@@ -547,98 +614,308 @@
                       </div>
                     </div>
 
-                    <div *ngIf="action.type === 'removeSpecialStrings'" class="form-row">
-                      <div class="form-group col-md-6">
-                        <label>Chaîne à supprimer</label>
-                        <input type="text" class="form-control" [(ngModel)]="action.specialStringToRemove" [ngModelOptions]="{standalone: true}">
+                    <div *ngIf="!action.columns?.length" class="format-columns-empty-hint">
+                      Sélectionnez au moins une colonne pour configurer le formatage.
+                    </div>
+
+                    <div *ngIf="action.columns?.length" class="format-action-condition">
+                      <div class="format-column-settings-title">Condition d'application (optionnelle)</div>
+                      <label class="format-condition-toggle">
+                        <input type="checkbox"
+                               [(ngModel)]="action.applyConditionEnabled"
+                               [ngModelOptions]="{standalone: true}">
+                        Appliquer seulement si une colonne est égale à une valeur
+                      </label>
+                      <div class="form-row" *ngIf="action.applyConditionEnabled">
+                        <div class="form-group col-md-5">
+                          <label>Colonne</label>
+                          <select class="form-control"
+                                  [(ngModel)]="action.conditionColumn"
+                                  [ngModelOptions]="{standalone: true}">
+                            <option value="">— Choisir une colonne —</option>
+                            <option *ngFor="let col of getPreProcessingColumns()" [value]="col">{{ col }}</option>
+                          </select>
+                        </div>
+                        <div class="form-group col-md-5">
+                          <label>Valeur(s) attendue(s) (=)</label>
+                          <input type="text"
+                                 class="form-control"
+                                 [(ngModel)]="action.conditionValue"
+                                 [ngModelOptions]="{standalone: true}"
+                                 placeholder="Ex. Cash In, Cash Out, Transfer">
+                        </div>
                       </div>
-                      <div class="form-group col-md-6">
-                        <label>Mode</label>
-                        <select class="form-control" [(ngModel)]="action.specialStringRemovalMode" [ngModelOptions]="{standalone: true}">
-                          <option value="all">Toutes les occurrences</option>
-                          <option value="start">Début uniquement</option>
-                          <option value="end">Fin uniquement</option>
-                        </select>
+                      <small class="text-muted" *ngIf="action.applyConditionEnabled">
+                        Plusieurs valeurs possibles, séparées par des virgules. Le traitement s'applique si la colonne correspond à l'une d'elles.
+                      </small>
+                    </div>
+
+                    <div *ngIf="action.columns?.length && actionNeedsPerColumnSettings(action.type)" class="format-column-settings-list">
+                      <div class="format-column-settings-toolbar">
+                        <span class="format-column-settings-title">Paramètres par colonne</span>
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-outline-secondary"
+                          (click)="applyDefaultSettingsToAllFormatColumns(action)">
+                          Copier les valeurs par défaut sur toutes les colonnes
+                        </button>
+                      </div>
+
+                      <div *ngFor="let col of action.columns" class="format-column-settings-item">
+                        <div class="format-column-settings-header">
+                          <i class="fas fa-columns"></i> {{ col }}
+                        </div>
+
+                        <div *ngIf="action.type === 'removeSpecialStrings'" class="form-row">
+                          <div class="form-group col-md-6">
+                            <label>Chaîne à supprimer</label>
+                            <input type="text" class="form-control"
+                                   [(ngModel)]="getFormatColumnSettings(action, col).specialStringToRemove"
+                                   [ngModelOptions]="{standalone: true}">
+                          </div>
+                          <div class="form-group col-md-6">
+                            <label>Mode</label>
+                            <select class="form-control"
+                                    [(ngModel)]="getFormatColumnSettings(action, col).specialStringRemovalMode"
+                                    [ngModelOptions]="{standalone: true}">
+                              <option value="all">Toutes les occurrences</option>
+                              <option value="start">Début uniquement</option>
+                              <option value="end">Fin uniquement</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div *ngIf="action.type === 'removeCharacters'" class="form-row">
+                          <div class="form-group col-md-3">
+                            <label>Action</label>
+                            <select class="form-control"
+                                    [(ngModel)]="getFormatColumnSettings(action, col).removeCharMode"
+                                    [ngModelOptions]="{standalone: true}">
+                              <option value="remove">Supprimer</option>
+                              <option value="keep">Conserver</option>
+                            </select>
+                          </div>
+                          <div class="form-group col-md-3">
+                            <label>Position</label>
+                            <select class="form-control"
+                                    [(ngModel)]="getFormatColumnSettings(action, col).removeCharPosition"
+                                    [ngModelOptions]="{standalone: true}">
+                              <option value="start">Début</option>
+                              <option value="end">Fin</option>
+                              <option value="specific">Position spécifique</option>
+                            </select>
+                          </div>
+                          <div class="form-group col-md-3">
+                            <label>Nombre de caractères</label>
+                            <input type="number" min="1" class="form-control"
+                                   [(ngModel)]="getFormatColumnSettings(action, col).removeCharCount"
+                                   [ngModelOptions]="{standalone: true}">
+                          </div>
+                          <div class="form-group col-md-3" *ngIf="getFormatColumnSettings(action, col).removeCharPosition === 'specific'">
+                            <label>Position (1-based)</label>
+                            <input type="number" min="1" class="form-control"
+                                   [(ngModel)]="getFormatColumnSettings(action, col).removeCharSpecificPosition"
+                                   [ngModelOptions]="{standalone: true}">
+                          </div>
+                        </div>
+
+                        <div class="format-action-condition format-action-condition-column">
+                          <label class="format-condition-toggle">
+                            <input type="checkbox"
+                                   [(ngModel)]="getFormatColumnSettings(action, col).applyConditionEnabled"
+                                   [ngModelOptions]="{standalone: true}">
+                            Condition spécifique pour « {{ col }} »
+                          </label>
+                          <div class="form-row" *ngIf="getFormatColumnSettings(action, col).applyConditionEnabled">
+                            <div class="form-group col-md-5">
+                              <label>Colonne</label>
+                              <select class="form-control"
+                                      [(ngModel)]="getFormatColumnSettings(action, col).conditionColumn"
+                                      [ngModelOptions]="{standalone: true}">
+                                <option value="">— Choisir une colonne —</option>
+                                <option *ngFor="let c of getPreProcessingColumns()" [value]="c">{{ c }}</option>
+                              </select>
+                            </div>
+                            <div class="form-group col-md-5">
+                              <label>Valeur(s) attendue(s) (=)</label>
+                              <input type="text"
+                                     class="form-control"
+                                     [(ngModel)]="getFormatColumnSettings(action, col).conditionValue"
+                                     [ngModelOptions]="{standalone: true}"
+                                     placeholder="Ex. Cash In, Cash Out">
+                            </div>
+                          </div>
+                        </div>
+
+                        <div *ngIf="action.type === 'removeIndicatif'" class="form-row">
+                          <div class="form-group col-md-4">
+                            <label>Type d'indicatif</label>
+                            <select class="form-control"
+                                    [(ngModel)]="getFormatColumnSettings(action, col).indicatifType"
+                                    [ngModelOptions]="{standalone: true}">
+                              <option value="international">International (+XX)</option>
+                              <option value="national">National (0X...)</option>
+                              <option value="custom">Personnalisé</option>
+                            </select>
+                          </div>
+                          <div class="form-group col-md-4" *ngIf="getFormatColumnSettings(action, col).indicatifType === 'custom'">
+                            <label>Indicatif personnalisé</label>
+                            <input type="text" class="form-control"
+                                   [(ngModel)]="getFormatColumnSettings(action, col).customIndicatif"
+                                   [ngModelOptions]="{standalone: true}">
+                          </div>
+                        </div>
+
+                        <div *ngIf="action.type === 'removeDecimals'" class="form-row">
+                          <div class="form-group col-md-4">
+                            <label>Séparateur décimal</label>
+                            <select class="form-control"
+                                    [(ngModel)]="getFormatColumnSettings(action, col).decimalSeparator"
+                                    [ngModelOptions]="{standalone: true}">
+                              <option value=",">Virgule (français)</option>
+                              <option value=".">Point (anglais)</option>
+                            </select>
+                          </div>
+                          <div class="form-group col-md-4">
+                            <label>
+                              <input type="checkbox"
+                                     [(ngModel)]="getFormatColumnSettings(action, col).keepTrailingZeros"
+                                     [ngModelOptions]="{standalone: true}">
+                              Conserver si décimales non nulles
+                            </label>
+                          </div>
+                        </div>
+
+                        <div *ngIf="action.type === 'keepLastDigits'" class="form-row">
+                          <div class="form-group col-md-4">
+                            <label>Nombre de chiffres à garder</label>
+                            <input type="number" min="1" class="form-control"
+                                   [(ngModel)]="getFormatColumnSettings(action, col).keepLastDigitsCount"
+                                   [ngModelOptions]="{standalone: true}">
+                          </div>
+                        </div>
+
+                        <div *ngIf="action.type === 'removeSpaces'" class="form-row">
+                          <div class="form-group col-md-4">
+                            <label>Type de suppression</label>
+                            <select class="form-control"
+                                    [(ngModel)]="getFormatColumnSettings(action, col).removeSpacesType"
+                                    [ngModelOptions]="{standalone: true}">
+                              <option value="all">Tous les espaces</option>
+                              <option value="leading">Début uniquement</option>
+                              <option value="trailing">Fin uniquement</option>
+                              <option value="multiple">Espaces multiples → un seul</option>
+                            </select>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    <div *ngIf="action.type === 'removeCharacters'" class="form-row">
-                      <div class="form-group col-md-3">
-                        <label>Action</label>
-                        <select class="form-control" [(ngModel)]="action.removeCharMode" [ngModelOptions]="{standalone: true}">
-                          <option value="remove">Supprimer</option>
-                          <option value="keep">Conserver</option>
-                        </select>
-                      </div>
-                      <div class="form-group col-md-3">
-                        <label>Position</label>
-                        <select class="form-control" [(ngModel)]="action.removeCharPosition" [ngModelOptions]="{standalone: true}">
-                          <option value="start">Début</option>
-                          <option value="end">Fin</option>
-                          <option value="specific">Position spécifique</option>
-                        </select>
-                      </div>
-                      <div class="form-group col-md-3">
-                        <label>Nombre de caractères</label>
-                        <input type="number" min="1" class="form-control" [(ngModel)]="action.removeCharCount" [ngModelOptions]="{standalone: true}">
-                      </div>
-                      <div class="form-group col-md-3" *ngIf="action.removeCharPosition === 'specific'">
-                        <label>Position (1-based)</label>
-                        <input type="number" min="1" class="form-control" [(ngModel)]="action.removeCharSpecificPosition" [ngModelOptions]="{standalone: true}">
-                      </div>
+                    <div *ngIf="action.columns?.length && !actionNeedsPerColumnSettings(action.type)" class="format-columns-simple-hint">
+                      Cette action s'applique tel quel sur les {{ action.columns.length }} colonne(s) sélectionnée(s), sans paramètre supplémentaire.
                     </div>
 
-                    <div *ngIf="action.type === 'removeIndicatif'" class="form-row">
-                      <div class="form-group col-md-4">
-                        <label>Type d'indicatif</label>
-                        <select class="form-control" [(ngModel)]="action.indicatifType" [ngModelOptions]="{standalone: true}">
-                          <option value="international">International (+XX)</option>
-                          <option value="national">National (0X...)</option>
-                          <option value="custom">Personnalisé</option>
-                        </select>
+                    <details class="format-action-defaults" *ngIf="actionNeedsPerColumnSettings(action.type)">
+                      <summary>Valeurs par défaut (utilisées pour les nouvelles colonnes)</summary>
+                      <div *ngIf="action.type === 'removeSpecialStrings'" class="form-row">
+                        <div class="form-group col-md-6">
+                          <label>Chaîne à supprimer</label>
+                          <input type="text" class="form-control" [(ngModel)]="action.specialStringToRemove" [ngModelOptions]="{standalone: true}">
+                        </div>
+                        <div class="form-group col-md-6">
+                          <label>Mode</label>
+                          <select class="form-control" [(ngModel)]="action.specialStringRemovalMode" [ngModelOptions]="{standalone: true}">
+                            <option value="all">Toutes les occurrences</option>
+                            <option value="start">Début uniquement</option>
+                            <option value="end">Fin uniquement</option>
+                          </select>
+                        </div>
                       </div>
-                      <div class="form-group col-md-4" *ngIf="action.indicatifType === 'custom'">
-                        <label>Indicatif personnalisé</label>
-                        <input type="text" class="form-control" [(ngModel)]="action.customIndicatif" [ngModelOptions]="{standalone: true}">
+                      <div *ngIf="action.type === 'removeCharacters'" class="form-row">
+                        <div class="form-group col-md-3">
+                          <label>Action</label>
+                          <select class="form-control" [(ngModel)]="action.removeCharMode" [ngModelOptions]="{standalone: true}">
+                            <option value="remove">Supprimer</option>
+                            <option value="keep">Conserver</option>
+                          </select>
+                        </div>
+                        <div class="form-group col-md-3">
+                          <label>Position</label>
+                          <select class="form-control" [(ngModel)]="action.removeCharPosition" [ngModelOptions]="{standalone: true}">
+                            <option value="start">Début</option>
+                            <option value="end">Fin</option>
+                            <option value="specific">Position spécifique</option>
+                          </select>
+                        </div>
+                        <div class="form-group col-md-3">
+                          <label>Nombre de caractères</label>
+                          <input type="number" min="1" class="form-control" [(ngModel)]="action.removeCharCount" [ngModelOptions]="{standalone: true}">
+                        </div>
+                        <div class="form-group col-md-3" *ngIf="action.removeCharPosition === 'specific'">
+                          <label>Position (1-based)</label>
+                          <input type="number" min="1" class="form-control" [(ngModel)]="action.removeCharSpecificPosition" [ngModelOptions]="{standalone: true}">
+                        </div>
                       </div>
-                    </div>
-
-                    <div *ngIf="action.type === 'removeDecimals'" class="form-row">
-                      <div class="form-group col-md-4">
-                        <label>Séparateur décimal</label>
-                        <select class="form-control" [(ngModel)]="action.decimalSeparator" [ngModelOptions]="{standalone: true}">
-                          <option value=",">Virgule (français)</option>
-                          <option value=".">Point (anglais)</option>
-                        </select>
+                      <div *ngIf="action.type === 'removeIndicatif'" class="form-row">
+                        <div class="form-group col-md-4">
+                          <label>Type d'indicatif</label>
+                          <select class="form-control" [(ngModel)]="action.indicatifType" [ngModelOptions]="{standalone: true}">
+                            <option value="international">International (+XX)</option>
+                            <option value="national">National (0X...)</option>
+                            <option value="custom">Personnalisé</option>
+                          </select>
+                        </div>
+                        <div class="form-group col-md-4" *ngIf="action.indicatifType === 'custom'">
+                          <label>Indicatif personnalisé</label>
+                          <input type="text" class="form-control" [(ngModel)]="action.customIndicatif" [ngModelOptions]="{standalone: true}">
+                        </div>
                       </div>
-                      <div class="form-group col-md-4">
-                        <label>
-                          <input type="checkbox" [(ngModel)]="action.keepTrailingZeros" [ngModelOptions]="{standalone: true}">
-                          Conserver si décimales non nulles
-                        </label>
+                      <div *ngIf="action.type === 'removeDecimals'" class="form-row">
+                        <div class="form-group col-md-4">
+                          <label>Séparateur décimal</label>
+                          <select class="form-control" [(ngModel)]="action.decimalSeparator" [ngModelOptions]="{standalone: true}">
+                            <option value=",">Virgule (français)</option>
+                            <option value=".">Point (anglais)</option>
+                          </select>
+                        </div>
+                        <div class="form-group col-md-4">
+                          <label>
+                            <input type="checkbox" [(ngModel)]="action.keepTrailingZeros" [ngModelOptions]="{standalone: true}">
+                            Conserver si décimales non nulles
+                          </label>
+                        </div>
                       </div>
-                    </div>
-
-                    <div *ngIf="action.type === 'keepLastDigits'" class="form-row">
-                      <div class="form-group col-md-4">
-                        <label>Nombre de chiffres à garder</label>
-                        <input type="number" min="1" class="form-control" [(ngModel)]="action.keepLastDigitsCount" [ngModelOptions]="{standalone: true}">
+                      <div *ngIf="action.type === 'keepLastDigits'" class="form-row">
+                        <div class="form-group col-md-4">
+                          <label>Nombre de chiffres à garder</label>
+                          <input type="number" min="1" class="form-control" [(ngModel)]="action.keepLastDigitsCount" [ngModelOptions]="{standalone: true}">
+                        </div>
                       </div>
-                    </div>
-
-                    <div *ngIf="action.type === 'removeSpaces'" class="form-row">
-                      <div class="form-group col-md-4">
-                        <label>Type de suppression</label>
-                        <select class="form-control" [(ngModel)]="action.removeSpacesType" [ngModelOptions]="{standalone: true}">
-                          <option value="all">Tous les espaces</option>
-                          <option value="leading">Début uniquement</option>
-                          <option value="trailing">Fin uniquement</option>
-                          <option value="multiple">Espaces multiples → un seul</option>
-                        </select>
+                      <div *ngIf="action.type === 'removeSpaces'" class="form-row">
+                        <div class="form-group col-md-4">
+                          <label>Type de suppression</label>
+                          <select class="form-control" [(ngModel)]="action.removeSpacesType" [ngModelOptions]="{standalone: true}">
+                            <option value="all">Tous les espaces</option>
+                            <option value="leading">Début uniquement</option>
+                            <option value="trailing">Fin uniquement</option>
+                            <option value="multiple">Espaces multiples → un seul</option>
+                          </select>
+                        </div>
                       </div>
-                    </div>
+                    </details>
                   </div>
-                </ng-container>
+                </div>
+              </div>
+
+              <div class="format-actions-add-bar">
+                <select class="form-control format-actions-add-select"
+                        [(ngModel)]="newFormatActionType"
+                        [ngModelOptions]="{standalone: true}">
+                  <option *ngFor="let item of formatActionTypes" [ngValue]="item.type">{{ item.label }}</option>
+                </select>
+                <button type="button" class="btn btn-outline-primary btn-sm" (click)="addFormatAction()">
+                  <i class="fas fa-plus"></i> Ajouter une action de formatage
+                </button>
               </div>
             </div>
           </div>
@@ -792,7 +1069,8 @@
               </button>
             </h5>
             <p class="section-description">
-              Change le nom d'une colonne (en-tête) sans modifier les valeurs. Appliqué en dernier, après les autres règles de pré-traitement.
+              Change le nom d'une colonne (en-tête) sans modifier les valeurs. Applié en dernier dans le pipeline de pré-traitement ;
+              la colonne renommée conserve sa position d'origine dans le fichier exporté.
             </p>
 
             <div *ngIf="showColumnRenameSection">

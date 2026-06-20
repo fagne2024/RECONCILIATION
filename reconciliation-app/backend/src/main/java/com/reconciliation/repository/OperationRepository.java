@@ -30,6 +30,14 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
     @Query("SELECT o FROM OperationEntity o WHERE o.dateOperation BETWEEN :dateDebut AND :dateFin")
     List<OperationEntity> findByDateOperationBetween(@Param("dateDebut") LocalDateTime dateDebut, 
                                                     @Param("dateFin") LocalDateTime dateFin);
+
+    @Query("SELECT o FROM OperationEntity o WHERE o.typeOperation = 'FRAIS_TRANSACTION' " +
+           "AND (:dateDebut IS NULL OR o.dateOperation >= :dateDebut) " +
+           "AND (:dateFin IS NULL OR o.dateOperation <= :dateFin)")
+    List<OperationEntity> findFraisTransactionsByDateRange(
+        @Param("dateDebut") LocalDateTime dateDebut,
+        @Param("dateFin") LocalDateTime dateFin
+    );
     
     @Query("SELECT o FROM OperationEntity o WHERE o.montant > :montantMin")
     List<OperationEntity> findByMontantSuperieurA(@Param("montantMin") Double montantMin);

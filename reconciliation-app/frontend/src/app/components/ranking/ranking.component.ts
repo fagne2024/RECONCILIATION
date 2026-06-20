@@ -16,6 +16,8 @@ export class RankingComponent implements OnInit {
   // Données des classements
   agencyRankings: RankingItem[] = [];
   serviceRankings: RankingItem[] = [];
+  private agencyRankingsSource: RankingItem[] = [];
+  private serviceRankingsSource: RankingItem[] = [];
   
   // Types de classement
   agencyRankingType: 'transactions' | 'volume' | 'fees' = 'transactions';
@@ -114,8 +116,7 @@ export class RankingComponent implements OnInit {
         this.filteredCountries = this.countries;
       }
     });
-    this.loadAgencyRankings();
-    this.loadServiceRankings();
+    this.loadRankings();
     this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
       const s = (search || '').toLowerCase();
       this.filteredCountries = this.countries.filter(c => c.toLowerCase().includes(s));
@@ -130,81 +131,77 @@ export class RankingComponent implements OnInit {
   }
 
   /**
-   * Charger les classements des agences
+   * Charger les classements agences + services en une seule requête
    */
-  loadAgencyRankings(): void {
+  loadRankings(): void {
     this.loadingAgencies = true;
+    this.loadingServices = true;
     this.errorAgencies = '';
+    this.errorServices = '';
 
-    // Déterminer les dates personnalisées si nécessaire
     const startDate = this.selectedPeriod === 'custom' ? this.customStartDate : undefined;
     const endDate = this.selectedPeriod === 'custom' ? this.customEndDate : undefined;
+    const countries = this.selectedCountries.includes('Tous les pays') ? undefined : this.selectedCountries;
 
-    let observable;
-    switch (this.agencyRankingType) {
-      case 'transactions':
-        observable = this.rankingService.getAgencyRankingByTransactions(this.selectedCountries.includes('Tous les pays') ? undefined : this.selectedCountries, this.selectedPeriod, startDate, endDate);
-        break;
-      case 'volume':
-        observable = this.rankingService.getAgencyRankingByVolume(this.selectedCountries.includes('Tous les pays') ? undefined : this.selectedCountries, this.selectedPeriod, startDate, endDate);
-        break;
-      case 'fees':
-        observable = this.rankingService.getAgencyRankingByFees(this.selectedCountries.includes('Tous les pays') ? undefined : this.selectedCountries, this.selectedPeriod, startDate, endDate);
-        break;
-      default:
-        observable = this.rankingService.getAgencyRankingByTransactions(this.selectedCountries.includes('Tous les pays') ? undefined : this.selectedCountries, this.selectedPeriod, startDate, endDate);
-    }
-
-    observable.subscribe({
+    this.rankingService.getRankingsBundle(countries, this.selectedPeriod, startDate, endDate).subscribe({
       next: (data) => {
-        this.agencyRankings = data;
+        this.agencyRankingsSource = data.agencies || [];
+        this.serviceRankingsSource = data.services || [];
+        this.applyAgencySort();
+        this.applyServiceSort();
         this.loadingAgencies = false;
+        this.loadingServices = false;
       },
       error: (error) => {
-        console.error('Erreur lors du chargement des classements des agences:', error);
+        console.error('Erreur lors du chargement des classements:', error);
         this.errorAgencies = 'Erreur lors du chargement des données';
+        this.errorServices = 'Erreur lors du chargement des données';
         this.loadingAgencies = false;
+        this.loadingServices = false;
       }
     });
   }
 
-  /**
-   * Charger les classements des services
-   */
-  loadServiceRankings(): void {
-    this.loadingServices = true;
-    this.errorServices = '';
-
-    // Déterminer les dates personnalisées si nécessaire
-    const startDate = this.selectedPeriod === 'custom' ? this.customStartDate : undefined;
-    const endDate = this.selectedPeriod === 'custom' ? this.customEndDate : undefined;
-
-    let observable;
-    switch (this.serviceRankingType) {
-      case 'transactions':
-        observable = this.rankingService.getServiceRankingByTransactions(this.selectedCountries.includes('Tous les pays') ? undefined : this.selectedCountries, this.selectedPeriod, startDate, endDate);
-        break;
+  private applyAgencySort(): void {
+    const sorted = [...this.agencyRankingsSource];
+    switch (this.agencyRankingType) {
       case 'volume':
-        observable = this.rankingService.getServiceRankingByVolume(this.selectedCountries.includes('Tous les pays') ? undefined : this.selectedCountries, this.selectedPeriod, startDate, endDate);
+        sorted.sort((a, b) => b.totalVolume - a.totalVolume);
         break;
       case 'fees':
-        observable = this.rankingService.getServiceRankingByFees(this.selectedCountries.includes('Tous les pays') ? undefined : this.selectedCountries, this.selectedPeriod, startDate, endDate);
+        sorted.sort((a, b) => b.totalFees - a.totalFees);
         break;
       default:
-        observable = this.rankingService.getServiceRankingByTransactions(this.selectedCountries.includes('Tous les pays') ? undefined : this.selectedCountries, this.selectedPeriod, startDate, endDate);
+        sorted.sort((a, b) => b.transactionCount - a.transactionCount);
     }
+    this.agencyRankings = sorted;
+    this.agencyPage = 1;
+  }
 
-    observable.subscribe({
-      next: (data) => {
-        this.serviceRankings = data;
-        this.loadingServices = false;
-      },
-      error: (error) => {
-        console.error('Erreur lors du chargement des classements des services:', error);
-        this.errorServices = 'Erreur lors du chargement des données';
-        this.loadingServices = false;
-      }
-    });
+  private applyServiceSort(): void {
+    const sorted = [...this.serviceRankingsSource];
+    switch (this.serviceRankingType) {
+      case 'volume':
+        sorted.sort((a, b) => b.totalVolume - a.totalVolume);
+        break;
+      case 'fees':
+        sorted.sort((a, b) => b.totalFees - a.totalFees);
+        break;
+      default:
+        sorted.sort((a, b) => b.transactionCount - a.transactionCount);
+    }
+    this.serviceRankings = sorted;
+    this.servicePage = 1;
+  }
+
+  /** @deprecated Utiliser loadRankings() */
+  loadAgencyRankings(): void {
+    this.loadRankings();
+  }
+
+  /** @deprecated Utiliser loadRankings() */
+  loadServiceRankings(): void {
+    this.loadRankings();
   }
 
   /**
@@ -225,8 +222,7 @@ export class RankingComponent implements OnInit {
       this.selectedPeriod === 'custom' ? this.formatCustomPeriod() : this.getPeriodDescription()
     }`;
 
-    this.loadAgencyRankings();
-    this.loadServiceRankings();
+    this.loadRankings();
 
     setTimeout(() => {
       this.showUpdateMessage = false;
@@ -238,14 +234,14 @@ export class RankingComponent implements OnInit {
    * Changer le type de classement des agences
    */
   onAgencyRankingTypeChange(): void {
-    this.loadAgencyRankings();
+    this.applyAgencySort();
   }
 
   /**
    * Changer le type de classement des services
    */
   onServiceRankingTypeChange(): void {
-    this.loadServiceRankings();
+    this.applyServiceSort();
   }
 
   /**
@@ -263,8 +259,7 @@ export class RankingComponent implements OnInit {
     this.showUpdateMessage = true;
     this.updateMessage = `Mise à jour des classements : ${this.getPeriodDescription()}`;
     
-    this.loadAgencyRankings();
-    this.loadServiceRankings();
+    this.loadRankings();
     
     // Masquer le message après 3 secondes
     setTimeout(() => {
@@ -300,8 +295,7 @@ export class RankingComponent implements OnInit {
     this.showUpdateMessage = true;
     this.updateMessage = `Mise à jour des classements : ${this.formatCustomPeriod()}`;
     
-    this.loadAgencyRankings();
-    this.loadServiceRankings();
+    this.loadRankings();
     
     // Masquer le message après 3 secondes
     setTimeout(() => {
@@ -726,8 +720,7 @@ export class RankingComponent implements OnInit {
     this.showUpdateMessage = true;
     this.updateMessage = `Mise à jour des classements pour : ${selectedCountryText}`;
     
-    this.loadAgencyRankings();
-    this.loadServiceRankings();
+    this.loadRankings();
     
     // Masquer le message après 3 secondes
     setTimeout(() => {
@@ -749,8 +742,7 @@ export class RankingComponent implements OnInit {
     if (this.selectedCountries.length === 0) {
       this.selectedCountries = ['Tous les pays'];
     }
-    this.loadAgencyRankings();
-    this.loadServiceRankings();
+    this.loadRankings();
     
     // Fermer automatiquement le dropdown après un choix
     setTimeout(() => {
@@ -774,7 +766,6 @@ export class RankingComponent implements OnInit {
     } else {
       this.selectedCountries = ['Tous les pays']; // Sélectionner tous les pays
     }
-    this.loadAgencyRankings();
-    this.loadServiceRankings();
+    this.loadRankings();
   }
 } 

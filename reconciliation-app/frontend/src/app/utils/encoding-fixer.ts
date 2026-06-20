@@ -23,6 +23,16 @@ const characterMap: { [key: string]: string } = {
   'succÃ¨s': 'succès',
   'DÃ©bit': 'Débit',
   'dÃ©bit': 'débit',
+  'VersÃ©': 'Versé',
+  'versÃ©': 'versé',
+  'RetirÃ©': 'Retiré',
+  'retirÃ©': 'retiré',
+  'ImpÃ´t': 'Impôt',
+  'impÃ´t': 'impôt',
+  'DÃ©tails': 'Détails',
+  'dÃ©tails': 'détails',
+  'liÃ©e': 'liée',
+  'liÃ©': 'lié',
   'CrÃ©dit': 'Crédit',
   'crÃ©dit': 'crédit',
   'RÃ©fÃ©rence': 'Référence',
@@ -153,6 +163,18 @@ export function fixGarbledCharacters(text: string | null | undefined): string {
   fixedText = fixedText.replace(/T te de r seau/gi, 'Tête de réseau');
 
   return fixedText;
+}
+
+/** Variante rapide : saute fixCellEncoding si la chaîne est déjà en ASCII propre. */
+export function fixCellEncodingIfNeeded(text: string | null | undefined): string {
+  if (!text) {
+    return '';
+  }
+  const trimmed = text.trim();
+  if (!/[\u0080-\u00FF]|\uFFFD|ï¿½|Ã.|Â./.test(trimmed)) {
+    return trimmed;
+  }
+  return fixCellEncoding(trimmed);
 }
 
 /** Corrige l'encodage d'une valeur de cellule (en-têtes et données). */

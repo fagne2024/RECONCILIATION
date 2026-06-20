@@ -40,10 +40,7 @@ export type ModelFormatActionType =
   | 'removeZeroDecimals'
   | 'removeSpaces';
 
-export interface ModelFormatAction {
-  type: ModelFormatActionType;
-  enabled: boolean;
-  columns: string[];
+export interface ModelFormatColumnSettings {
   specialStringToRemove?: string;
   specialStringRemovalMode?: 'all' | 'start' | 'end';
   removeCharMode?: 'remove' | 'keep';
@@ -56,6 +53,58 @@ export interface ModelFormatAction {
   customIndicatif?: string;
   decimalSeparator?: ',' | '.';
   keepTrailingZeros?: boolean;
+  /** Si true, la condition spécifique à cette colonne remplace celle de l'action. */
+  applyConditionEnabled?: boolean;
+  conditionColumn?: string;
+  conditionValue?: string;
+}
+
+export interface ModelFormatAction {
+  id?: string;
+  type: ModelFormatActionType;
+  enabled: boolean;
+  columns: string[];
+  /** Ordre d'exécution (1 = en premier). Déduit de la position si absent. */
+  order?: number;
+  /** Paramètres spécifiques par colonne (prioritaires sur les champs globaux). */
+  columnSettings?: Record<string, ModelFormatColumnSettings>;
+  specialStringToRemove?: string;
+  specialStringRemovalMode?: 'all' | 'start' | 'end';
+  removeCharMode?: 'remove' | 'keep';
+  removeCharPosition?: 'start' | 'end' | 'specific';
+  removeCharCount?: number;
+  removeCharSpecificPosition?: number;
+  removeSpacesType?: 'all' | 'leading' | 'trailing' | 'multiple';
+  keepLastDigitsCount?: number;
+  indicatifType?: 'international' | 'national' | 'custom';
+  customIndicatif?: string;
+  decimalSeparator?: ',' | '.';
+  keepTrailingZeros?: boolean;
+  /** Condition optionnelle : n'appliquer l'action que si conditionColumn vaut l'une des conditionValue (séparées par des virgules). */
+  applyConditionEnabled?: boolean;
+  conditionColumn?: string;
+  conditionValue?: string;
+}
+
+/** Parse une liste de valeurs de condition séparées par des virgules. */
+export function parseConditionValues(conditionValue?: string | null): string[] {
+  if (!conditionValue?.trim()) {
+    return [];
+  }
+  return conditionValue
+    .split(',')
+    .map(value => value.trim())
+    .filter(value => value.length > 0);
+}
+
+/** Vérifie si une valeur correspond à l'une des valeurs attendues (séparées par des virgules). */
+export function matchesConditionValues(actualValue: string, conditionValue?: string | null): boolean {
+  const expectedValues = parseConditionValues(conditionValue);
+  if (!expectedValues.length) {
+    return true;
+  }
+  const actual = String(actualValue ?? '').trim();
+  return expectedValues.some(expected => actual === expected);
 }
 
 export interface ModelPreProcessingConfig {
@@ -309,7 +358,7 @@ export class AutoProcessingService {
   }
 
   getModels(): Promise<AutoProcessingModel[]> {
-    return this.getAllModels();
+    return this.getAllModels(AutoProcessingService.RECONCILIATION_MODULE);
   }
 
   getModelById(id: string, moduleContext: string = AutoProcessingService.RECONCILIATION_MODULE): Promise<AutoProcessingModel> {
@@ -589,7 +638,10 @@ export class AutoProcessingService {
   // ===== MÉTHODES POUR LES RÈGLES DE TRAITEMENT DES COLONNES =====
 
   // Récupérer les règles de traitement des colonnes pour un modèle
-  getColumnProcessingRules(modelId: string, moduleContext?: string): Promise<ColumnProcessingRule[]> {
+  getColumnProcessingRules(
+    modelId: string,
+    moduleContext: string = AutoProcessingService.RECONCILIATION_MODULE
+  ): Promise<ColumnProcessingRule[]> {
     return this.http.get<{success: boolean, rules: ColumnProcessingRule[]}>(`${this.apiUrl}/auto-processing/models/${modelId}/column-rules`, {
       headers: this.buildContextHeaders(moduleContext)
     })
@@ -653,8 +705,13 @@ export class AutoProcessingService {
   }
 
   // Valider les règles d'un modèle
-  validateRules(modelId: string): Promise<boolean> {
-    return this.http.get<{success: boolean, isValid: boolean}>(`${this.apiUrl}/auto-processing/models/${modelId}/validate-rules`)
+  validateRules(
+    modelId: string,
+    moduleContext: string = AutoProcessingService.RECONCILIATION_MODULE
+  ): Promise<boolean> {
+    return this.http.get<{success: boolean, isValid: boolean}>(`${this.apiUrl}/auto-processing/models/${modelId}/validate-rules`, {
+      headers: this.buildContextHeaders(moduleContext)
+    })
       .toPromise()
       .then(response => response?.isValid || false);
   }

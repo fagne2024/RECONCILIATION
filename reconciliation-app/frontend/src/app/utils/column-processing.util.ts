@@ -1,4 +1,21 @@
 import { ColumnProcessingRule } from '../services/auto-processing.service';
+import { resolveColumnKeyInRow } from './row-column.util';
+
+function findColumnKey(data: Record<string, unknown>, sourceColumn: string): string | null {
+  const resolved = resolveColumnKeyInRow(data as Record<string, string>, sourceColumn);
+  if (resolved) {
+    return resolved;
+  }
+
+  const normalizedSource = normalizeColumnName(sourceColumn);
+  for (const key of Object.keys(data)) {
+    if (key.includes(normalizedSource) || normalizedSource.includes(normalizeColumnName(key))) {
+      return key;
+    }
+  }
+
+  return null;
+}
 
 function normalizeColumnName(columnName: string): string {
   if (!columnName) {
@@ -10,27 +27,6 @@ function normalizeColumnName(columnName: string): string {
     .replace(/\?/g, '');
   normalized = normalized.normalize('NFD').replace(/\p{M}/gu, '');
   return normalized.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function findColumnKey(data: Record<string, unknown>, sourceColumn: string): string | null {
-  if (Object.prototype.hasOwnProperty.call(data, sourceColumn)) {
-    return sourceColumn;
-  }
-
-  const normalizedSource = normalizeColumnName(sourceColumn);
-  for (const key of Object.keys(data)) {
-    if (normalizedSource === normalizeColumnName(key)) {
-      return key;
-    }
-  }
-
-  for (const key of Object.keys(data)) {
-    if (key.includes(normalizedSource) || normalizedSource.includes(key)) {
-      return key;
-    }
-  }
-
-  return null;
 }
 
 function applyFormatType(value: string, formatType?: string): string {
@@ -105,49 +101,49 @@ export function applyColumnProcessingRulesToRow(
   row: Record<string, string>,
   rules: ColumnProcessingRule[]
 ): Record<string, string> {
-  const processedData: Record<string, string> = { ...row };
-
   for (const rule of rules) {
-    const actualColumnKey = findColumnKey(processedData, rule.sourceColumn);
+    const actualColumnKey = findColumnKey(row, rule.sourceColumn);
     if (!actualColumnKey) {
       continue;
     }
 
-    const processedValue = applyRule(processedData[actualColumnKey], rule);
+    const processedValue = applyRule(row[actualColumnKey], rule);
     const targetColumn = rule.targetColumn?.trim();
 
     if (!targetColumn) {
-      processedData[actualColumnKey] = processedValue;
+      row[actualColumnKey] = processedValue;
     } else {
-      processedData[targetColumn] = processedValue;
+      row[targetColumn] = processedValue;
     }
   }
 
-  return processedData;
+  return row;
 }
 
 export async function applyColumnProcessingRulesAsync(
   data: Record<string, string>[],
   rules: ColumnProcessingRule[],
   batchSize = 2500,
-  onProgress?: (processed: number, total: number) => void | Promise<void>
+  onProgress?: (processed: number, total: number) => void | Promise<void>,
+  yieldFn?: () => Promise<void>
 ): Promise<Record<string, string>[]> {
   if (!data.length) {
     return [];
   }
 
   const sortedRules = [...rules].sort((a, b) => (a.ruleOrder ?? 0) - (b.ruleOrder ?? 0));
-  const result: Record<string, string>[] = new Array(data.length);
+  const effectiveBatch = data.length > 50000 ? batchSize : Math.min(batchSize, 500);
 
-  for (let start = 0; start < data.length; start += batchSize) {
-    const end = Math.min(start + batchSize, data.length);
+  for (let start = 0; start < data.length; start += effectiveBatch) {
+    await onProgress?.(start, data.length);
+    await yieldFn?.();
+    const end = Math.min(start + effectiveBatch, data.length);
     for (let i = start; i < end; i++) {
-      result[i] = applyColumnProcessingRulesToRow(data[i], sortedRules);
+      applyColumnProcessingRulesToRow(data[i], sortedRules);
     }
-    if (onProgress) {
-      await onProgress(end, data.length);
-    }
+    await onProgress?.(end, data.length);
+    await yieldFn?.();
   }
 
-  return result;
+  return data;
 }

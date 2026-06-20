@@ -23,6 +23,7 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { NgChartsModule } from 'ng2-charts';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { NgxMatSelectSearchModule } from 'ngx-mat-select-search';
+import { DragDropModule } from '@angular/cdk/drag-drop';
 
 import { AppComponent } from './app.component';
 import { FileUploadComponent } from './components/file-upload/file-upload.component';
@@ -195,6 +196,7 @@ import { StatsReportGraphComponent } from './components/stats-report-graph/stats
         MatCardModule,
         MatExpansionModule,
         NgxMatSelectSearchModule,
+        DragDropModule,
         ColumnSelectionComponent,
         AgencySummaryComponent,
         ReconciliationLauncherComponent

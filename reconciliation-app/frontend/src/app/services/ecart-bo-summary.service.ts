@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
-import { Observable, throwError, timer } from 'rxjs';
+import { Observable, throwError, timer, firstValueFrom } from 'rxjs';
 import { catchError, switchMap } from 'rxjs/operators';
 
 export interface EcartBoSummary {
@@ -192,6 +192,8 @@ export class EcartBoSummaryService {
       nombreTransactions: number;
       message: string;
       idExistant: number;
+      env?: string;
+      envCode?: string | null;
     }>;
   }> {
     return new Promise((resolve, reject) => {
@@ -251,7 +253,24 @@ export class EcartBoSummaryService {
     return this.http.get<string[]>(`${this.apiUrl}/pays`, { headers: this.resultsHeaders });
   }
 
-  createEcartBoSummary(summary: EcartBoSummary): Observable<any> {
+  createEcartBoSummary(summary: EcartBoSummary): Promise<{
+    count: number;
+    duplicates: number;
+    message: string;
+    duplicateRecords?: Array<{
+      agence: string;
+      service: string;
+      pays: string;
+      dateTransaction: string;
+      statut: string;
+      montant: number;
+      nombreTransactions: number;
+      message: string;
+      idExistant: number;
+      env?: string;
+      envCode?: string | null;
+    }>;
+  }> {
     const dto: any = {
       agence: summary.agence,
       service: summary.service,
@@ -269,6 +288,12 @@ export class EcartBoSummaryService {
     if (summary.envCode != null && String(summary.envCode).trim() !== '') {
       dto.envCode = String(summary.envCode).trim();
     }
-    return this.http.post<any>(this.apiUrl, [dto], { headers: this.resultsHeaders });
+    return firstValueFrom(this.http.post<any>(this.apiUrl, [dto], { headers: this.resultsHeaders }))
+      .then(response => ({
+        count: response.count ?? 0,
+        duplicates: response.duplicates ?? 0,
+        message: response.message || '',
+        duplicateRecords: response.duplicateRecords || []
+      }));
   }
 }

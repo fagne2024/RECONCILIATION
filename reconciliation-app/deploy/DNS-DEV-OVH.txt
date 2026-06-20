@@ -1,0 +1,18 @@
+# Enregistrement DNS a creer chez OVH (zone intouchgroup.net)
+#
+# Type : A
+# Sous-domaine : dev.reconciliation
+# Cible : 172.214.108.8
+# TTL : 3600 (1 h)
+#
+# Resultat attendu :
+#   dev.reconciliation.intouchgroup.net -> 172.214.108.8
+#
+# Verification apres creation :
+#   nslookup dev.reconciliation.intouchgroup.net
+#
+# Lien testeurs (apres DNS + pare-feu Azure NSG ports 8080/8444) :
+#   https://dev.reconciliation.intouchgroup.net:8444
+#
+# En attendant le DNS, lien alternatif (deja resolu) :
+#   https://reconciliation.intouchgroup.net:8444

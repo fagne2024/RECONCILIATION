@@ -1416,6 +1416,103 @@
     }
 }
 
+/* Mode manuel (/upload) — Option 1 uniquement */
+.manual-upload-page {
+    .manual-page-header {
+        margin-bottom: 24px;
+
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            padding: 8px 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            background: #fff;
+            color: #374151;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s ease;
+
+            &:hover {
+                background: #f3f4f6;
+            }
+        }
+
+        h2 {
+            margin: 0 0 8px;
+            color: #1f2937;
+            font-size: 1.6rem;
+        }
+
+        p {
+            margin: 0;
+            color: #6b7280;
+        }
+    }
+
+    .manual-option-banner {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        margin-bottom: 24px;
+        padding: 16px 18px;
+        border: 2px solid #059669;
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(5, 150, 105, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%);
+
+        i {
+            color: #059669;
+            font-size: 1.4rem;
+            margin-top: 2px;
+        }
+
+        strong {
+            display: block;
+            margin-bottom: 4px;
+            color: #064e3b;
+        }
+
+        span {
+            color: #4b5563;
+            font-size: 0.92rem;
+            line-height: 1.45;
+        }
+    }
+
+    .manual-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .reconciliation-launch-btn {
+        min-width: 220px;
+        background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+        border: none;
+        color: #fff;
+        font-weight: 700;
+
+        &:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+    }
+}
+
+.legacy-manual-proceed-btn {
+    background-color: #4CAF50;
+    color: white;
+    padding: 15px 30px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    margin: 10px;
+}
+
 /* Mode assisté (/upload-assisted) — Option 2 uniquement */
 .assisted-upload-page {
     .assisted-page-header {
@@ -1730,6 +1827,25 @@
     }
 }
 
+.traitement-name-suffix-input {
+    flex: 1;
+    min-width: 200px;
+    max-width: 320px;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.92rem;
+    color: #374151;
+
+    &:disabled {
+        opacity: 0.6;
+    }
+
+    &::placeholder {
+        color: #9ca3af;
+    }
+}
+
 .traitement-date-hint {
     flex: 1;
     min-width: 220px;
@@ -1850,5 +1966,15 @@
     &:disabled {
         opacity: 0.55;
         cursor: not-allowed;
+    }
+}
+
+.traitement-embed-panel {
+    .traitement-modal-intro {
+        margin-top: 0;
+    }
+
+    .traitement-modal-actions {
+        margin-top: 8px;
     }
 }

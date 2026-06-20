@@ -1531,6 +1531,16 @@ public class OperationService {
     public List<Operation> getAllOperationsWithFrais() {
         return getAllOperationsWithFrais(null);
     }
+
+    /**
+     * Opérations FRAIS_TRANSACTION sur une plage de dates (sans enrichissement).
+     * Utilisé par les classements pour éviter de charger toutes les opérations.
+     */
+    public List<Operation> getFraisTransactionsForRanking(LocalDateTime dateDebut, LocalDateTime dateFin) {
+        return operationRepository.findFraisTransactionsByDateRange(dateDebut, dateFin).stream()
+                .map(this::convertToModel)
+                .collect(Collectors.toList());
+    }
     
     public List<Operation> getAllOperationsWithFrais(String username) {
         List<OperationEntity> operations;

@@ -56,9 +56,24 @@ public class ProfilController {
             System.out.println("❌ Erreur inattendue lors de la suppression: " + e.getMessage());
             e.printStackTrace();
             Map<String, String> response = new HashMap<>();
-            response.put("error", "Erreur lors de la suppression du profil");
-            return ResponseEntity.internalServerError().body(response);
+            response.put("error", resolveDeleteErrorMessage(e));
+            return ResponseEntity.badRequest().body(response);
         }
+    }
+
+    private String resolveDeleteErrorMessage(Exception e) {
+        Throwable cause = e;
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        String message = cause.getMessage();
+        if (message != null && message.contains("rollback-only")) {
+            return "La suppression a échoué à cause d'une dépendance active. Vérifiez qu'aucun utilisateur n'est associé à ce profil.";
+        }
+        if (message != null && !message.isBlank()) {
+            return message;
+        }
+        return "Erreur lors de la suppression du profil";
     }
 
     // Modules

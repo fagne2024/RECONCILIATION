@@ -1,9 +1,13 @@
 package com.reconciliation.model;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.reconciliation.json.FlexibleLocalDateTimeDeserializer;
+
 import java.time.LocalDateTime;
 
 public class EcartBoSummary {
     private Long id;
+    @JsonDeserialize(using = FlexibleLocalDateTimeDeserializer.class)
     private LocalDateTime dateTransaction;
     private String agence;
     private String service;

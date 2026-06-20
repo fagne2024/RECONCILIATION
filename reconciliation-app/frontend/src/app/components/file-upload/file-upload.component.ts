@@ -1,10 +1,21 @@
-import { Component, EventEmitter, Output, ChangeDetectorRef, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ChangeDetectorRef, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
-import { AutoProcessingService, AutoProcessingModel, ProcessingResult } from '../../services/auto-processing.service';
+import { AutoProcessingService, AutoProcessingModel, ProcessingResult, ColumnProcessingRule } from '../../services/auto-processing.service';
 import { ModelPreProcessingService } from '../../services/model-preprocessing.service';
 import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
-import { fixGarbledCharacters, fixCellEncoding } from '../../utils/encoding-fixer';
+import { fixGarbledCharacters, fixCellEncoding, fixCellEncodingIfNeeded } from '../../utils/encoding-fixer';
+import {
+  detectMerchantReportHeaderIndex,
+  scoreMerchantReportHeaderRow,
+  enrichRowWithCanonicalFrenchColumns,
+  buildFrenchAliasEntries,
+  applyFrenchAliasesToRow,
+  FrenchAliasEntry,
+  getCanonicalFrenchLabel,
+  resolveCanonicalColumnId
+} from '../../utils/bilingual-column.util';
+import { resolveColumnKeyInRow } from '../../utils/row-column.util';
 import { stripAllWhitespace } from '../../utils/concat.util';
 import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../../utils/search-filter.util';
 import {
@@ -23,6 +34,7 @@ import { take } from 'rxjs/operators';
 import { PopupService } from '../../services/popup.service';
 import { ProgressIndicatorService } from '../../services/progress-indicator.service';
 import { applyColumnProcessingRulesAsync } from '../../utils/column-processing.util';
+import { readCsvFileUltraFast, readCsvContentUltraFast } from '../../utils/fast-csv-reader.util';
 
 @Component({
     selector: 'app-file-upload',
@@ -41,6 +53,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         partnerData: Record<string, string>[];
     }>();
 
+    /** Section embarquée sur /traitement : panneau « Traitement Automatique » sans UI de réconciliation. */
+    @Input() embedTraitementSection = false;
+
+    /** Page /upload : Option 1 uniquement (mode manuel). */
+    manualOnly = false;
     /** Page /upload-assisted : Option 2 uniquement (mode assisté). */
     assistedOnly = false;
     /** Certification de solde TRXBO/OPPART : redirection vers /certification-solde après réconciliation. */
@@ -70,6 +87,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     selectedTraitementModelId = '';
     traitementModelSearch = '';
     traitementOutputDate = '';
+    /** Texte optionnel inséré dans le nom : pattern_<texte>_YYYYMMDD.ext */
+    traitementOutputNameSuffix = '';
     traitementModelsLoading = false;
     traitementProcessing = false;
     traitementProgressMessage = '';
@@ -194,6 +213,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     partnerPaymentSearchFilter = '';
     partnerPaymentSelectionData: Record<string, string>[] = []; // Données déjà filtrées par service et statut
     partnerPaymentColumn: string | null = null; // Colonne utilisée pour la sélection des paiements
+    /** Compteurs pré-calculés (évite de filtrer 80k+ lignes à chaque cycle de détection Angular). */
+    private partnerServiceCounts: Record<string, number> = {};
+    private partnerStatusCounts: Record<string, number> = {};
+    private partnerPaymentCounts: Record<string, number> = {};
+    partnerSelectionBusy = false;
+    autoBoSourceFormat: 'csv' | 'excel' | null = null;
+    autoPartnerSourceFormat: 'csv' | 'excel' | null = null;
+    autoProceedBusy = false;
 
     /** Sélection des agences sur fichier partenaire (si colonne Agence présente), avant services/types */
     showPartnerAgencySelection = false;
@@ -235,14 +262,21 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     ngOnInit(): void {
+        this.manualOnly = this.route.snapshot.data['manualOnly'] === true;
         this.assistedOnly = this.route.snapshot.data['assistedOnly'] === true;
         this.certificationMode = this.route.snapshot.data['certificationMode'] === true;
-        if (this.assistedOnly || this.certificationMode) {
+        if (this.manualOnly) {
+            this.reconciliationMode = 'manual';
+        } else if (this.assistedOnly || this.certificationMode) {
             this.reconciliationMode = 'automatic';
         }
 
         if (this.route.snapshot.queryParamMap.get('reset') === '1') {
             this.resetUploadSession();
+        }
+
+        if (this.embedTraitementSection) {
+            void this.initTraitementPanel();
         }
     }
 
@@ -258,16 +292,41 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.router.navigate(['/reconciliation-launcher'], { queryParams: { mode: 'assisted' } });
     }
 
+    goBackToManualLauncher(): void {
+        this.router.navigate(['/reconciliation-launcher'], { queryParams: { mode: 'manual' } });
+    }
+
     /** Ouvre le modal de traitement de fichier (mode assisté). */
     async onTraitementFichier(): Promise<void> {
         this.showTraitementModal = true;
+        await this.initTraitementPanel();
+    }
+
+    /** Initialise le panneau de traitement (modal ou section embarquée). */
+    async initTraitementPanel(): Promise<void> {
         this.traitementFiles = [];
         this.selectedTraitementModelId = '';
         this.traitementModelSearch = '';
         this.traitementOutputDate = this.formatDateForInput(this.getDefaultTraitementOutputDate());
+        this.traitementOutputNameSuffix = '';
         this.traitementProgressMessage = '';
         this.traitementAutoSelectedModelHint = '';
         await this.loadTraitementModels();
+        this.cd.detectChanges();
+    }
+
+    resetTraitementPanel(): void {
+        if (this.traitementProcessing) {
+            return;
+        }
+        this.traitementFiles = [];
+        this.selectedTraitementModelId = '';
+        this.traitementModelSearch = '';
+        this.traitementOutputDate = this.formatDateForInput(this.getDefaultTraitementOutputDate());
+        this.traitementOutputNameSuffix = '';
+        this.traitementProgressMessage = '';
+        this.traitementAutoSelectedModelHint = '';
+        this.resetFileInput(this.traitementFileInputRef);
         this.cd.detectChanges();
     }
 
@@ -276,15 +335,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
         this.showTraitementModal = false;
-        this.traitementFiles = [];
-        this.selectedTraitementModelId = '';
-        this.traitementModelSearch = '';
-        this.traitementOutputDate = '';
-        this.traitementProgressMessage = '';
-        this.traitementAutoSelectedModelHint = '';
         this.traitementProcessing = false;
-        this.resetFileInput(this.traitementFileInputRef);
-        this.cd.detectChanges();
+        this.resetTraitementPanel();
     }
 
     get filteredTraitementModels(): AutoProcessingModel[] {
@@ -292,16 +344,102 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         if (!query) {
             return this.traitementModels;
         }
-        return this.traitementModels.filter(model => {
-            const name = (model.name || '').toLowerCase();
-            const pattern = (model.filePattern || '').toLowerCase();
-            const type = model.fileType === 'bo'
-                ? 'bo back office'
-                : model.fileType === 'partner'
-                    ? 'partenaire partner'
-                    : 'bo partenaire';
-            return name.includes(query) || pattern.includes(query) || type.includes(query);
-        });
+        return this.traitementModels.filter(model => this.traitementModelMatchesSearch(model, query));
+    }
+
+    /** Sélectionne automatiquement le modèle le plus pertinent selon la recherche. */
+    onTraitementModelSearchChange(): void {
+        this.autoSelectTraitementModelFromSearch();
+        this.cd.detectChanges();
+    }
+
+    private autoSelectTraitementModelFromSearch(): void {
+        const query = this.traitementModelSearch.trim().toLowerCase();
+        if (!query || !this.traitementModels.length) {
+            return;
+        }
+
+        const filtered = this.filteredTraitementModels;
+        if (!filtered.length) {
+            return;
+        }
+
+        const best = filtered.length === 1
+            ? filtered[0]
+            : this.pickBestTraitementModelForSearch(query, filtered);
+
+        const bestId = this.getTraitementModelId(best);
+        if (!bestId) {
+            return;
+        }
+
+        this.selectedTraitementModelId = bestId;
+        const preSummary = this.modelPreProcessingService.getPreProcessingSummary(best.preProcessingConfig);
+        let hint = `Modèle sélectionné : ${best.name} (pattern ${best.filePattern})`;
+        if (preSummary.summaryText) {
+            hint += ` — ${preSummary.summaryText} configurés`;
+        }
+        this.traitementAutoSelectedModelHint = hint;
+    }
+
+    private getTraitementModelId(model?: AutoProcessingModel | null): string {
+        return model?.id || model?.modelId || '';
+    }
+
+    private traitementModelMatchesSearch(model: AutoProcessingModel, query: string): boolean {
+        const name = (model.name || '').toLowerCase();
+        const pattern = (model.filePattern || '').toLowerCase();
+        const type = model.fileType === 'bo'
+            ? 'bo back office'
+            : model.fileType === 'partner'
+                ? 'partenaire partner'
+                : 'bo partenaire';
+        return name.includes(query) || pattern.includes(query) || type.includes(query);
+    }
+
+    private pickBestTraitementModelForSearch(
+        query: string,
+        models: AutoProcessingModel[]
+    ): AutoProcessingModel {
+        const scored = models
+            .map(model => ({ model, score: this.scoreTraitementModelSearchMatch(query, model) }))
+            .sort((a, b) => {
+                if (b.score !== a.score) {
+                    return b.score - a.score;
+                }
+                const patternDiff = (a.model.filePattern || '').length - (b.model.filePattern || '').length;
+                if (patternDiff !== 0) {
+                    return patternDiff;
+                }
+                return (a.model.name || '').localeCompare(b.model.name || '', 'fr');
+            });
+        return scored[0].model;
+    }
+
+    private scoreTraitementModelSearchMatch(query: string, model: AutoProcessingModel): number {
+        const name = (model.name || '').toLowerCase();
+        const pattern = (model.filePattern || '').toLowerCase();
+        const patternBase = pattern.replace(/[*?]/g, '');
+
+        if (pattern === query || patternBase === query) {
+            return 1000;
+        }
+        if (name === query) {
+            return 900;
+        }
+        if (pattern.startsWith(query) || query.startsWith(patternBase)) {
+            return 700;
+        }
+        if (name.startsWith(query)) {
+            return 600;
+        }
+        if (pattern.includes(query)) {
+            return 400;
+        }
+        if (name.includes(query)) {
+            return 300;
+        }
+        return 100;
     }
 
     getTraitementOutputPreview(): string {
@@ -341,8 +479,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.traitementModels = await this.autoProcessingService.getAllModelsUnrestricted(true);
             if (this.traitementFiles.length > 0) {
                 this.suggestTraitementModelFromFiles();
-            } else if (this.traitementModels.length === 1 && this.traitementModels[0].id) {
-                this.selectedTraitementModelId = this.traitementModels[0].id;
+            } else if (this.traitementModelSearch.trim()) {
+                this.autoSelectTraitementModelFromSearch();
+            } else if (this.traitementModels.length === 1) {
+                this.selectedTraitementModelId = this.getTraitementModelId(this.traitementModels[0]);
             }
         } catch (error) {
             console.error('Erreur chargement modèles de traitement:', error);
@@ -390,9 +530,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
-        this.selectedTraitementModelId = detected.id;
+        this.selectedTraitementModelId = this.getTraitementModelId(detected);
         const searchToken = (detected.filePattern || detected.name || '')
-            .replace(/\*/g, '')
+            .replace(/[*?]/g, '')
             .trim();
         if (searchToken) {
             this.traitementModelSearch = searchToken;
@@ -482,10 +622,35 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         this.traitementProcessing = true;
+        const perf = this.startTreatmentPerf('Traitement assisté', {
+            fichiers: this.traitementFiles.map(f => ({ nom: f.name, ko: Math.round(f.size / 1024) })),
+            modele: model.name,
+            pattern: model.filePattern
+        });
 
         try {
-            const compiled = await this.compileAssistedTreatmentFileRows(this.traitementFiles);
-            await this.yieldToMainThread();
+            const needsCompilation = await this.needsAssistedCompilation(this.traitementFiles);
+            perf.mark('Décision fusion multi-sources', {
+                needsCompilation,
+                fichierUnique: this.traitementFiles.length === 1,
+                message: needsCompilation
+                    ? 'Fusion requise (plusieurs fichiers ou feuilles Excel)'
+                    : 'Lecture directe (1 fichier, pas de fusion)'
+            });
+
+            const readPerf = performance.now();
+            const compiled = needsCompilation
+                ? await this.compileAssistedTreatmentFileRows(this.traitementFiles)
+                : await this.loadSingleAssistedTreatmentFile(this.traitementFiles[0]);
+            perf.mark('Lecture fichier(s)', {
+                lignes: compiled.rows.length,
+                dureeLectureMs: Math.round(performance.now() - readPerf),
+                mode: needsCompilation ? 'fusion' : 'lecture-directe'
+            });
+            this.traitementProgressMessage =
+                `Lecture terminée (${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)) — chargement du modèle...`;
+            this.cd.detectChanges();
+            await this.yieldToMainThread(true);
             if (!compiled.rows.length) {
                 await this.popupService.showWarning(
                     'Aucune donnée lisible dans les fichiers sélectionnés.',
@@ -494,55 +659,82 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 return;
             }
 
-            this.traitementProgressMessage =
-                `Application des règles sur ${compiled.rows.length} ligne(s) (${this.traitementFiles.length} fichier(s))...`;
+            const columnRules = await this.autoProcessingService.getColumnProcessingRules(
+                model.id,
+                AutoProcessingService.RECONCILIATION_MODULE
+            );
+            this.traitementProgressMessage = 'Règles du modèle chargées — préparation des données...';
             this.cd.detectChanges();
+            await this.yieldToMainThread(true);
+            perf.mark('Chargement règles colonnes', { regles: columnRules.length });
+            const inputColumns = this.collectAssistedTreatmentInputColumns(model, columnRules);
+            let workingRows = compiled.rows;
+            const needsEnrichment = this.needsAssistedColumnEnrichment(compiled.rows[0], inputColumns);
+            perf.mark('Analyse colonnes modèle', { colonnes: inputColumns.length, enrichissement: needsEnrichment });
 
-            const columnRules = await this.autoProcessingService.getColumnProcessingRules(model.id);
-            const processed = columnRules.length
-                ? await applyColumnProcessingRulesAsync(
+            if (needsEnrichment) {
+                this.traitementProgressMessage =
+                    `Préparation des colonnes : 0 / ${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)...`;
+                this.cd.detectChanges();
+                await this.yieldToMainThread(true);
+                const enrichStart = performance.now();
+                workingRows = await this.enrichAssistedRowsAsync(
                     compiled.rows,
-                    columnRules,
-                    2500,
-                    async (done, total) => {
-                        this.traitementProgressMessage = `Règles appliquées : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
+                    inputColumns,
+                    (done, total) => {
+                        this.traitementProgressMessage =
+                            `Préparation des colonnes : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
                         this.cd.detectChanges();
-                        await this.yieldToMainThread();
                     }
-                )
-                : compiled.rows;
-
-            if (!processed?.length) {
-                await this.popupService.showWarning(
-                    'Aucun résultat après traitement du fichier compilé.',
-                    'Traitement'
                 );
-                return;
+                perf.mark('Enrichissement colonnes FR', {
+                    lignes: workingRows.length,
+                    dureeMs: Math.round(performance.now() - enrichStart)
+                });
             }
 
-            let normalizedProcessed = await this.normalizeDataAsync(processed, (done, total) => {
-                this.traitementProgressMessage =
-                    `Normalisation : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
-                this.cd.detectChanges();
-            });
+            const allCsvSource = this.traitementFiles.every(f => f.name.toLowerCase().endsWith('.csv'));
             let preProcessingResultMessage = '';
 
+            // 1) Pré-traitement du modèle sur les colonnes brutes (comme /traitement)
             if (this.modelPreProcessingService.hasPreProcessing(model.preProcessingConfig)) {
-                const rowsBeforePreProcessing = normalizedProcessed.length;
-                this.traitementProgressMessage = 'Application des filtres et formatage du modèle...';
+                this.traitementProgressMessage = 'Pré-traitement du modèle : démarrage...';
                 this.cd.detectChanges();
-                normalizedProcessed = this.modelPreProcessingService.applyPreProcessing(
-                    normalizedProcessed,
-                    model.preProcessingConfig
+                await this.yieldToMainThread(true);
+                const preStart = performance.now();
+                const rowsBeforePreProcessing = workingRows.length;
+                let lastPreProcessUiUpdate = 0;
+                workingRows = await this.modelPreProcessingService.applyPreProcessingAsync(
+                    workingRows,
+                    model.preProcessingConfig,
+                    {
+                        batchSize: workingRows.length > 100000 ? 10000 : 500,
+                        onProgress: async (message, done, total) => {
+                            this.traitementProgressMessage =
+                                `${message} ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
+                            const now = performance.now();
+                            if (done === 0 || done >= total || now - lastPreProcessUiUpdate > 100) {
+                                this.cd.detectChanges();
+                                lastPreProcessUiUpdate = now;
+                            }
+                            await this.yieldToMainThread(true);
+                        },
+                        yieldFn: () => this.yieldToMainThread(true)
+                    }
                 );
-                normalizedProcessed = this.stripKeyColumnWhitespace(normalizedProcessed);
+                workingRows = await this.stripKeyColumnWhitespaceAsync(workingRows);
                 preProcessingResultMessage = this.modelPreProcessingService.buildApplicationResult(
                     rowsBeforePreProcessing,
-                    normalizedProcessed.length,
+                    workingRows.length,
                     model.preProcessingConfig
                 );
+                perf.mark('Pré-traitement modèle', {
+                    avant: rowsBeforePreProcessing,
+                    apres: workingRows.length,
+                    dureeMs: Math.round(performance.now() - preStart)
+                });
 
-                if (!normalizedProcessed.length) {
+                if (!workingRows.length) {
                     await this.popupService.showWarning(
                         'Aucune ligne restante après filtres/formatage configurés dans le modèle.\n\n' +
                         (preProcessingResultMessage || ''),
@@ -552,8 +744,48 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 }
             }
 
+            // 3) Règles de colonnes du modèle
+            this.traitementProgressMessage =
+                `Application des règles sur ${workingRows.length.toLocaleString('fr-FR')} ligne(s) (${this.traitementFiles.length} fichier(s))...`;
+            this.cd.detectChanges();
+
+            const rulesStart = performance.now();
+            const processed = columnRules.length
+                ? await applyColumnProcessingRulesAsync(
+                    workingRows,
+                    columnRules,
+                    workingRows.length > 100000 ? 10000 : 500,
+                    async (done, total) => {
+                        this.traitementProgressMessage = `Règles appliquées : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
+                        this.cd.detectChanges();
+                    },
+                    () => this.yieldToMainThread(true)
+                )
+                : workingRows;
+            perf.mark('Règles de colonnes', {
+                regles: columnRules.length,
+                lignes: processed?.length ?? 0,
+                dureeMs: Math.round(performance.now() - rulesStart)
+            });
+
+            if (!processed?.length) {
+                await this.popupService.showWarning(
+                    'Aucun résultat après traitement du fichier compilé.',
+                    'Traitement'
+                );
+                return;
+            }
+
+            const normalizedProcessed = processed;
+
+            const dedupStart = performance.now();
             const dedupResult = await this.removeDuplicateTreatmentRowsAsync(normalizedProcessed);
             const uniqueProcessed = dedupResult.uniqueRows;
+            perf.mark('Déduplication', {
+                doublons: dedupResult.duplicatesRemoved,
+                lignes: uniqueProcessed.length,
+                dureeMs: Math.round(performance.now() - dedupStart)
+            });
 
             if (!uniqueProcessed.length) {
                 await this.popupService.showWarning(
@@ -565,24 +797,44 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
             const outputName = this.buildProcessedOutputFileName(model, compiled.referenceFile);
 
-            this.traitementProgressMessage = `Téléchargement du fichier compilé : ${outputName}`;
+            this.traitementProgressMessage = `Téléchargement : ${outputName}`;
             this.cd.detectChanges();
-            await this.downloadProcessedTreatmentFile(uniqueProcessed, outputName);
+            const exportStart = performance.now();
+            await this.downloadProcessedTreatmentFile(uniqueProcessed, outputName, { skipNormalize: allCsvSource });
+            perf.mark('Export fichier', { nom: outputName, dureeMs: Math.round(performance.now() - exportStart) });
 
-            const defaultSide = model.fileType === 'partner'
-                ? 'Partenaire'
-                : 'BO (Back Office)';
             const duplicateInfo = dedupResult.duplicatesRemoved > 0
                 ? `\n${dedupResult.duplicatesRemoved} doublon(s) ignoré(s).`
                 : '';
             const compileInfo = this.traitementFiles.length > 1
-                ? `\n${this.traitementFiles.length} fichiers compilés : ${compiled.sourceSummary}`
-                : '';
+                ? `\n${this.traitementFiles.length} fichiers fusionnés : ${compiled.sourceSummary}`
+                : `\n${compiled.sourceSummary}`;
             const preProcessingInfo = preProcessingResultMessage
                 ? `\n\nPré-traitement du modèle ${model.name} :\n${preProcessingResultMessage}`
                 : '';
+            const duplicateSummary = dedupResult.duplicatesRemoved > 0
+                ? ` ${dedupResult.duplicatesRemoved} doublon(s) ignoré(s).`
+                : '';
+            const preProcessingSuccess = preProcessingResultMessage
+                ? `\n\n${preProcessingResultMessage}`
+                : '';
+
+            if (this.embedTraitementSection) {
+                this.traitementProcessing = false;
+                this.resetTraitementPanel();
+                perf.end('Traitement terminé (embed)', { lignes: uniqueProcessed.length, fichier: outputName });
+                await this.popupService.showSuccess(
+                    `Fichier traité et téléchargé (${outputName}).${duplicateSummary}${preProcessingSuccess}`,
+                    'Traitement terminé'
+                );
+                return;
+            }
+
+            const defaultSide = model.fileType === 'partner'
+                ? 'Partenaire'
+                : 'BO (Back Office)';
             const sideChoice = await this.popupService.showSelectInput(
-                `${this.traitementFiles.length} fichier(s) compilé(s) en un seul résultat.\n` +
+                `${this.traitementFiles.length > 1 ? this.traitementFiles.length + ' fichier(s) fusionnés' : 'Fichier traité'}.\n` +
                 `${uniqueProcessed.length} ligne(s) unique(s).${duplicateInfo}${compileInfo}${preProcessingInfo}\n` +
                 `Fichier produit téléchargé : ${outputName}.\n` +
                 `Assigner ce fichier à quel emplacement pour la réconciliation ?`,
@@ -599,22 +851,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.assignProcessedTreatmentData(uniqueProcessed, outputName, side, model.id);
 
             const bothReady = this.canProceedAuto();
-            const duplicateSummary = dedupResult.duplicatesRemoved > 0
-                ? ` ${dedupResult.duplicatesRemoved} doublon(s) ignoré(s).`
-                : '';
             this.traitementProcessing = false;
             this.closeTraitementModal(true);
-            const preProcessingSuccess = preProcessingResultMessage
-                ? `\n\n${preProcessingResultMessage}`
-                : '';
+            perf.end('Traitement terminé', { lignes: uniqueProcessed.length, fichier: outputName });
             await this.popupService.showSuccess(
-                `Fichier compilé traité et téléchargé (${outputName}).${duplicateSummary}${preProcessingSuccess}` +
+                `Fichier traité et téléchargé (${outputName}).${duplicateSummary}${preProcessingSuccess}` +
                 (bothReady
                     ? '\n\nBO et Partenaire sont prêts : vous pouvez lancer la réconciliation.'
                     : '\n\nChargez ou traitez l\'autre fichier (BO ou Partenaire) puis lancez la réconciliation.'),
                 'Traitement terminé'
             );
         } catch (error: any) {
+            perf.end('Traitement échoué', { erreur: error?.message || String(error) });
             console.error('Erreur traitement assisté:', error);
             this.traitementProcessing = false;
             this.closeTraitementModal(true);
@@ -629,7 +877,121 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
     }
 
-    /** Lit et fusionne plusieurs fichiers en un seul jeu de lignes. */
+    /** Fusion multi-fichiers uniquement ; Excel mono-fichier (y compris multi-feuilles) = lecture directe. */
+    private async needsAssistedCompilation(files: File[]): Promise<boolean> {
+        const needs = files.length > 1;
+        console.log(
+            needs
+                ? `⏱️ [traitement] Fusion requise : ${files.length} fichiers — ${files.map(f => f.name).join(', ')}`
+                : `⏱️ [traitement] Lecture directe : ${files[0]?.name ?? '(aucun)'} (pas de fusion inter-fichiers)`
+        );
+        return needs;
+    }
+
+    /** Compte les feuilles Excel qui contiennent des cellules (!ref). */
+    private countWorkbookSheetsWithData(workbook: XLSX.WorkBook): number {
+        const names = workbook.SheetNames ?? [];
+        if (!names.length) {
+            return 0;
+        }
+        const sheets = workbook.Sheets;
+        if (!sheets) {
+            // bookSheets:true ne charge pas Sheets — éviter fusion sur simple décompte de noms
+            return 1;
+        }
+        const withData = names.filter(name => !!sheets[name]?.['!ref']);
+        return withData.length > 0 ? withData.length : 1;
+    }
+
+    private getWorkbookSheetNamesWithData(workbook: XLSX.WorkBook): string[] {
+        const names = workbook.SheetNames ?? [];
+        if (!names.length) {
+            return [];
+        }
+        const sheets = workbook.Sheets;
+        if (!sheets) {
+            return [names[0]];
+        }
+        const withData = names.filter(name => !!sheets[name]?.['!ref']);
+        return withData.length > 0 ? withData : [names[0]];
+    }
+
+    private async countExcelSheets(file: File): Promise<number> {
+        const data = new Uint8Array(await this.readFileAsArrayBuffer(file));
+        const workbook = XLSX.read(data, { type: 'array', bookSheets: true });
+        return this.countWorkbookSheetsWithData(workbook);
+    }
+
+    getTraitementActionLabel(): string {
+        return this.traitementFiles.length > 1
+            ? 'Compiler et appliquer le traitement'
+            : 'Appliquer le traitement';
+    }
+
+    /** Chronomètre console pour diagnostiquer les lenteurs du traitement assisté. */
+    private startTreatmentPerf(
+        label: string,
+        details?: Record<string, unknown>
+    ): {
+        mark: (step: string, detail?: Record<string, unknown>) => void;
+        end: (step: string, detail?: Record<string, unknown>) => void;
+    } {
+        const runId = `traitement-${Date.now().toString(36)}`;
+        const t0 = performance.now();
+        let last = t0;
+        console.groupCollapsed(`⏱️ [${runId}] ${label}`);
+        if (details) {
+            console.log('📋 Contexte:', details);
+        }
+        return {
+            mark: (step: string, detail?: Record<string, unknown>) => {
+                const now = performance.now();
+                const delta = now - last;
+                const total = now - t0;
+                console.log(
+                    `⏱️ [${runId}] ${step} — +${delta.toFixed(0)} ms (total ${total.toFixed(0)} ms)`,
+                    detail ?? ''
+                );
+                last = now;
+            },
+            end: (step: string, detail?: Record<string, unknown>) => {
+                const now = performance.now();
+                const total = now - t0;
+                console.log(
+                    `⏱️ [${runId}] ✅ ${step} — TOTAL ${total.toFixed(0)} ms (${(total / 1000).toFixed(2)} s)`,
+                    detail ?? ''
+                );
+                console.groupEnd();
+            }
+        };
+    }
+
+    /** Lecture directe d'un seul fichier (CSV ou Excel mono-feuille) — sans étape de compilation. */
+    private async loadSingleAssistedTreatmentFile(file: File): Promise<{
+        rows: Record<string, string>[];
+        sourceSummary: string;
+        referenceFile: File;
+    }> {
+        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        this.traitementProgressMessage = `Lecture ultra-rapide : ${file.name} (${fileSizeMB} Mo)`;
+        this.cd.detectChanges();
+
+        const parsed = await this.readAssistedTreatmentFileRows(file);
+        const headerInfo = parsed.headerLine >= 0
+            ? `, en-tête ligne ${parsed.headerLine + 1}`
+            : '';
+        const removedInfo = parsed.removedLines > 0
+            ? `, ${parsed.removedLines} ligne(s) ignorée(s)`
+            : '';
+
+        return {
+            rows: parsed.rows,
+            sourceSummary: `${file.name} (${parsed.rows.length}${headerInfo}${removedInfo})`,
+            referenceFile: file
+        };
+    }
+
+    /** Fusionne plusieurs fichiers ou feuilles Excel en un seul jeu de lignes. */
     private async compileAssistedTreatmentFileRows(files: File[]): Promise<{
         rows: Record<string, string>[];
         sourceSummary: string;
@@ -640,7 +1002,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            this.traitementProgressMessage = `Compilation ${i + 1}/${files.length} : ${file.name}`;
+            const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+            this.traitementProgressMessage =
+                `Fusion ultra-rapide ${i + 1}/${files.length} : ${file.name} (${fileSizeMB} Mo)`;
             this.cd.detectChanges();
 
             const parsed = await this.readAssistedTreatmentFileRows(file);
@@ -654,7 +1018,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     : '';
                 loadedNames.push(`${file.name} (${parsed.rows.length}${headerInfo}${removedInfo})`);
             }
-            await this.yieldToMainThread();
+            if (i < files.length - 1) {
+                await this.yieldToMainThread(true);
+            }
         }
 
         return {
@@ -669,6 +1035,290 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         for (let i = 0; i < source.length; i++) {
             target.push(source[i]);
         }
+    }
+
+    /** Paramètres de traitement par chunks (alignés sur la zone glisser-déposer /traitement). */
+    private getAssistedCompilationBatchConfig(dataRowCount: number): { yieldEvery: number } {
+        if (dataRowCount > 500000) {
+            return { yieldEvery: 15000 };
+        }
+        if (dataRowCount > 100000) {
+            return { yieldEvery: 2500 };
+        }
+        if (dataRowCount > 10000) {
+            return { yieldEvery: 500 };
+        }
+        return { yieldEvery: 1000 };
+    }
+
+    /** Normalise uniquement la zone utile à la détection d'en-têtes (max 300 lignes). */
+    private buildAssistedHeaderDetectionGrid(jsonData: any[][]): any[][] {
+        const scanLimit = Math.min(300, jsonData.length);
+        const headerGrid: any[][] = new Array(scanLimit);
+        for (let i = 0; i < scanLimit; i++) {
+            headerGrid[i] = this.resolveAssistedGridRow(jsonData[i]);
+        }
+        return headerGrid;
+    }
+
+    /** Construit une ligne compilée rapidement (même logique que le glisser-déposer /traitement). */
+    private buildAssistedRowFromGridCells(headers: string[], rowData: any[]): Record<string, string> {
+        const row: Record<string, string> = {};
+        for (let index = 0; index < headers.length; index++) {
+            const value = rowData[index];
+            row[headers[index]] = value !== undefined && value !== null
+                ? fixCellEncodingIfNeeded(String(value).trim())
+                : '';
+        }
+        return row;
+    }
+
+    private buildAssistedCsvRow(headers: string[], values: string[]): Record<string, string> {
+        const row: Record<string, string> = {};
+        for (let index = 0; index < headers.length; index++) {
+            row[headers[index]] = fixGarbledCharacters((values[index] ?? '').trim());
+        }
+        return row;
+    }
+
+    /** Ne normalise que les lignes « une seule cellule avec séparateurs » (export Excel mal formé). */
+    private resolveAssistedGridRow(row: any[]): any[] {
+        if (!Array.isArray(row) || row.length === 0) {
+            return row;
+        }
+        const nonEmptyCells = row.filter(
+            cell => cell !== null && cell !== undefined && String(cell).trim() !== ''
+        );
+        if (nonEmptyCells.length !== 1) {
+            return row;
+        }
+        return this.normalizeAssistedTreatmentRow(row);
+    }
+
+    /** Conserve les libellés d'origine (EN) pour que les filtres du modèle restent alignés. */
+    private mapAssistedTreatmentHeaders(headerRow: string[], fallbackRow: string[] = []): string[] {
+        const source = headerRow.some(h => h && String(h).trim()) ? headerRow : fallbackRow;
+        return source.map((header, index) => this.normalizeColumnName(header || `Col${index + 1}`));
+    }
+
+    private detectAssistedCsvDelimiter(line: string): string {
+        const delimiters = [';', ',', '\t', '|'];
+        const sampleLine = line.length > 1000 ? line.substring(0, 1000) : line;
+        let bestDelimiter = ';';
+        let bestScore = 0;
+        for (const delimiter of delimiters) {
+            const score = sampleLine.split(delimiter).length;
+            if (score > bestScore) {
+                bestScore = score;
+                bestDelimiter = delimiter;
+            }
+        }
+        return bestDelimiter;
+    }
+
+    private splitCsvLineFast(line: string, delimiter: string): string[] {
+        return line.split(delimiter);
+    }
+
+    private resolveAssistedCsvHeader(
+        lines: string[],
+        delimiter: string
+    ): {
+        headerLine: number;
+        headers: string[];
+        dataStartLine: number;
+        skippedBeforeHeader: number;
+        source: string;
+    } {
+        for (let i = 0; i < Math.min(15, lines.length); i++) {
+            const line = lines[i];
+            if (!line.trim()) {
+                continue;
+            }
+            const lower = line.toLowerCase();
+            const hasTransactionId = lower.includes('transaction id') || lower.includes('transaction_id');
+            const hasSerialOrSender =
+                lower.includes('s. no') ||
+                lower.includes('s.no') ||
+                lower.includes('sender msisdn') ||
+                lower.includes('sender_msisdn');
+            if (hasTransactionId && hasSerialOrSender) {
+                const headerCells = this.splitCsvLineFast(line, delimiter);
+                const headers = headerCells.map((header, index) =>
+                    this.normalizeColumnName(fixGarbledCharacters(header.trim()) || `Col${index + 1}`)
+                );
+                return {
+                    headerLine: i,
+                    headers,
+                    dataStartLine: i + 1,
+                    skippedBeforeHeader: i,
+                    source: 'Airtel User Transaction Report'
+                };
+            }
+        }
+
+        const headerGrid: any[][] = [];
+        const lineIndices: number[] = [];
+        for (let i = 0; i < lines.length && headerGrid.length < 300; i++) {
+            const line = lines[i];
+            if (!line.trim()) {
+                continue;
+            }
+            const cells = this.splitCsvLineFast(line, delimiter);
+            if (!cells.length) {
+                continue;
+            }
+            headerGrid.push(cells.map(cell => fixGarbledCharacters(cell.trim())));
+            lineIndices.push(i);
+        }
+
+        if (!headerGrid.length) {
+            return {
+                headerLine: 0,
+                headers: [],
+                dataStartLine: 0,
+                skippedBeforeHeader: 0,
+                source: 'vide'
+            };
+        }
+
+        const assistedHeader = this.detectAssistedTreatmentHeader(headerGrid);
+        const headerLine = assistedHeader.headerRowIndex;
+        const headerRow = assistedHeader.headerRow;
+        const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
+        const headers = this.mapAssistedTreatmentHeaders(
+            hasDetectedHeaders ? headerRow : [],
+            headerGrid[0] || []
+        );
+
+        if (hasDetectedHeaders) {
+            return {
+                headerLine,
+                headers,
+                dataStartLine: (lineIndices[headerLine] ?? headerLine) + 1,
+                skippedBeforeHeader: headerLine,
+                source: assistedHeader.source
+            };
+        }
+
+        return {
+            headerLine: 0,
+            headers,
+            dataStartLine: (lineIndices[0] ?? 0) + 1,
+            skippedBeforeHeader: 0,
+            source: assistedHeader.source
+        };
+    }
+
+    private collectAssistedTreatmentInputColumns(
+        model: AutoProcessingModel,
+        columnRules: ColumnProcessingRule[]
+    ): string[] {
+        const columns = new Set<string>(
+            this.modelPreProcessingService.collectInputColumns(model.preProcessingConfig)
+        );
+        columnRules.forEach(rule => {
+            if (rule.sourceColumn) {
+                columns.add(rule.sourceColumn);
+            }
+        });
+        return Array.from(columns);
+    }
+
+    /**
+     * Enrichissement bilingue uniquement si une colonne source du modèle n'est pas résolue
+     * mais qu'un alias FR peut être dérivé d'un en-tête EN déjà présent.
+     */
+    private needsAssistedColumnEnrichment(
+        sampleRow: Record<string, string>,
+        inputColumns: string[]
+    ): boolean {
+        for (const column of inputColumns) {
+            if (!column || resolveColumnKeyInRow(sampleRow, column)) {
+                continue;
+            }
+            if (this.buildAssistedFrenchAliasesForInputColumns(
+                Object.keys(sampleRow),
+                [column],
+                sampleRow
+            ).length > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private buildAssistedFrenchAliasesForInputColumns(
+        headers: string[],
+        inputColumns: string[],
+        sampleRow: Record<string, string>
+    ): FrenchAliasEntry[] {
+        const allAliases = buildFrenchAliasEntries(headers);
+        if (!allAliases.length || !inputColumns.length) {
+            return [];
+        }
+
+        const neededFrenchKeys = new Set<string>();
+        for (const column of inputColumns) {
+            if (!column || resolveColumnKeyInRow(sampleRow, column)) {
+                continue;
+            }
+            const canonicalId = resolveCanonicalColumnId(column);
+            const frenchLabel = canonicalId ? getCanonicalFrenchLabel(canonicalId) : null;
+            if (frenchLabel) {
+                neededFrenchKeys.add(frenchLabel);
+            }
+        }
+
+        if (!neededFrenchKeys.size) {
+            return allAliases;
+        }
+
+        return allAliases.filter(alias => neededFrenchKeys.has(alias.frenchKey));
+    }
+
+    private async enrichAssistedRowsAsync(
+        rows: Record<string, string>[],
+        inputColumns: string[],
+        onProgress?: (done: number, total: number) => void | Promise<void>
+    ): Promise<Record<string, string>[]> {
+        if (!rows.length) {
+            return rows;
+        }
+
+        const aliases = this.buildAssistedFrenchAliasesForInputColumns(
+            Object.keys(rows[0]),
+            inputColumns,
+            rows[0]
+        );
+        if (!aliases.length) {
+            return rows;
+        }
+
+        const batchSize = rows.length > 50000 ? 2000 : 500;
+        for (let start = 0; start < rows.length; start += batchSize) {
+            await onProgress?.(start, rows.length);
+            await this.yieldToMainThread(true);
+            const end = Math.min(start + batchSize, rows.length);
+            for (let i = start; i < end; i++) {
+                applyFrenchAliasesToRow(rows[i], aliases);
+            }
+        }
+
+        if (onProgress) {
+            await onProgress(rows.length, rows.length);
+        }
+
+        return rows;
+    }
+
+    private readFileAsText(file: File): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e: ProgressEvent<FileReader>) => resolve(e.target?.result as string);
+            reader.onerror = () => reject(new Error('Erreur lors de la lecture du fichier'));
+            reader.readAsText(file, 'utf-8');
+        });
     }
 
     /**
@@ -688,8 +1338,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const headerLine = assistedHeader.headerRowIndex;
         const headerRow = assistedHeader.headerRow;
         const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
-        const headers = (hasDetectedHeaders ? headerRow : normalizedGrid[0] || [])
-            .map((header: any, index: number) => this.normalizeColumnName(header || `Col${index + 1}`));
+        const headers = this.mapAssistedTreatmentHeaders(
+            hasDetectedHeaders ? headerRow : [],
+            normalizedGrid[0] || []
+        );
         const startIndex = hasDetectedHeaders ? headerLine + 1 : 1;
         const skippedBeforeHeader = hasDetectedHeaders ? headerLine : 0;
 
@@ -713,7 +1365,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 continue;
             }
 
-            rows.push(row);
+            rows.push(enrichRowWithCanonicalFrenchColumns(row));
         }
 
         console.log(
@@ -729,7 +1381,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         };
     }
 
-    private async parseAssistedTreatmentGridAsync(jsonData: any[][]): Promise<{
+    private async parseAssistedTreatmentGridAsync(
+        jsonData: any[][],
+        progressLabel = 'Lecture Excel'
+    ): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
@@ -738,31 +1393,33 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return { rows: [], headerLine: 0, removedLines: 0 };
         }
 
-        const normalizedGrid = await this.normalizeAssistedTreatmentGridAsync(jsonData);
-        const assistedHeader = this.detectAssistedTreatmentHeader(normalizedGrid);
+        const headerGrid = this.buildAssistedHeaderDetectionGrid(jsonData);
+        const assistedHeader = this.detectAssistedTreatmentHeader(headerGrid);
         const headerLine = assistedHeader.headerRowIndex;
         const headerRow = assistedHeader.headerRow;
         const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
-        const headers = (hasDetectedHeaders ? headerRow : normalizedGrid[0] || [])
-            .map((header: any, index: number) => this.normalizeColumnName(header || `Col${index + 1}`));
+        const headers = this.mapAssistedTreatmentHeaders(
+            hasDetectedHeaders ? headerRow : [],
+            headerGrid[0] || []
+        );
         const startIndex = hasDetectedHeaders ? headerLine + 1 : 1;
         const skippedBeforeHeader = hasDetectedHeaders ? headerLine : 0;
 
         const rows: Record<string, string>[] = [];
         let skippedUselessRows = 0;
-        const batchSize = 2500;
+        const dataRowCount = jsonData.length - startIndex;
+        const { yieldEvery } = this.getAssistedCompilationBatchConfig(dataRowCount);
+        let processedDataRows = 0;
+        const gridParseStart = performance.now();
 
-        for (let i = startIndex; i < normalizedGrid.length; i++) {
-            const rowData = normalizedGrid[i] as any[];
+        for (let i = startIndex; i < jsonData.length; i++) {
+            const rowData = this.resolveAssistedGridRow(jsonData[i] as any[]);
             if (!rowData || rowData.length === 0) {
                 skippedUselessRows++;
                 continue;
             }
 
-            const row: Record<string, string> = {};
-            headers.forEach((header, index) => {
-                this.assignExcelCellValue(row, header, rowData[index]);
-            });
+            const row = this.buildAssistedRowFromGridCells(headers, rowData);
 
             if (!this.isUsefulAssistedTreatmentRow(row, headers)) {
                 skippedUselessRows++;
@@ -770,16 +1427,30 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             }
 
             rows.push(row);
+            processedDataRows++;
 
-            if (rows.length % batchSize === 0) {
-                await this.yieldToMainThread();
+            if (processedDataRows % yieldEvery === 0) {
+                this.traitementProgressMessage =
+                    `${progressLabel} : ${processedDataRows.toLocaleString('fr-FR')} / ${dataRowCount.toLocaleString('fr-FR')} ligne(s)...`;
+                this.cd.detectChanges();
+                await this.yieldToMainThread(true);
             }
         }
 
+        if (processedDataRows > 0) {
+            this.traitementProgressMessage =
+                `${progressLabel} : ${processedDataRows.toLocaleString('fr-FR')} / ${dataRowCount.toLocaleString('fr-FR')} ligne(s) — finalisation...`;
+            this.cd.detectChanges();
+            await this.yieldToMainThread(true);
+        }
+
+        const gridParseMs = performance.now() - gridParseStart;
         console.log(
             `📋 Traitement assisté (${assistedHeader.source}) — en-tête ligne ${headerLine + 1}, ` +
             `${skippedBeforeHeader} ligne(s) avant en-tête ignorée(s), ` +
-            `${skippedUselessRows} ligne(s) inutile(s) filtrée(s), ${rows.length} ligne(s) conservée(s)`
+            `${skippedUselessRows} ligne(s) inutile(s) filtrée(s), ${rows.length} ligne(s) conservée(s) — ` +
+            `⏱️ ${gridParseMs.toFixed(0)} ms (${rows.length ? (gridParseMs / rows.length).toFixed(2) : 0} ms/ligne) ` +
+            `[${progressLabel}]`
         );
 
         return {
@@ -795,24 +1466,32 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         headerLine: number;
         removedLines: number;
     }> {
-        const sheetNames = workbook.SheetNames.filter(name => !!workbook.Sheets[name]);
+        const sheetNames = this.getWorkbookSheetNamesWithData(workbook);
         if (!sheetNames.length) {
             return { rows: [], headerLine: 0, removedLines: 0 };
         }
 
-        const firstGrid = await this.normalizeAssistedTreatmentGridAsync(
-            this.workbookSheetToGrid(workbook.Sheets[sheetNames[0]])
-        );
+        const multiSheet = sheetNames.length > 1;
+        const firstSheet = workbook.Sheets?.[sheetNames[0]];
+        if (!firstSheet) {
+            return { rows: [], headerLine: 0, removedLines: 0 };
+        }
+        const firstGrid = await this.workbookSheetToGridAsync(firstSheet);
         if (!firstGrid.length) {
             return { rows: [], headerLine: 0, removedLines: 0 };
         }
 
-        const firstParse = await this.parseAssistedTreatmentGridAsync(firstGrid);
-        if (sheetNames.length === 1) {
+        const firstParse = await this.parseAssistedTreatmentGridAsync(
+            firstGrid,
+            multiSheet ? 'Fusion feuille 1' : 'Lecture Excel'
+        );
+        if (!multiSheet) {
             return firstParse;
         }
 
-        const assistedHeader = this.detectAssistedTreatmentHeader(firstGrid);
+        const assistedHeader = this.detectAssistedTreatmentHeader(
+            this.buildAssistedHeaderDetectionGrid(firstGrid)
+        );
         const headerRow = assistedHeader.headerRow.map(h => this.normalizeColumnName(h || ''));
         const headers = firstParse.rows.length
             ? Object.keys(firstParse.rows[0])
@@ -828,12 +1507,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         for (let i = 1; i < sheetNames.length; i++) {
             const sheetName = sheetNames[i];
-            this.traitementProgressMessage = `Compilation feuille ${i + 1}/${sheetNames.length} : ${sheetName}`;
+            this.traitementProgressMessage = `Fusion feuille ${i + 1}/${sheetNames.length} : ${sheetName}`;
             this.cd.detectChanges();
 
-            const grid = await this.normalizeAssistedTreatmentGridAsync(
-                this.workbookSheetToGrid(workbook.Sheets[sheetName])
-            );
+            const sheet = workbook.Sheets?.[sheetName];
+            if (!sheet) {
+                continue;
+            }
+            const grid = await this.workbookSheetToGridAsync(sheet);
             if (!grid.length) {
                 continue;
             }
@@ -857,6 +1538,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             headerLine: firstParse.headerLine,
             removedLines
         };
+    }
+
+    private async workbookSheetToGridAsync(worksheet: XLSX.WorkSheet): Promise<any[][]> {
+        this.traitementProgressMessage = 'Extraction des cellules Excel...';
+        this.cd.detectChanges();
+        await this.yieldToMainThread(true);
+        const extractStart = performance.now();
+        const grid = XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            defval: '',
+            raw: true,
+            blankrows: false
+        }) as any[][];
+        console.log(
+            `⏱️ [traitement] sheet_to_json — ${grid.length.toLocaleString('fr-FR')} ligne(s) ` +
+            `en ${(performance.now() - extractStart).toFixed(0)} ms`
+        );
+        return grid;
     }
 
     private workbookSheetToGrid(worksheet: XLSX.WorkSheet): any[][] {
@@ -888,19 +1587,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const startIndex = this.findContinuationSheetDataStart(jsonData, referenceHeaderRow);
         const rows: Record<string, string>[] = [];
         let removedLines = startIndex;
-        const batchSize = 2500;
+        const dataRowCount = jsonData.length - startIndex;
+        const { yieldEvery } = this.getAssistedCompilationBatchConfig(dataRowCount);
+        let processedDataRows = 0;
 
         for (let i = startIndex; i < jsonData.length; i++) {
-            const rowData = jsonData[i] as any[];
+            const rowData = this.resolveAssistedGridRow(jsonData[i] as any[]);
             if (!rowData || rowData.length === 0) {
                 removedLines++;
                 continue;
             }
 
-            const row: Record<string, string> = {};
-            headers.forEach((header, index) => {
-                this.assignExcelCellValue(row, header, rowData[index]);
-            });
+            const row = this.buildAssistedRowFromGridCells(headers, rowData);
 
             if (!this.isUsefulAssistedTreatmentRow(row, headers)) {
                 removedLines++;
@@ -908,9 +1606,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             }
 
             rows.push(row);
+            processedDataRows++;
 
-            if (rows.length % batchSize === 0) {
-                await this.yieldToMainThread();
+            if (processedDataRows % yieldEvery === 0) {
+                await this.yieldToMainThread(true);
             }
         }
 
@@ -947,7 +1646,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 continue;
             }
 
-            rows.push(row);
+            rows.push(enrichRowWithCanonicalFrenchColumns(row));
         }
 
         return { rows, removedLines };
@@ -1010,7 +1709,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             };
         }
 
-        const generic = this.detectExcelHeadersImproved(jsonData);
+        const merchantHeaderIndex = detectMerchantReportHeaderIndex(jsonData);
+        if (merchantHeaderIndex !== null) {
+            const headerRow = this.extractAssistedGridRowStrings(jsonData[merchantHeaderIndex]);
+            return {
+                headerRowIndex: merchantHeaderIndex,
+                headerRow,
+                source: 'Merchant Transaction Report (FR/EN)'
+            };
+        }
+
+        const generic = this.detectExcelHeadersImproved(jsonData, true);
         return {
             headerRowIndex: generic.headerRowIndex,
             headerRow: generic.headerRow,
@@ -1089,7 +1798,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return null;
         }
 
-        const detected = this.detectExcelHeadersImproved(jsonData);
+        const detected = this.detectExcelHeadersImproved(jsonData, true);
         return detected.headerRow?.some(h => h && String(h).trim()) ? detected.headerRowIndex : null;
     }
 
@@ -1264,7 +1973,22 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 return originalDotIndex > 0 ? originalFile.name.substring(originalDotIndex) : '.csv';
             })();
         const dateSuffix = this.formatDateForFileName(this.traitementOutputDate);
-        return `${base}_${dateSuffix}${ext}`;
+        const nameSuffix = this.sanitizeFileNameSegment(this.traitementOutputNameSuffix);
+        const fileBase = nameSuffix ? `${base}_${nameSuffix}_${dateSuffix}` : `${base}_${dateSuffix}`;
+        return `${fileBase}${ext}`;
+    }
+
+    /** Nettoie un segment de nom de fichier (texte optionnel saisi par l'utilisateur). */
+    private sanitizeFileNameSegment(segment: string): string {
+        const cleaned = (segment || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[\\/:*?"<>|]/g, '')
+            .replace(/\s+/g, '_')
+            .replace(/[_\-.]{2,}/g, '_')
+            .replace(/^[_\-.]+|[_\-.]+$/g, '')
+            .trim();
+        return cleaned;
     }
 
     /** Retire les wildcards du pattern (*, ?) pour produire un nom de fichier réel. */
@@ -1285,8 +2009,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const uniqueRows: Record<string, string>[] = [];
         let duplicatesRemoved = 0;
 
+        const orderedKeys = Object.keys(rows[0]);
+
         for (const row of rows) {
-            const key = this.buildTreatmentRowDedupKey(row);
+            const key = this.buildTreatmentRowDedupKey(row, orderedKeys);
             if (seen.has(key)) {
                 duplicatesRemoved++;
                 continue;
@@ -1306,14 +2032,19 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         uniqueRows: Record<string, string>[];
         duplicatesRemoved: number;
     }> {
+        if (!rows.length) {
+            return { uniqueRows: [], duplicatesRemoved: 0 };
+        }
+
         const seen = new Set<string>();
         const uniqueRows: Record<string, string>[] = [];
         let duplicatesRemoved = 0;
-        const batchSize = 5000;
+        const orderedKeys = Object.keys(rows[0]);
+        const batchSize = rows.length > 100000 ? 20000 : 2000;
 
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
-            const key = this.buildTreatmentRowDedupKey(row);
+            const key = this.buildTreatmentRowDedupKey(row, orderedKeys);
             if (seen.has(key)) {
                 duplicatesRemoved++;
             } else {
@@ -1322,7 +2053,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             }
 
             if (i > 0 && i % batchSize === 0) {
-                await this.yieldToMainThread();
+                await this.yieldToMainThread(true);
             }
         }
 
@@ -1333,17 +2064,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return { uniqueRows, duplicatesRemoved };
     }
 
-    private buildTreatmentRowDedupKey(row: Record<string, string>): string {
-        const keys = Object.keys(row).sort();
+    private buildTreatmentRowDedupKey(row: Record<string, string>, orderedKeys: string[]): string {
         let key = '';
-        for (const k of keys) {
-            key += `${k}\u0000${row[k] ?? ''}\u0001`;
+        for (let i = 0; i < orderedKeys.length; i++) {
+            const k = orderedKeys[i];
+            key += `${row[k] ?? ''}\u0001`;
         }
         return key;
     }
 
     private getAssistedXlsxReadOptions(fileSizeMB: number): XLSX.ParsingOptions {
-        if (fileSizeMB > 5) {
+        if (fileSizeMB > 1) {
             return {
                 type: 'array',
                 cellDates: false,
@@ -1354,7 +2085,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 cellStyles: false,
                 cellHTML: false,
                 cellFormula: false,
-                raw: true
+                raw: true,
+                codepage: 65001
             };
         }
         return {
@@ -1364,10 +2096,153 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         };
     }
 
-    private yieldToMainThread(): Promise<void> {
+    private yieldToMainThread(light = false): Promise<void> {
         return new Promise(resolve => {
-            requestAnimationFrame(() => setTimeout(resolve, 0));
+            requestAnimationFrame(() => setTimeout(resolve, light ? 0 : 1));
         });
+    }
+
+    private buildColumnValueCounts(
+        data: Record<string, string>[],
+        column: string | null
+    ): Record<string, number> {
+        const counts: Record<string, number> = {};
+        if (!column || !data?.length) {
+            return counts;
+        }
+        for (let i = 0; i < data.length; i++) {
+            const value = data[i][column];
+            if (value == null || !String(value).trim()) {
+                continue;
+            }
+            const key = String(value);
+            counts[key] = (counts[key] ?? 0) + 1;
+        }
+        return counts;
+    }
+
+    private extractUniqueSortedValuesWithCounts(
+        data: Record<string, string>[],
+        column: string | null
+    ): { values: string[]; counts: Record<string, number> } {
+        const counts = this.buildColumnValueCounts(data, column);
+        return { values: Object.keys(counts).sort(), counts };
+    }
+
+    private assignPartnerServiceSelectionData(data: Record<string, string>[]): void {
+        this.partnerServiceSelectionData = data;
+        this.partnerServiceCounts = this.buildColumnValueCounts(data, this.partnerServiceColumn);
+    }
+
+    private assignPartnerStatusSelectionData(data: Record<string, string>[]): void {
+        this.partnerStatusSelectionData = data;
+        this.partnerStatusCounts = this.buildColumnValueCounts(data, this.partnerStatusColumn);
+    }
+
+    private assignPartnerPaymentSelectionData(data: Record<string, string>[]): void {
+        this.partnerPaymentSelectionData = data;
+        this.partnerPaymentCounts = this.buildColumnValueCounts(data, this.partnerPaymentColumn);
+    }
+
+    private async filterRowsByColumnValuesAsync(
+        data: Record<string, string>[],
+        column: string,
+        allowed: string[],
+        onProgress?: (done: number, total: number) => void
+    ): Promise<Record<string, string>[]> {
+        if (!data?.length || !column || !allowed.length) {
+            return [];
+        }
+        const allowedSet = new Set(allowed);
+        const batchSize = data.length > 100000 ? 20000 : 10000;
+        const result: Record<string, string>[] = [];
+        for (let start = 0; start < data.length; start += batchSize) {
+            const end = Math.min(start + batchSize, data.length);
+            for (let i = start; i < end; i++) {
+                const row = data[i];
+                if (allowedSet.has(row[column])) {
+                    result.push(row);
+                }
+            }
+            onProgress?.(end, data.length);
+            if (end < data.length) {
+                await this.yieldToMainThread(true);
+            }
+        }
+        return result;
+    }
+
+    private isFullValueSelection(selected: string[], available: string[]): boolean {
+        if (!selected.length || selected.length !== available.length) {
+            return false;
+        }
+        const set = new Set(selected);
+        return available.every(v => set.has(v));
+    }
+
+    private shouldSkipCsvNormalize(source: 'csv' | 'excel' | null): boolean {
+        return source === 'csv';
+    }
+
+    private async filterPartnerRowsOrPassthrough(
+        data: Record<string, string>[],
+        column: string,
+        selected: string[],
+        available: string[],
+        progressLabel: string
+    ): Promise<Record<string, string>[]> {
+        if (this.isFullValueSelection(selected, available)) {
+            return data;
+        }
+        return this.filterRowsByColumnValuesAsync(data, column, selected, (done, total) => {
+            this.processingMessage = `${progressLabel} : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`;
+            this.cd.detectChanges();
+        });
+    }
+
+    private async finalizePartnerSelectionData(
+        data: Record<string, string>[],
+        progressPrefix: string
+    ): Promise<Record<string, string>[]> {
+        let working = data;
+        if (!this.shouldSkipCsvNormalize(this.autoPartnerSourceFormat)) {
+            working = await this.normalizeDataAsync(working, (done, total) => {
+                this.processingMessage = `${progressPrefix} — normalisation : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`;
+                this.cd.detectChanges();
+            });
+        }
+        await this.convertDebitCreditToNumberAsync(working, (done, total) => {
+            this.processingMessage = `${progressPrefix} — finalisation : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`;
+            this.cd.detectChanges();
+        });
+        await this.yieldToMainThread(true);
+        return working;
+    }
+
+    private async prepareAutoReconciliationData(
+        boData: Record<string, string>[],
+        partnerData: Record<string, string>[],
+        onProgress: (message: string) => void
+    ): Promise<{ bo: Record<string, string>[]; partner: Record<string, string>[] }> {
+        let bo = boData;
+        let partner = partnerData;
+
+        if (!this.shouldSkipCsvNormalize(this.autoBoSourceFormat)) {
+            onProgress('Normalisation du fichier BO...');
+            bo = await this.normalizeDataAsync(bo, (done, total) => {
+                onProgress(`Normalisation BO : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`);
+            });
+        }
+
+        if (!this.shouldSkipCsvNormalize(this.autoPartnerSourceFormat)) {
+            onProgress('Normalisation du fichier Partenaire...');
+            partner = await this.normalizeDataAsync(partner, (done, total) => {
+                onProgress(`Normalisation Partenaire : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`);
+            });
+        }
+
+        await this.yieldToMainThread(true);
+        return { bo, partner };
     }
 
     /** Laisse l'UI afficher la progression avant l'appel synchrone XLSX.read. */
@@ -1410,6 +2285,20 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
     }
 
+    private async stripKeyColumnWhitespaceAsync(rows: Record<string, string>[]): Promise<Record<string, string>[]> {
+        if (rows.length <= 5000) {
+            return this.stripKeyColumnWhitespace(rows);
+        }
+
+        const batchSize = rows.length > 100000 ? 10000 : 5000;
+        for (let start = 0; start < rows.length; start += batchSize) {
+            const end = Math.min(start + batchSize, rows.length);
+            this.stripKeyColumnWhitespace(rows.slice(start, end));
+            await this.yieldToMainThread(true);
+        }
+        return rows;
+    }
+
     private stripKeyColumnWhitespace(rows: Record<string, string>[]): Record<string, string>[] {
         const keyPatterns = ['cle', 'key', 'reference', 'referenceid', 'idtransaction', 'reconciliation'];
         const isKeyColumn = (col: string): boolean => {
@@ -1417,22 +2306,23 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return keyPatterns.some(k => lower === k || lower.includes(k));
         };
 
-        return rows.map(row => {
-            const cleaned = { ...row };
-            for (const col of Object.keys(cleaned)) {
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            for (const col of Object.keys(row)) {
                 if (isKeyColumn(col)) {
-                    cleaned[col] = stripAllWhitespace(cleaned[col]);
+                    row[col] = stripAllWhitespace(row[col]);
                 }
             }
-            return cleaned;
-        });
+        }
+        return rows;
     }
 
     private async downloadProcessedTreatmentFile(
         data: Record<string, string>[],
-        outputBaseName: string
+        outputBaseName: string,
+        options?: { skipNormalize?: boolean }
     ): Promise<void> {
-        const normalizedData = this.normalizeData(data);
+        const normalizedData = options?.skipNormalize ? data : this.normalizeData(data);
         const columns = this.getColumnsFromData(normalizedData);
         const lowerName = outputBaseName.toLowerCase();
 
@@ -1455,7 +2345,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         side: 'bo' | 'partner',
         modelId?: string
     ): void {
+        const treatedFormat: 'csv' | 'excel' = 'csv';
         if (side === 'bo') {
+            this.autoBoSourceFormat = treatedFormat;
             this.autoBoData = data;
             this.autoBoFile = null;
             this.autoBoFileName = fileName;
@@ -1471,7 +2363,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 }
             }
         } else {
-            this.autoPartnerData = this.convertDebitCreditToNumber(data);
+            this.autoPartnerSourceFormat = treatedFormat;
+            this.autoPartnerData = this.convertDebitCreditToNumberInPlace(data);
             this.autoPartnerFile = null;
             this.autoPartnerFileName = fileName;
             if (modelId) {
@@ -1492,46 +2385,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const fileName = file.name.toLowerCase();
 
         if (fileName.endsWith('.csv')) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (e: ProgressEvent<FileReader>) => {
-                    void (async () => {
-                        try {
-                            let text = e.target?.result as string;
-                            if (text.charCodeAt(0) === 0xFEFF) {
-                                text = text.slice(1);
-                            }
-                            text = this.stripAirtelReportPreambleFromText(text);
-
-                            const sampleLine = text.slice(0, 8192).split('\n').find(line => line.trim()) || '';
-                            const delimiter = (sampleLine.match(/;/g) || []).length > (sampleLine.match(/,/g) || []).length
-                                ? ';'
-                                : ',';
-
-                            Papa.parse(text, {
-                                header: false,
-                                delimiter,
-                                skipEmptyLines: false,
-                                complete: async (results) => {
-                                    try {
-                                        const grid = (results.data as any[][]).filter(
-                                            row => Array.isArray(row) && row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '')
-                                        );
-                                        resolve(await this.parseAssistedTreatmentGridAsync(grid));
-                                    } catch (error) {
-                                        reject(error);
-                                    }
-                                },
-                                error: (error: any) => reject(error)
-                            });
-                        } catch (error) {
-                            reject(error);
-                        }
-                    })();
-                };
-                reader.onerror = () => reject(new Error('Erreur lors de la lecture du fichier CSV'));
-                reader.readAsText(file, 'utf-8');
-            });
+            return this.readAssistedTreatmentCsvFileFast(file);
         }
 
         if (this.isExcelFile(fileName)) {
@@ -1539,6 +2393,29 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         return Promise.reject(new Error('Format non supporté. Utilisez CSV ou Excel.'));
+    }
+
+    /**
+     * Lecture CSV ultra-rapide — PapaParse + Web Worker pour les gros fichiers.
+     */
+    private async readAssistedTreatmentCsvFileFast(file: File): Promise<{
+        rows: Record<string, string>[];
+        headerLine: number;
+        removedLines: number;
+    }> {
+        return readCsvFileUltraFast(file, {
+            stripAirtelPreamble: true,
+            normalizeHeader: (header, index) =>
+                this.normalizeColumnName(header || `Col${index + 1}`),
+            onProgress: (processed, total) => {
+                if (processed % 2500 === 0) {
+                    this.traitementProgressMessage =
+                        `Lecture CSV : ${processed.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
+                    this.cd.detectChanges();
+                }
+            },
+            yieldFn: () => this.yieldToMainThread(true)
+        });
     }
 
     private async readAssistedTreatmentExcelFile(file: File): Promise<{
@@ -1563,13 +2440,25 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.cd.detectChanges();
             await this.yieldToMainThread();
 
+            const xlsxStart = performance.now();
             const workbook = await this.readAssistedXlsxWorkbook(data, fileSizeMB);
+            console.log(
+                `⏱️ [traitement] XLSX.read — ${file.name} (${fileSizeMB.toFixed(1)} Mo) ` +
+                `en ${(performance.now() - xlsxStart).toFixed(0)} ms, ` +
+                `${workbook.SheetNames?.length ?? 0} feuille(s)`
+            );
             if (!workbook.SheetNames?.length) {
                 throw new Error('Aucune feuille Excel trouvée');
             }
 
             await this.yieldToMainThread();
-            return this.parseAssistedTreatmentWorkbook(workbook);
+            const workbookStart = performance.now();
+            const parsed = await this.parseAssistedTreatmentWorkbook(workbook);
+            console.log(
+                `⏱️ [traitement] parseAssistedTreatmentWorkbook — ${parsed.rows.length.toLocaleString('fr-FR')} ligne(s) ` +
+                `en ${(performance.now() - workbookStart).toFixed(0)} ms`
+            );
+            return parsed;
         } catch (error) {
             throw error instanceof Error ? error : new Error(String(error));
         }
@@ -1683,6 +2572,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.autoBoFile = null;
         this.autoBoData = [];
         this.autoBoFileName = '';
+        this.autoBoSourceFormat = null;
         this.assistedBoTreatmentModelId = null;
         this.clearCachesOnFileRemoval('bo');
         this.resetFileInput(this.autoBoFileInputRef);
@@ -1694,6 +2584,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.autoPartnerFile = null;
         this.autoPartnerData = [];
         this.autoPartnerFileName = '';
+        this.autoPartnerSourceFormat = null;
         this.assistedPartnerReconciliationModelId = null;
         this.clearCachesOnFileRemoval('partner');
         this.resetFileInput(this.autoPartnerFileInputRef);
@@ -1776,14 +2667,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.partnerAvailableServices = [];
             this.partnerSelectedServices = [];
             this.partnerServiceSelectionData = [];
+            this.partnerServiceCounts = {};
             this.partnerServiceColumn = null;
             this.partnerStatusColumn = null;
             this.partnerAvailableStatuses = [];
             this.partnerSelectedStatuses = [];
             this.partnerStatusSelectionData = [];
+            this.partnerStatusCounts = {};
             this.partnerAvailablePayments = [];
             this.partnerSelectedPayments = [];
             this.partnerPaymentSelectionData = [];
+            this.partnerPaymentCounts = {};
             this.partnerPaymentColumn = null;
             this.showPartnerAgencySelection = false;
             this.partnerAvailableAgencies = [];
@@ -2009,12 +2903,50 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     private convertDebitCreditToNumber(records: Record<string, any>[]): Record<string, any>[] {
-        return records.map(record => {
-            const newRecord = { ...record };
-            if (newRecord['debit']) newRecord['debit'] = parseFloat(newRecord['debit'].toString().replace(',', '.'));
-            if (newRecord['credit']) newRecord['credit'] = parseFloat(newRecord['credit'].toString().replace(',', '.'));
-            return newRecord;
-        });
+        return this.convertDebitCreditToNumberInPlace(records);
+    }
+
+    /** Conversion in-place (évite de cloner 80k+ lignes avec spread). */
+    private convertDebitCreditToNumberInPlace(records: Record<string, any>[]): Record<string, any>[] {
+        for (let i = 0; i < records.length; i++) {
+            const record = records[i];
+            const debit = record['debit'];
+            if (debit != null && debit !== '') {
+                record['debit'] = parseFloat(String(debit).replace(',', '.'));
+            }
+            const credit = record['credit'];
+            if (credit != null && credit !== '') {
+                record['credit'] = parseFloat(String(credit).replace(',', '.'));
+            }
+        }
+        return records;
+    }
+
+    private async convertDebitCreditToNumberAsync(
+        records: Record<string, any>[],
+        onProgress?: (done: number, total: number) => void
+    ): Promise<Record<string, any>[]> {
+        if (records.length <= 5000) {
+            return this.convertDebitCreditToNumberInPlace(records);
+        }
+        const batchSize = records.length > 100000 ? 20000 : 10000;
+        for (let start = 0; start < records.length; start += batchSize) {
+            const end = Math.min(start + batchSize, records.length);
+            for (let i = start; i < end; i++) {
+                const record = records[i];
+                const debit = record['debit'];
+                if (debit != null && debit !== '') {
+                    record['debit'] = parseFloat(String(debit).replace(',', '.'));
+                }
+                const credit = record['credit'];
+                if (credit != null && credit !== '') {
+                    record['credit'] = parseFloat(String(credit).replace(',', '.'));
+                }
+            }
+            onProgress?.(end, records.length);
+            await this.yieldToMainThread(true);
+        }
+        return records;
     }
 
     // Méthode pour appliquer le filtrage automatique Orange Money dans la réconciliation
@@ -2751,7 +3683,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return this.normalizeData(data);
         }
 
-        const batchSize = 3000;
+        const batchSize = data.length > 100000 ? 20000 : 10000;
         const result: Record<string, string>[] = new Array(data.length);
         for (let start = 0; start < data.length; start += batchSize) {
             const end = Math.min(start + batchSize, data.length);
@@ -2759,7 +3691,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 result[i] = this.normalizeDataRow(data[i]);
             }
             onProgress?.(end, data.length);
-            await this.yieldToMainThread();
+            await this.yieldToMainThread(true);
         }
         return result;
     }
@@ -3337,45 +4269,51 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     /**
      * Méthode améliorée pour détecter les en-têtes Excel
      */
-    private detectExcelHeadersImproved(jsonData: any[][]): { headerRowIndex: number; headerRow: string[] } {
-        console.log('🔄 Détection améliorée des en-têtes Excel');
-        
-        // Analyser davantage de lignes pour les rapports avec entête tardif (ex: Orange Money)
+    private detectExcelHeadersImproved(jsonData: any[][], silent = false): { headerRowIndex: number; headerRow: string[] } {
+        if (!silent) {
+            console.log('🔄 Détection améliorée des en-têtes Excel');
+        }
+
         const maxRowsToCheck = Math.min(300, jsonData.length);
         let bestHeaderRowIndex = 0;
         let bestScore = 0;
         let bestHeaderRow: string[] = [];
-        
+
         for (let i = 0; i < maxRowsToCheck; i++) {
             const row = jsonData[i] as any[];
             if (!row || row.length === 0) continue;
-            
-            // Convertir la ligne en chaînes et nettoyer
+
             const rowStrings = row.map((cell: any) => {
                 if (cell === null || cell === undefined || cell === '') return '';
                 const cellString = String(cell).trim();
                 return cellString || '';
             });
-            
-            // Log pour debug
-            console.log(`🔍 Ligne ${i} - Données brutes:`, row);
-            console.log(`🔍 Ligne ${i} - Après conversion:`, rowStrings);
-            
-            // Calculer le score pour cette ligne
+
+            if (!silent) {
+                console.log(`🔍 Ligne ${i} - Données brutes:`, row);
+                console.log(`🔍 Ligne ${i} - Après conversion:`, rowStrings);
+            }
+
             const score = this.calculateHeaderScore(rowStrings, i);
-            
-            console.log(`🔍 Ligne ${i}: score=${score}, colonnes=${rowStrings.filter(cell => cell !== '').length}`);
-            
+
+            if (!silent) {
+                console.log(`🔍 Ligne ${i}: score=${score}, colonnes=${rowStrings.filter(cell => cell !== '').length}`);
+            }
+
             if (score > bestScore) {
                 bestScore = score;
                 bestHeaderRowIndex = i;
                 bestHeaderRow = [...rowStrings];
-                console.log(`⭐ Nouveau meilleur en-tête trouvé à la ligne ${i} avec score ${score}`);
+                if (!silent) {
+                    console.log(`⭐ Nouveau meilleur en-tête trouvé à la ligne ${i} avec score ${score}`);
+                }
             }
         }
-        
-        console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
-        console.log(`🔍 En-tête détecté:`, bestHeaderRow);
+
+        if (!silent) {
+            console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
+            console.log(`🔍 En-tête détecté:`, bestHeaderRow);
+        }
         
         // Fallback orienté Orange Money: si la meilleure ligne ne contient pas assez d'indices, chercher plus bas
         const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status'];
@@ -3391,7 +4329,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 if (matches >= 4) {
                     bestHeaderRowIndex = i;
                     bestHeaderRow = [...rowStrings];
-                    console.log(`⭐ Fallback OM: en-tête ajusté à la ligne ${i} (matches=${matches})`);
+                    if (!silent) {
+                        console.log(`⭐ Fallback OM: en-tête ajusté à la ligne ${i} (matches=${matches})`);
+                    }
                     break;
                 }
             }
@@ -3428,7 +4368,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             'Opération', 'Agent', 'Correspondant', 'Sous-réseau', 'Transaction',
             'ID', 'External', 'Reference', 'Amount', 'Status', 'Phone', 'Email',
             'Transaction ID', 'Sender Msisdn', 'Receiver Msisdn', 'Post Balance', 'Previous Balance',
-            'S. No', 'Service Name', 'Transaction Status', 'external_transaction'
+            'S. No', 'Service Name', 'Transaction Status', 'external_transaction',
+            'Organization Short Code', 'Receipt No', 'Initiation Time', 'Completion Time',
+            'Paid In', 'Withdrawn', 'ThirdPartyTransactionId', 'Initiator MSISDN',
+            'Code court de l\'organisation', 'N° de reçu', 'Heure d\'initiation', 'Heure de fin',
+            'Versé', 'Retiré', 'Statut de la transaction', 'MSISDN de l\'initiateur'
         ];
         
         for (const cell of rowStrings) {
@@ -3460,6 +4404,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const hasRef  = rowLower.some(v => v.includes('référence') || v.includes('reference'));
         const hasAmt  = rowLower.some(v => v.includes('débit') || v.includes('debit') || v.includes('crédit') || v.includes('credit'));
         if (hasDate && hasRef && hasAmt) score += 20;
+
+        score += scoreMerchantReportHeaderRow(rowStrings);
         
         // Pénalité pour les lignes avec peu de colonnes non vides
         if (nonEmptyColumns < 2) {
@@ -3798,6 +4744,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.partnerAgencySelectionData = [];
         this.partnerAvailableAgencies = [];
         this.partnerServiceSelectionData = [];
+        this.partnerServiceCounts = {};
         this.partnerAvailableServices = [];
         
         const firstRow = data[0];
@@ -3853,7 +4800,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         )].sort();
         
         this.partnerAvailableServices = services;
-        this.partnerServiceSelectionData = data;
+        this.assignPartnerServiceSelectionData(data);
         
         console.log('🔍 Fichier partenaire avec colonne service/type (sans agence ou agence vide), mode manuel');
         console.log('📋 Colonne service/type:', serviceColumn);
@@ -3872,6 +4819,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.partnerAgencySelectionData = [];
         this.partnerAvailableAgencies = [];
         this.partnerServiceSelectionData = [];
+        this.partnerServiceCounts = {};
         this.partnerAvailableServices = [];
 
         const firstRow = data[0];
@@ -3934,7 +4882,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             )];
 
             this.partnerAvailableServices = services.sort();
-            this.partnerServiceSelectionData = data;
+            this.assignPartnerServiceSelectionData(data);
 
             console.log('📋 Services/Types disponibles (partenaire):', this.partnerAvailableServices);
             console.log('📊 Nombre total de lignes:', data.length);
@@ -4064,7 +5012,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         )].sort();
 
         this.partnerAvailableServices = services;
-        this.partnerServiceSelectionData = filteredData;
+        this.assignPartnerServiceSelectionData(filteredData);
         this.showPartnerAgencySelection = false;
         this.partnerAgencySearchFilter = '';
         this.partnerAgencySelectionData = [];
@@ -4102,7 +5050,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     .filter(s => s && s.toString().trim())
             )].sort();
             this.partnerAvailableServices = services;
-            this.partnerServiceSelectionData = source;
+            this.assignPartnerServiceSelectionData(source);
             this.showPartnerAgencySelection = false;
             this.partnerAgencySearchFilter = '';
             this.cd.detectChanges();
@@ -4576,7 +5524,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     // Méthode pour confirmer la sélection des services/type/statut partenaire
-    confirmPartnerServiceSelection(): void {
+    async confirmPartnerServiceSelection(): Promise<void> {
+        if (this.partnerSelectionBusy) {
+            return;
+        }
         if (this.partnerSelectedServices.length === 0) {
             this.errorMessage = 'Veuillez sélectionner au moins un service/type.';
             return;
@@ -4588,52 +5539,55 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.errorMessage = 'Erreur: colonne service/type non trouvée.';
             return;
         }
+
+        this.partnerSelectionBusy = true;
+        this.cd.detectChanges();
+
+        try {
+            const filteredData = await this.filterPartnerRowsOrPassthrough(
+                this.partnerServiceSelectionData,
+                this.partnerServiceColumn,
+                this.partnerSelectedServices,
+                this.partnerAvailableServices,
+                'Filtrage par service'
+            );
+            this.processingMessage = '';
         
-        // Filtrer les données pour ne garder que les lignes des services/types sélectionnés
-        const filteredData = this.partnerServiceSelectionData.filter(row => 
-            this.partnerSelectedServices.includes(row[this.partnerServiceColumn!])
-        );
+            console.log('📊 Données filtrées par service (partenaire):', filteredData.length, 'lignes sur', this.partnerServiceSelectionData.length, 'originales');
         
-        console.log('📊 Données filtrées par service (partenaire):', filteredData.length, 'lignes sur', this.partnerServiceSelectionData.length, 'originales');
-        
-        // Si une colonne statut existe, passer à la sélection des statuts
-        if (this.partnerStatusColumn && filteredData.length > 0) {
-            // Extraire les statuts uniques des données filtrées par service
-            const statuses = [...new Set(
-                filteredData.map(row => row[this.partnerStatusColumn!])
-                    .filter(status => status && status.toString().trim())
-            )];
+            if (this.partnerStatusColumn && filteredData.length > 0) {
+                const { values, counts } = this.extractUniqueSortedValuesWithCounts(
+                    filteredData,
+                    this.partnerStatusColumn
+                );
             
-            this.partnerAvailableStatuses = statuses.sort();
-            this.partnerStatusSelectionData = filteredData;
+                this.partnerAvailableStatuses = values;
+                this.partnerStatusSelectionData = filteredData;
+                this.partnerStatusCounts = counts;
             
-            console.log('📋 Statuts disponibles (partenaire):', this.partnerAvailableStatuses);
+                console.log('📋 Statuts disponibles (partenaire):', this.partnerAvailableStatuses);
             
-            // Masquer la sélection des services et afficher la sélection des statuts
-            this.showPartnerServiceSelection = false;
-            this.showPartnerStatusSelectionStep();
-            
-            // Forcer la détection des changements pour mettre à jour la vue
-            this.cd.detectChanges();
-        } else {
-            // Pas de colonne statut, terminer directement
-            // Nettoyer et normaliser les données avant de les assigner
-            const cleanedData = this.normalizeData(filteredData);
-            const convertedData = this.convertDebitCreditToNumber(cleanedData);
-            
-            if (this.reconciliationMode === 'manual') {
-                // Mode manuel : mettre à jour partnerData
-                this.partnerData = convertedData;
                 this.showPartnerServiceSelection = false;
+                this.showPartnerStatusSelectionStep();
                 this.cd.detectChanges();
-                // Continuer avec la réconciliation manuelle
-                this.continueWithManualReconciliation();
             } else {
-                // Mode automatique : mettre à jour autoPartnerData
-                this.autoPartnerData = convertedData;
-                this.showPartnerServiceSelection = false;
-                this.cd.detectChanges();
+                const convertedData = await this.finalizePartnerSelectionData(filteredData, 'Service partenaire');
+            
+                if (this.reconciliationMode === 'manual') {
+                    this.partnerData = convertedData;
+                    this.showPartnerServiceSelection = false;
+                    this.cd.detectChanges();
+                    this.continueWithManualReconciliation();
+                } else {
+                    this.autoPartnerData = convertedData;
+                    this.showPartnerServiceSelection = false;
+                    this.cd.detectChanges();
+                }
             }
+        } finally {
+            this.partnerSelectionBusy = false;
+            this.processingMessage = '';
+            this.cd.detectChanges();
         }
     }
 
@@ -4662,16 +5616,19 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.partnerAvailableServices = [];
         this.partnerSelectedServices = [];
         this.partnerServiceSelectionData = [];
+        this.partnerServiceCounts = {};
         this.partnerServiceColumn = null;
         this.partnerStatusColumn = null;
         // Nettoyer aussi les variables de statut
         this.partnerAvailableStatuses = [];
         this.partnerSelectedStatuses = [];
         this.partnerStatusSelectionData = [];
+        this.partnerStatusCounts = {};
         // Nettoyer aussi les variables de paiement
         this.partnerAvailablePayments = [];
         this.partnerSelectedPayments = [];
         this.partnerPaymentSelectionData = [];
+        this.partnerPaymentCounts = {};
         this.partnerPaymentColumn = null;
     }
 
@@ -4689,9 +5646,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Méthode pour compter le nombre de lignes par service/type partenaire
     getPartnerServiceCount(service: string): number {
-        if (!this.partnerServiceSelectionData || this.partnerServiceSelectionData.length === 0 || !this.partnerServiceColumn) return 0;
-        
-        return this.partnerServiceSelectionData.filter(row => row[this.partnerServiceColumn!] === service).length;
+        return this.partnerServiceCounts[service] ?? 0;
     }
 
     get filteredPartnerAvailableServices(): string[] {
@@ -4721,9 +5676,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     selectAllPartnerServices(): void {
-        const toSelect = this.filteredPartnerAvailableServices;
-        toSelect.forEach(s => { if (!this.partnerSelectedServices.includes(s)) this.partnerSelectedServices.push(s); });
-        this.partnerSelectedServices = [...this.partnerSelectedServices];
+        const selected = new Set(this.partnerSelectedServices);
+        this.filteredPartnerAvailableServices.forEach(s => selected.add(s));
+        this.partnerSelectedServices = [...selected];
     }
 
     deselectAllPartnerServices(): void {
@@ -4739,7 +5694,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     // Méthode pour confirmer la sélection des statuts partenaire
-    confirmPartnerStatusSelection(): void {
+    async confirmPartnerStatusSelection(): Promise<void> {
+        if (this.partnerSelectionBusy) {
+            return;
+        }
         if (this.partnerSelectedStatuses.length === 0) {
             this.errorMessage = 'Veuillez sélectionner au moins un statut.';
             return;
@@ -4751,87 +5709,79 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.errorMessage = 'Erreur: colonne statut non trouvée.';
             return;
         }
+
+        this.partnerSelectionBusy = true;
+        this.cd.detectChanges();
+
+        try {
+            const filteredData = await this.filterPartnerRowsOrPassthrough(
+                this.partnerStatusSelectionData,
+                this.partnerStatusColumn,
+                this.partnerSelectedStatuses,
+                this.partnerAvailableStatuses,
+                'Filtrage par statut'
+            );
+            this.processingMessage = '';
         
-        // Filtrer les données pour ne garder que les lignes des statuts sélectionnés
-        const filteredData = this.partnerStatusSelectionData.filter(row => 
-            this.partnerSelectedStatuses.includes(row[this.partnerStatusColumn!])
-        );
+            console.log('📊 Données filtrées par statut (partenaire):', filteredData.length, 'lignes sur', this.partnerStatusSelectionData.length, 'originales');
         
-        console.log('📊 Données filtrées par statut (partenaire):', filteredData.length, 'lignes sur', this.partnerStatusSelectionData.length, 'originales');
-        
-        // Vérifier si une colonne Paiement existe dans les données filtrées
-        if (filteredData.length > 0) {
-            const firstRow = filteredData[0];
-            const columns = Object.keys(firstRow);
+            if (filteredData.length > 0) {
+                const firstRow = filteredData[0];
+                const columns = Object.keys(firstRow);
             
-            // Chercher une colonne Paiement
-            const paymentColumn = columns.find(col => {
-                const colLower = col.toLowerCase();
-                return colLower.includes('paiement') || 
-                       colLower.includes('payment') ||
-                       colLower.includes('moyen de paiement') ||
-                       colLower.includes('moyen paiement') ||
-                       colLower.includes('application :') ||
-                       colLower.includes('application:') ||
-                       colLower.includes('application');
-            });
+                const paymentColumn = columns.find(col => {
+                    const colLower = col.toLowerCase();
+                    return colLower.includes('paiement') || 
+                           colLower.includes('payment') ||
+                           colLower.includes('moyen de paiement') ||
+                           colLower.includes('moyen paiement') ||
+                           colLower.includes('application :') ||
+                           colLower.includes('application:') ||
+                           colLower.includes('application');
+                });
             
-            if (paymentColumn) {
-                console.log('📋 Colonne Paiement trouvée:', paymentColumn);
+                if (paymentColumn) {
+                    console.log('📋 Colonne Paiement trouvée:', paymentColumn);
                 
-                // Extraire toutes les valeurs uniques de paiement
-                const payments = [...new Set(
-                    filteredData.map(row => row[paymentColumn])
-                        .filter(payment => payment && payment.toString().trim())
-                )];
+                    const { values, counts } = this.extractUniqueSortedValuesWithCounts(filteredData, paymentColumn);
                 
-                this.partnerAvailablePayments = payments.sort();
-                this.partnerPaymentSelectionData = filteredData;
-                this.partnerPaymentColumn = paymentColumn;
+                    this.partnerAvailablePayments = values;
+                    this.partnerPaymentSelectionData = filteredData;
+                    this.partnerPaymentCounts = counts;
+                    this.partnerPaymentColumn = paymentColumn;
                 
-                console.log('📋 Paiements disponibles (partenaire):', this.partnerAvailablePayments);
+                    console.log('📋 Paiements disponibles (partenaire):', this.partnerAvailablePayments);
                 
-                // Masquer la sélection des statuts
-                this.showPartnerStatusSelection = false;
-                
-                // Nettoyer les variables temporaires de statut
-                this.partnerStatusSelectionData = [];
-                this.partnerAvailableStatuses = [];
-                this.partnerSelectedStatuses = [];
-                
-                // Afficher la sélection des paiements
-                this.showPartnerPaymentSelectionStep();
-                
-                // Forcer la détection des changements pour mettre à jour la vue
-                this.cd.detectChanges();
-                
-                return;
+                    this.showPartnerStatusSelection = false;
+                    this.partnerStatusSelectionData = [];
+                    this.partnerStatusCounts = {};
+                    this.partnerAvailableStatuses = [];
+                    this.partnerSelectedStatuses = [];
+                    this.showPartnerPaymentSelectionStep();
+                    this.cd.detectChanges();
+                    return;
+                }
             }
-        }
         
-        // Pas de colonne Paiement, terminer directement
-        // Nettoyer et normaliser les données avant de les assigner
-        const cleanedData = this.normalizeData(filteredData);
-        const convertedData = this.convertDebitCreditToNumber(cleanedData);
+            const convertedData = await this.finalizePartnerSelectionData(filteredData, 'Statut partenaire');
         
-        // Masquer la sélection des statuts
-        this.showPartnerStatusSelection = false;
+            this.showPartnerStatusSelection = false;
+            this.partnerStatusSelectionData = [];
+            this.partnerStatusCounts = {};
+            this.partnerAvailableStatuses = [];
+            this.partnerSelectedStatuses = [];
         
-        // Nettoyer les variables temporaires
-        this.partnerStatusSelectionData = [];
-        this.partnerAvailableStatuses = [];
-        this.partnerSelectedStatuses = [];
-        
-        if (this.reconciliationMode === 'manual') {
-            // Mode manuel : mettre à jour partnerData
-            this.partnerData = convertedData;
-            this.cd.detectChanges();
-            // Continuer avec la réconciliation manuelle
-            this.continueWithManualReconciliation();
-        } else {
-            // Mode automatique : mettre à jour autoPartnerData
-            this.autoPartnerData = convertedData;
-            // Forcer la détection des changements pour mettre à jour la vue
+            if (this.reconciliationMode === 'manual') {
+                this.partnerData = convertedData;
+                this.cd.detectChanges();
+                this.continueWithManualReconciliation();
+            } else {
+                this.autoPartnerData = convertedData;
+                this.cd.detectChanges();
+            }
+        } finally {
+            this.partnerSelectionBusy = false;
+            this.processingMessage = '';
             this.cd.detectChanges();
         }
     }
@@ -4851,7 +5801,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     // Méthode pour confirmer la sélection des paiements partenaire
-    confirmPartnerPaymentSelection(): void {
+    async confirmPartnerPaymentSelection(): Promise<void> {
+        if (this.partnerSelectionBusy) {
+            return;
+        }
         if (this.partnerSelectedPayments.length === 0) {
             this.errorMessage = 'Veuillez sélectionner au moins un paiement.';
             return;
@@ -4863,63 +5816,31 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.errorMessage = 'Erreur: colonne Paiement non trouvée.';
             return;
         }
-        
-        // Filtrer les données pour ne garder que les lignes des paiements sélectionnés
-        const filteredData = this.partnerPaymentSelectionData.filter(row => 
-            this.partnerSelectedPayments.includes(row[this.partnerPaymentColumn!])
-        );
-        
-        console.log('📊 Données filtrées par paiement (partenaire):', filteredData.length, 'lignes sur', this.partnerPaymentSelectionData.length, 'originales');
-        
-        // Nettoyer et normaliser les données avant de les assigner
-        const cleanedData = this.normalizeData(filteredData);
-        const convertedData = this.convertDebitCreditToNumber(cleanedData);
-        
-        // Masquer la sélection des paiements
-        this.showPartnerPaymentSelection = false;
-        
-        // Nettoyer les variables temporaires
-        this.partnerPaymentSelectionData = [];
-        this.partnerAvailablePayments = [];
-        this.partnerSelectedPayments = [];
-        this.partnerPaymentColumn = null;
-        
-        if (this.reconciliationMode === 'manual') {
-            // Mode manuel : mettre à jour partnerData
-            this.partnerData = convertedData;
-            this.cd.detectChanges();
-            // Continuer avec la réconciliation manuelle
-            this.continueWithManualReconciliation();
-        } else {
-            // Mode automatique : mettre à jour autoPartnerData
-            this.autoPartnerData = convertedData;
-            // Forcer la détection des changements pour mettre à jour la vue
-            this.cd.detectChanges();
-        }
-    }
 
-    // Méthode pour passer la sélection des paiements partenaire
-    // Si aucune valeur de paiement n'est disponible, on applique directement les données existantes sans filtrage
-    // Sinon, on sélectionne tous les paiements disponibles et on réutilise la logique de confirmation
-    skipPartnerPaymentSelection(): void {
-        if (!this.partnerAvailablePayments || this.partnerAvailablePayments.length === 0) {
-            // Aucun paiement distinct détecté : utiliser toutes les lignes déjà filtrées par service/statut
-            const sourceData = this.partnerPaymentSelectionData && this.partnerPaymentSelectionData.length > 0
-                ? this.partnerPaymentSelectionData
-                : this.partnerStatusSelectionData;
+        this.partnerSelectionBusy = true;
+        this.cd.detectChanges();
 
-            const cleanedData = this.normalizeData(sourceData || []);
-            const convertedData = this.convertDebitCreditToNumber(cleanedData);
-
-            // Fermer l'overlay de paiement
+        try {
+            const filteredData = await this.filterPartnerRowsOrPassthrough(
+                this.partnerPaymentSelectionData,
+                this.partnerPaymentColumn,
+                this.partnerSelectedPayments,
+                this.partnerAvailablePayments,
+                'Filtrage par paiement'
+            );
+            this.processingMessage = '';
+        
+            console.log('📊 Données filtrées par paiement (partenaire):', filteredData.length, 'lignes sur', this.partnerPaymentSelectionData.length, 'originales');
+        
+            const convertedData = await this.finalizePartnerSelectionData(filteredData, 'Paiement partenaire');
+        
             this.showPartnerPaymentSelection = false;
-
-            // Nettoyer les variables temporaires
             this.partnerPaymentSelectionData = [];
+            this.partnerPaymentCounts = {};
             this.partnerAvailablePayments = [];
             this.partnerSelectedPayments = [];
             this.partnerPaymentColumn = null;
-
+        
             if (this.reconciliationMode === 'manual') {
                 this.partnerData = convertedData;
                 this.cd.detectChanges();
@@ -4928,10 +5849,53 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.autoPartnerData = convertedData;
                 this.cd.detectChanges();
             }
+        } finally {
+            this.partnerSelectionBusy = false;
+            this.processingMessage = '';
+            this.cd.detectChanges();
+        }
+    }
+
+    // Méthode pour passer la sélection des paiements partenaire
+    // Si aucune valeur de paiement n'est disponible, on applique directement les données existantes sans filtrage
+    // Sinon, on sélectionne tous les paiements disponibles et on réutilise la logique de confirmation
+    async skipPartnerPaymentSelection(): Promise<void> {
+        if (!this.partnerAvailablePayments || this.partnerAvailablePayments.length === 0) {
+            const sourceData = this.partnerPaymentSelectionData && this.partnerPaymentSelectionData.length > 0
+                ? this.partnerPaymentSelectionData
+                : this.partnerStatusSelectionData;
+
+            if (this.partnerSelectionBusy) {
+                return;
+            }
+            this.partnerSelectionBusy = true;
+            this.cd.detectChanges();
+
+            try {
+                const convertedData = await this.finalizePartnerSelectionData(sourceData || [], 'Paiement partenaire (passer)');
+
+                this.showPartnerPaymentSelection = false;
+                this.partnerPaymentSelectionData = [];
+                this.partnerPaymentCounts = {};
+                this.partnerAvailablePayments = [];
+                this.partnerSelectedPayments = [];
+                this.partnerPaymentColumn = null;
+
+                if (this.reconciliationMode === 'manual') {
+                    this.partnerData = convertedData;
+                    this.cd.detectChanges();
+                    this.continueWithManualReconciliation();
+                } else {
+                    this.autoPartnerData = convertedData;
+                    this.cd.detectChanges();
+                }
+            } finally {
+                this.partnerSelectionBusy = false;
+                this.cd.detectChanges();
+            }
         } else {
-            // Paiements disponibles : sélectionner tout et confirmer
             this.partnerSelectedPayments = [...this.partnerAvailablePayments];
-            this.confirmPartnerPaymentSelection();
+            await this.confirmPartnerPaymentSelection();
         }
     }
 
@@ -4961,9 +5925,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Méthode pour compter le nombre de lignes par paiement partenaire
     getPartnerPaymentCount(payment: string): number {
-        if (!this.partnerPaymentSelectionData || this.partnerPaymentSelectionData.length === 0 || !this.partnerPaymentColumn) return 0;
-        
-        return this.partnerPaymentSelectionData.filter(row => row[this.partnerPaymentColumn!] === payment).length;
+        return this.partnerPaymentCounts[payment] ?? 0;
     }
 
     get filteredPartnerAvailablePayments(): string[] {
@@ -5013,9 +5975,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Méthode pour compter le nombre de lignes par statut partenaire
     getPartnerStatusCount(status: string): number {
-        if (!this.partnerStatusSelectionData || this.partnerStatusSelectionData.length === 0 || !this.partnerStatusColumn) return 0;
-        
-        return this.partnerStatusSelectionData.filter(row => row[this.partnerStatusColumn!] === status).length;
+        return this.partnerStatusCounts[status] ?? 0;
     }
 
     get filteredPartnerAvailableStatuses(): string[] {
@@ -5030,9 +5990,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     selectAllPartnerStatuses(): void {
-        const toSelect = this.filteredPartnerAvailableStatuses;
-        toSelect.forEach(st => { if (!this.partnerSelectedStatuses.includes(st)) this.partnerSelectedStatuses.push(st); });
-        this.partnerSelectedStatuses = [...this.partnerSelectedStatuses];
+        const selected = new Set(this.partnerSelectedStatuses);
+        this.filteredPartnerAvailableStatuses.forEach(st => selected.add(st));
+        this.partnerSelectedStatuses = [...selected];
     }
 
     // Méthode pour désélectionner tous les statuts partenaire
@@ -5047,7 +6007,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const fileSizeMB = file.size / (1024 * 1024);
         
         if (fileName.endsWith('.csv')) {
-            this.parseAutoCSV(file, isBo);
+            void this.parseAutoCsvFast(file, isBo);
         } else if (this.isExcelFile(fileName)) {
             // Utiliser la méthode alternative pour les très gros fichiers Excel
             if (fileSizeMB > 50) {
@@ -5061,69 +6021,82 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
     }
 
-    private parseAutoCSV(file: File, isBo: boolean): void {
-        const reader = new FileReader();
-        reader.onload = (e: ProgressEvent<FileReader>) => {
-            let text = e.target?.result as string;
-            // Nettoyer le BOM éventuel
-            if (text.charCodeAt(0) === 0xFEFF) {
-                text = text.slice(1);
-            }
-            
-            // Détecter automatiquement le délimiteur
-            const lines = text.split('\n').filter(line => line.trim());
-            if (lines.length > 0) {
-                const firstLine = lines[0];
-                const commaCount = (firstLine.match(/,/g) || []).length;
-                const semicolonCount = (firstLine.match(/;/g) || []).length;
-                const delimiter = semicolonCount > commaCount ? ';' : ',';
-                
-                console.log(`📊 Fichier ${file.name}: détecté délimiteur "${delimiter}"`);
-                
-                Papa.parse(text, {
-                    header: true,
-                    delimiter: delimiter,
-                    skipEmptyLines: true,
-                    transformHeader: (header: string) => {
-                        // Normaliser les noms de colonnes pour assurer la cohérence avec les fichiers XLSX
-                        return this.normalizeColumnName(header);
-                    },
-                    complete: (results) => {
-                        console.log('Première ligne lue:', results.data[0]);
-                        if (isBo) {
-                            this.autoBoData = results.data as Record<string, string>[];
-                            
-                            // Vérifier si c'est un fichier TRXBO et déclencher la sélection des agences ou services
-                            if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
-                                if (this.availableAgencies.length > 0) {
-                                    this.showAgencySelectionStep();
-                                } else {
-                                    this.showServiceSelectionStep();
-                                }
-                            }
-                        } else {
-                            this.autoPartnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
-                            
-                            // Vérifier si le fichier partenaire contient des colonnes service/type/statut
-                            this.handleAutoPartnerSelectionFlow();
-                        }
-                        // Forcer la détection des changements pour mettre à jour la vue
-                        this.cd.detectChanges();
-                    },
-                    error: (error: any) => {
-                        console.error('Erreur lors de la lecture du fichier CSV:', error);
+    /** Lecture CSV assistée — PapaParse + Web Worker pour les gros fichiers. */
+    private async parseAutoCsvFast(file: File, isBo: boolean): Promise<void> {
+        const showProgress = file.size > 512 * 1024;
+        if (showProgress) {
+            this.isProcessingLargeFile = true;
+            this.processingProgress = 0;
+            this.processingMessage = `Lecture de ${file.name}...`;
+            this.cd.detectChanges();
+        }
+
+        try {
+            const { rows } = await readCsvFileUltraFast(file, {
+                stripAirtelPreamble: true,
+                normalizeHeader: (header, index) =>
+                    this.normalizeColumnName(header || `Col${index + 1}`),
+                onProgress: (processed, total) => {
+                    if (!showProgress) {
+                        return;
+                    }
+                    this.processingProgress = total > 0 ? Math.round((processed / total) * 100) : 0;
+                    this.processingMessage =
+                        `Lecture ${file.name} : ${processed.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
+                    this.cd.detectChanges();
+                },
+                yieldFn: () => this.yieldToMainThread(true)
+            });
+
+            const data = rows as Record<string, string>[];
+            console.log('Première ligne lue:', data[0]);
+
+            if (isBo) {
+                this.autoBoSourceFormat = 'csv';
+                this.autoBoData = data;
+                if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
+                    if (this.availableAgencies.length > 0) {
+                        this.showAgencySelectionStep();
+                    } else {
+                        this.showServiceSelectionStep();
+                    }
+                }
+            } else {
+                this.autoPartnerSourceFormat = 'csv';
+                this.autoPartnerData = data;
+                await this.convertDebitCreditToNumberAsync(data, (done, total) => {
+                    if (showProgress) {
+                        this.processingMessage =
+                            `Finalisation partenaire : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`;
                         this.cd.detectChanges();
                     }
                 });
+                this.handleAutoPartnerSelectionFlow();
             }
-        };
-        reader.onerror = (e) => {
-            console.error('Erreur lors de la lecture du fichier (FileReader):', e);
-        };
-        reader.readAsText(file, 'utf-8');
+            this.cd.detectChanges();
+        } catch (error) {
+            console.error('Erreur lors de la lecture du fichier CSV:', error);
+            this.cd.detectChanges();
+        } finally {
+            if (showProgress) {
+                this.isProcessingLargeFile = false;
+                this.processingProgress = 0;
+                this.processingMessage = '';
+                this.cd.detectChanges();
+            }
+        }
+    }
+
+    private parseAutoCSV(file: File, isBo: boolean): void {
+        void this.parseAutoCsvFast(file, isBo);
     }
 
     private parseAutoXLSX(file: File, isBo: boolean): void {
+        if (isBo) {
+            this.autoBoSourceFormat = 'excel';
+        } else {
+            this.autoPartnerSourceFormat = 'excel';
+        }
         // Afficher un indicateur de progression pour les fichiers volumineux
         const fileSizeMB = file.size / (1024 * 1024);
         const startTime = Date.now();
@@ -6484,17 +7457,34 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
 
     canProceedAuto(): boolean {
-        return this.autoBoData.length > 0 && this.autoPartnerData.length > 0;
+        return this.autoBoData.length > 0 && this.autoPartnerData.length > 0 && !this.autoProceedBusy;
     }
 
     async onAutoProceed(): Promise<void> {
+        if (!this.autoBoData.length || !this.autoPartnerData.length || this.autoProceedBusy) {
+            return;
+        }
         if (this.canProceedAuto()) {
+            this.autoProceedBusy = true;
             this.appStateService.setReconciliationLaunchMode('assisted');
             this.appStateService.setReconciliationEntryPath('/upload-assisted');
             this.loading = false; // Ne pas utiliser loading pour ne pas masquer la barre de progression
             this.errorMessage = '';
             this.successMessage = '';
-            this.showReconciliationProgress = false; // Réinitialiser
+            this.showReconciliationProgress = true;
+            this.reconciliationProgress = {
+                percentage: 0,
+                step: 'Détection des clés de réconciliation...',
+                currentBoChunk: 0,
+                totalBoChunks: 0,
+                matchesCount: 0,
+                boOnlyCount: 0,
+                partnerRemaining: 0,
+                processed: 0,
+                total: 0
+            };
+            this.cd.detectChanges();
+            await this.yieldToMainThread(true);
 
             console.log('🚀 Démarrage de la réconciliation automatique...');
             console.log('📊 Données BO:', this.autoBoData.length, 'lignes');
@@ -6602,11 +7592,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     }
                 }
                     
-            // Normaliser les données avant de créer la requête pour éviter les erreurs JSON
-            const normalizedBoData = this.normalizeData(processedBoData);
-            const normalizedPartnerData = this.normalizeData(processedPartnerData);
+            const prepared = await this.prepareAutoReconciliationData(
+                processedBoData,
+                processedPartnerData,
+                (message) => {
+                    this.reconciliationProgress = { ...this.reconciliationProgress, step: message };
+                    this.cd.detectChanges();
+                }
+            );
+            const normalizedBoData = prepared.bo;
+            const normalizedPartnerData = prepared.partner;
             
-            console.log('🔍 Normalisation des données:', {
+            console.log('🔍 Données prêtes pour réconciliation:', {
                 boDataLength: normalizedBoData.length,
                 partnerDataLength: normalizedPartnerData.length,
                 boSample: normalizedBoData[0],
@@ -6623,36 +7620,29 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 boColumnFilters: []
             };
 
-            // Vérifier que la requête peut être sérialisée en JSON
-            try {
-                const jsonTest = JSON.stringify(reconciliationRequest);
-                console.log('✅ Requête JSON valide, taille:', (jsonTest.length / 1024 / 1024).toFixed(2), 'MB');
-            } catch (error) {
-                console.error('❌ Erreur de sérialisation JSON:', error);
-                throw new Error('Erreur: Les données ne peuvent pas être sérialisées en JSON. Vérifiez la structure des données.');
+            const totalRows = normalizedBoData.length + normalizedPartnerData.length;
+            if (totalRows <= 20000) {
+                try {
+                    const jsonTest = JSON.stringify(reconciliationRequest);
+                    console.log('✅ Requête JSON valide, taille:', (jsonTest.length / 1024 / 1024).toFixed(2), 'MB');
+                } catch (error) {
+                    console.error('❌ Erreur de sérialisation JSON:', error);
+                    throw new Error('Erreur: Les données ne peuvent pas être sérialisées en JSON. Vérifiez la structure des données.');
+                }
+            } else {
+                console.log(`📦 Payload volumineux (${totalRows.toLocaleString('fr-FR')} lignes) — envoi direct au moteur de réconciliation`);
             }
 
+            await this.yieldToMainThread(true);
             console.log('🔄 Lancement de la réconciliation...');
 
-                    // Afficher la barre de progression AVANT de lancer la réconciliation
-                    this.loading = false; // S'assurer que loading est false pour afficher la barre
-                    this.showReconciliationProgress = true;
+                    this.loading = false;
                     this.reconciliationProgress = {
-                        percentage: 0,
+                        ...this.reconciliationProgress,
                         step: 'Initialisation de la réconciliation...',
-                        currentBoChunk: 0,
-                        totalBoChunks: 0,
-                        matchesCount: 0,
-                        boOnlyCount: 0,
-                        partnerRemaining: 0,
-                        processed: 0,
-                        total: 0
                     };
                     console.log('📊 Barre de progression activée:', this.showReconciliationProgress);
-                    console.log('📊 État showReconciliationProgress:', this.showReconciliationProgress);
-                    console.log('📊 État loading:', this.loading);
-                    this.cd.detectChanges(); // Forcer la détection de changement immédiatement
-                    console.log('📊 Détection de changement forcée');
+                    this.cd.detectChanges();
 
                     // S'abonner aux mises à jour de progression
                     console.log('📡 Abonnement à la progression...');
@@ -6682,6 +7672,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     this.reconciliationService.reconcile(reconciliationRequest).subscribe({
                         next: (result) => {
                             console.log('✅ Réconciliation terminée');
+                            this.autoProceedBusy = false;
                             this.loading = false;
                             // NE PAS fermer automatiquement le popup - l'utilisateur le fermera manuellement
                             // Mettre à jour la progression à 100% pour indiquer la fin
@@ -6710,6 +7701,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                             // La navigation se fera quand l'utilisateur fermera le popup
                         },
                         error: (error) => {
+                            this.autoProceedBusy = false;
                             this.loading = false;
                             // NE PAS fermer automatiquement le popup - l'utilisateur le fermera manuellement
                             // Mettre à jour la progression pour indiquer l'erreur
@@ -6731,6 +7723,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     });
 
             } catch (error: any) {
+                this.autoProceedBusy = false;
                 this.loading = false;
                 console.error('❌ Erreur lors de la détection des clés:', error);
                 this.errorMessage = '';
@@ -7086,7 +8079,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     // Méthodes pour l'aide et la configuration des modèles
+    canAccessModelConfiguration(): boolean {
+        return this.appStateService.isAdmin() || this.appStateService.isModuleAllowed('Modèles');
+    }
+
     goToModelConfiguration(): void {
+        if (!this.canAccessModelConfiguration()) {
+            void this.popupService.showWarning(
+                'La configuration des modèles est réservée aux utilisateurs ayant accès au module « Modèles de traitement ». Contactez un administrateur.',
+                'Accès refusé'
+            );
+            return;
+        }
         console.log('🔧 Navigation vers la configuration des modèles...');
         this.router.navigate(['/auto-processing-models']);
     }

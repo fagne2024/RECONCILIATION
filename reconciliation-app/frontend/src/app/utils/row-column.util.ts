@@ -1,0 +1,123 @@
+import { fixCellEncoding } from './encoding-fixer';
+import { getCanonicalFrenchLabel, resolveCanonicalColumnId } from './bilingual-column.util';
+
+/** Normalise un nom de colonne pour comparaison (accents, casse, espaces). */
+export function normalizeColumnKey(columnName: string): string {
+  return fixCellEncoding(columnName || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/** Trouve la clé réelle dans une ligne à partir du nom configuré. */
+export function resolveColumnKeyInRow(row: Record<string, string>, column: string): string | null {
+  if (!column) {
+    return null;
+  }
+
+  const candidates = [column, fixCellEncoding(column)];
+  for (const candidate of candidates) {
+    if (candidate && Object.prototype.hasOwnProperty.call(row, candidate)) {
+      return candidate;
+    }
+  }
+
+  const targetKey = normalizeColumnKey(column);
+  for (const key of Object.keys(row)) {
+    if (normalizeColumnKey(key) === targetKey) {
+      return key;
+    }
+  }
+
+  const targetCanonicalId = resolveCanonicalColumnId(column);
+  if (targetCanonicalId) {
+    for (const key of Object.keys(row)) {
+      if (resolveCanonicalColumnId(key) === targetCanonicalId) {
+        return key;
+      }
+    }
+  }
+
+  return null;
+}
+
+/** Toutes les clés d'une ligne partageant le même identifiant canonique (FR / EN). */
+export function resolveCanonicalColumnKeysInRow(
+  row: Record<string, string>,
+  column: string
+): string[] {
+  const primary = resolveColumnKeyInRow(row, column);
+  if (!primary) {
+    return [];
+  }
+
+  const canonicalId = resolveCanonicalColumnId(column) ?? resolveCanonicalColumnId(primary);
+  if (!canonicalId) {
+    return [primary];
+  }
+
+  const keys = new Set<string>([primary]);
+  for (const key of Object.keys(row)) {
+    if (resolveCanonicalColumnId(key) === canonicalId) {
+      keys.add(key);
+    }
+  }
+
+  const frenchLabel = getCanonicalFrenchLabel(canonicalId);
+  if (frenchLabel && Object.prototype.hasOwnProperty.call(row, frenchLabel)) {
+    keys.add(frenchLabel);
+  }
+
+  return Array.from(keys);
+}
+
+/** Lit la valeur d'une cellule en résolvant le nom de colonne (accents / encodage). */
+export function getRowColumnValue(row: Record<string, unknown>, column: string): unknown {
+  if (!row || !column) {
+    return '';
+  }
+
+  const key = resolveColumnKeyInRow(row as Record<string, string>, column);
+  if (!key) {
+    return '';
+  }
+
+  const value = row[key];
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  return value;
+}
+
+/**
+ * Renomme une clé de colonne en conservant sa position dans l'ordre des colonnes.
+ * (delete + assign déplacerait la colonne à la fin avec Object.keys.)
+ */
+export function renameKeyPreservingOrder<T extends Record<string, unknown>>(
+  row: T,
+  sourceColumn: string,
+  targetColumn: string
+): T {
+  if (!sourceColumn || !targetColumn || sourceColumn === targetColumn) {
+    return row;
+  }
+
+  const sourceKey = resolveColumnKeyInRow(row as Record<string, string>, sourceColumn);
+  if (!sourceKey || !Object.prototype.hasOwnProperty.call(row, sourceKey)) {
+    return row;
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(row)) {
+    if (key === sourceKey) {
+      result[targetColumn] = row[sourceKey];
+    } else if (key !== targetColumn) {
+      result[key] = row[key];
+    }
+  }
+
+  return result as T;
+}

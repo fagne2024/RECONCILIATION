@@ -3,6 +3,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 import { fixCellEncoding } from '../utils/encoding-fixer';
+import { getRowColumnValue } from '../utils/row-column.util';
 import { stripAllWhitespace } from '../utils/concat.util';
 
 /** Couleurs par type de commentaire pour export écarts (TRXBO/OPPART) - ARGB 8 caractères */
@@ -167,7 +168,8 @@ export class ExportOptimizationService {
       const r: any = {};
       columns.forEach((col, idx) => {
         const encodedCol = encodedColumns[idx];
-        const base = this.serializeCellForExport(row[col]);
+        const rawValue = getRowColumnValue(row, col);
+        const base = this.serializeCellForExport(rawValue);
         r[encodedCol] = this.cellValueForExcel(encodedCol, base);
       });
       return r;
@@ -212,7 +214,10 @@ export class ExportOptimizationService {
     for (let i = 0; i < rows.length; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
       for (const row of chunk) {
-        const rowData = columns.map(col => this.cellValueForExcel(col, row[col]));
+        const rowData = columns.map(col => {
+          const base = this.serializeCellForExport(this.readRowCell(row, col));
+          return this.cellValueForExcel(col, base);
+        });
         const excelRow = worksheet.addRow(rowData);
         if (hasCommentInColumns) {
           const commentValue = (row[commentColumn] ?? '').toString().trim();
@@ -268,11 +273,19 @@ export class ExportOptimizationService {
   /**
    * Indique si une colonne est une colonne montant/volume (à exporter en nombre)
    */
+  private readRowCell(row: Record<string, unknown>, col: string): unknown {
+    if (!row || typeof row !== 'object') {
+      return '';
+    }
+    return getRowColumnValue(row, col);
+  }
+
   private isAmountColumn(col: string): boolean {
     const lower = (col || '').toLowerCase();
     const amountKeys = [
       'montant', 'amount', 'volume', 'valeur', 'value', 'somme', 'sum', 'total',
-      'credit', 'crédit', 'debit', 'débit', 'transactions', 'matches', 'boonly', 'partneronly',
+      'credit', 'crédit', 'debit', 'débit', 'verse', 'versé', 'retire', 'retiré',
+      'transactions', 'matches', 'boonly', 'partneronly',
       'mismatches', 'totalvolume', 'totaltransactions', 'totalmatches', 'totalboonly',
       'totalpartneronly', 'totalmismatches', 'nombre', 'volume total', 'total volume'
     ];
@@ -343,7 +356,7 @@ export class ExportOptimizationService {
       const chunk = rows.slice(i, i + chunkSize);
       for (const row of chunk) {
         const rowValues = columns.map(col => {
-          const base = this.serializeCellForExport(row[col]);
+          const base = this.serializeCellForExport(this.readRowCell(row, col));
           return this.cellValueForExcel(col, base);
         });
         const excelRow = worksheet.addRow(rowValues);
@@ -470,7 +483,7 @@ export class ExportOptimizationService {
         columns.join(';'),
         ...rows.map(row => 
           columns.map(col => {
-            const raw = row[col];
+            const raw = this.readRowCell(row, col);
             const serialized = this.serializeCellForExport(raw);
             let val = serialized !== '' ? String(serialized) : '';
             if (val.includes('"')) val = val.replace(/"/g, '""');
@@ -488,7 +501,7 @@ export class ExportOptimizationService {
       const exportData = rows.map(row => {
         const exportRow: any = {};
         columns.forEach(col => {
-          const base = this.serializeCellForExport(row[col]);
+          const base = this.serializeCellForExport(this.readRowCell(row, col));
           exportRow[col] = this.cellValueForExcel(col, base);
         });
         return exportRow;

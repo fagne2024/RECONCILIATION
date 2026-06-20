@@ -336,54 +336,76 @@ import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../.
       <!-- Modal : chargement des fichiers (mode magique) -->
       <div class="selection-overlay" *ngIf="showMagicUploadModal">
         <div class="selection-modal magic-upload-modal">
-          <div class="selection-header">
-            <span class="badge-text">Réconciliation magique — 1 BO + un ou plusieurs Partenaires</span>
+          <div class="magic-modal-header">
+            <div class="magic-modal-icon">
+              <i class="fas fa-wand-magic-sparkles"></i>
+            </div>
+            <div class="magic-modal-titles">
+              <h3>Réconciliation magique</h3>
+              <p>1 fichier BO + un ou plusieurs fichiers partenaire</p>
+            </div>
           </div>
+
           <div class="magic-upload-body">
             <input type="file" id="magicBoFileInput" accept=".csv,.xls,.xlsx,.xlsm,.xlsb" hidden
                    (change)="onMagicFileSelected($event, 'bo')">
             <input type="file" id="magicPartnerFileInput" accept=".csv,.xls,.xlsx,.xlsm,.xlsb" multiple hidden
                    (change)="onMagicPartnerFilesSelected($event)">
 
-            <div class="magic-file-row" [class.ready]="!!magicBoFile">
-              <div class="magic-file-info">
-                <strong>Fichier BO</strong>
-                <span>{{ magicBoFile?.name || 'Aucun fichier sélectionné' }}</span>
-                <span class="magic-line-count" *ngIf="boData.length">({{ boData.length }} lignes)</span>
+            <div class="magic-file-card" [class.ready]="!!magicBoFile">
+              <div class="magic-file-card-icon">
+                <i class="fas fa-file-excel"></i>
               </div>
-              <button type="button" class="sel-btn" (click)="selectMagicFile('bo')">Choisir</button>
+              <div class="magic-file-card-content">
+                <strong>Fichier BO</strong>
+                <span class="magic-file-status">{{ magicBoFile?.name || 'Aucun fichier sélectionné' }}</span>
+                <span class="magic-line-count" *ngIf="boData.length">{{ boData.length }} lignes</span>
+              </div>
+              <button type="button" class="magic-card-btn" (click)="selectMagicFile('bo')">Choisir</button>
             </div>
 
-            <div class="magic-partners-block">
-              <div class="magic-partners-head">
-                <strong>Fichiers Partenaire</strong>
-                <button type="button" class="sel-btn" (click)="selectMagicFile('partner')">Ajouter</button>
+            <div class="magic-file-card magic-partners-card" [class.ready]="magicPartnerSlots.length > 0">
+              <div class="magic-file-card-icon">
+                <i class="fas fa-copy"></i>
               </div>
-              <p class="magic-partners-hint" *ngIf="!magicPartnerSlots.length">
-                Sélectionnez un ou plusieurs fichiers (patterns différents acceptés).
-              </p>
-              <ul class="magic-partners-list" *ngIf="magicPartnerSlots.length">
-                <li *ngFor="let slot of magicPartnerSlots; let i = index" [class.ready]="!slot.loading && slot.data.length">
-                  <div class="magic-partner-item">
-                    <span class="magic-partner-name" [title]="slot.file.name">{{ slot.file.name }}</span>
-                    <span class="magic-line-count" *ngIf="slot.loading">Lecture...</span>
-                    <span class="magic-line-count" *ngIf="!slot.loading && slot.data.length">({{ slot.data.length }} lignes)</span>
-                    <span class="magic-line-count magic-line-error" *ngIf="!slot.loading && !slot.data.length">Vide</span>
-                  </div>
-                  <button type="button" class="magic-remove-btn" (click)="removeMagicPartnerSlot(i)" title="Retirer">×</button>
-                </li>
-              </ul>
+              <div class="magic-file-card-content">
+                <strong>Fichiers partenaire</strong>
+                <span class="magic-file-status" *ngIf="!magicPartnerSlots.length">
+                  Patterns différents acceptés — plusieurs fichiers
+                </span>
+                <ul class="magic-partners-list" *ngIf="magicPartnerSlots.length">
+                  <li *ngFor="let slot of magicPartnerSlots; let i = index" [class.ready]="!slot.loading && slot.data.length">
+                    <div class="magic-partner-item">
+                      <span class="magic-partner-name" [title]="slot.file.name">{{ slot.file.name }}</span>
+                      <span class="magic-line-count" *ngIf="slot.loading">Lecture…</span>
+                      <span class="magic-line-count" *ngIf="!slot.loading && slot.data.length">{{ slot.data.length }} lignes</span>
+                      <span class="magic-line-count magic-line-error" *ngIf="!slot.loading && !slot.data.length">Vide</span>
+                    </div>
+                    <button type="button" class="magic-remove-btn" (click)="removeMagicPartnerSlot(i)" title="Retirer">
+                      <i class="fas fa-times"></i>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+              <button type="button" class="magic-card-btn magic-add-btn" (click)="selectMagicFile('partner')">
+                <i class="fas fa-plus"></i> Ajouter
+              </button>
             </div>
 
             <p class="magic-hint" *ngIf="magicBoFile && magicPartnerSlots.length && !canLaunchMagic">
-              Lecture des fichiers en cours...
+              <i class="fas fa-spinner fa-spin"></i> Lecture des fichiers en cours…
             </p>
           </div>
-          <div class="selection-actions">
-            <button class="btn-cancel" (click)="cancelMagicUpload()" [disabled]="magicPipelineRunning">Annuler</button>
-            <button class="btn-confirm"
+
+          <div class="magic-modal-actions">
+            <button type="button" class="magic-btn-cancel" (click)="cancelMagicUpload()" [disabled]="magicPipelineRunning">
+              Annuler
+            </button>
+            <button type="button" class="magic-btn-launch"
+                    [class.is-ready]="canLaunchMagic && !magicPipelineRunning"
                     [disabled]="!canLaunchMagic || magicPipelineRunning"
                     (click)="startMagicReconciliationFromModal()">
+              <i class="fas fa-play"></i>
               Lancer la réconciliation
             </button>
           </div>
@@ -393,11 +415,16 @@ import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../.
       <!-- Overlay progression mode magique -->
       <div class="selection-overlay magic-progress-overlay" *ngIf="magicPipelineRunning">
         <div class="selection-modal magic-progress-modal">
-          <div class="selection-header">
-            <span class="badge-text">Réconciliation magique en cours</span>
+          <div class="magic-modal-header">
+            <div class="magic-modal-icon">
+              <i class="fas fa-wand-magic-sparkles fa-spin"></i>
+            </div>
+            <div class="magic-modal-titles">
+              <h3>Réconciliation magique en cours</h3>
+              <p>Veuillez patienter pendant le traitement</p>
+            </div>
           </div>
           <div class="magic-progress-body">
-            <i class="fas fa-wand-magic-sparkles fa-spin magic-spinner"></i>
             <p>{{ magicProgressMessage }}</p>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { FormBuilder, FormGroup, Validators, FormArray } from '@angular/forms';
-import { AutoProcessingService, AutoProcessingModel, ModelFormatAction, ModelFormatActionType, ModelPreProcessingConfig, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule } from '../../services/auto-processing.service';
+import { AutoProcessingService, AutoProcessingModel, ModelFormatAction, ModelFormatActionType, ModelFormatColumnSettings, ModelPreProcessingConfig, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule } from '../../services/auto-processing.service';
 import { FileWatcherService } from '../../services/file-watcher.service';
 import { ModelManagementService } from '../../services/model-management.service';
 import { PopupService } from '../../services/popup.service';
@@ -71,6 +72,8 @@ export class AutoProcessingModelsComponent implements OnInit {
   nextModelConcatRuleId = 1;
   nextModelValueMappingId = 1;
   nextModelColumnRenameId = 1;
+  nextModelFormatActionId = 1;
+  newFormatActionType: ModelFormatActionType = 'removeCharacters';
   readonly formatActionTypes: Array<{ type: ModelFormatActionType; label: string }> = [
     { type: 'removeSpecialStrings', label: 'Supprimer une chaîne spécifique' },
     { type: 'removeCharacters', label: 'Supprimer / conserver des caractères' },
@@ -487,7 +490,7 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   // Charger les règles de traitement des colonnes pour un modèle
   loadColumnProcessingRules(modelId: string): void {
-    this.autoProcessingService.getColumnProcessingRules(modelId)
+    this.autoProcessingService.getColumnProcessingRules(modelId, AutoProcessingService.MODELES_MODULE)
       .then(rules => {
         // Trier les règles par ruleOrder pour garantir l'ordre d'application
         this.columnProcessingRules = rules.sort((a, b) => {
@@ -3048,8 +3051,88 @@ export class AutoProcessingModelsComponent implements OnInit {
       if (!action.columns.includes(column)) {
         action.columns.push(column);
       }
+      this.ensureFormatColumnSettings(action, column);
     } else {
       action.columns = action.columns.filter(col => col !== column);
+      this.removeFormatColumnSettings(action, column);
+    }
+  }
+
+  actionNeedsPerColumnSettings(type: ModelFormatActionType): boolean {
+    return type !== 'removeNumbers' && type !== 'removeZeroDecimals';
+  }
+
+  getFormatColumnSettings(action: ModelFormatAction, column: string): ModelFormatColumnSettings {
+    if (!action.columnSettings) {
+      action.columnSettings = {};
+    }
+    if (!action.columnSettings[column]) {
+      action.columnSettings[column] = this.createColumnSettingsFromAction(action);
+    }
+    return action.columnSettings[column];
+  }
+
+  applyDefaultSettingsToAllFormatColumns(action: ModelFormatAction): void {
+    if (!action.columns?.length) {
+      return;
+    }
+    const defaults = this.createColumnSettingsFromAction(action);
+    if (!action.columnSettings) {
+      action.columnSettings = {};
+    }
+    for (const column of action.columns) {
+      action.columnSettings[column] = { ...defaults };
+    }
+  }
+
+  private ensureFormatColumnSettings(action: ModelFormatAction, column: string): void {
+    this.getFormatColumnSettings(action, column);
+  }
+
+  private removeFormatColumnSettings(action: ModelFormatAction, column: string): void {
+    if (!action.columnSettings) {
+      return;
+    }
+    delete action.columnSettings[column];
+    if (!Object.keys(action.columnSettings).length) {
+      delete action.columnSettings;
+    }
+  }
+
+  private createColumnSettingsFromAction(action: ModelFormatAction): ModelFormatColumnSettings {
+    return {
+      specialStringToRemove: action.specialStringToRemove ?? '',
+      specialStringRemovalMode: action.specialStringRemovalMode ?? 'all',
+      removeCharMode: action.removeCharMode ?? 'remove',
+      removeCharPosition: action.removeCharPosition ?? 'start',
+      removeCharCount: action.removeCharCount ?? 1,
+      removeCharSpecificPosition: action.removeCharSpecificPosition ?? 1,
+      removeSpacesType: action.removeSpacesType ?? 'all',
+      keepLastDigitsCount: action.keepLastDigitsCount ?? 3,
+      indicatifType: action.indicatifType ?? 'international',
+      customIndicatif: action.customIndicatif ?? '+33',
+      decimalSeparator: action.decimalSeparator ?? ',',
+      keepTrailingZeros: action.keepTrailingZeros ?? false,
+      applyConditionEnabled: action.applyConditionEnabled ?? false,
+      conditionColumn: action.conditionColumn ?? '',
+      conditionValue: action.conditionValue ?? ''
+    };
+  }
+
+  private migrateFormatActionColumnSettings(action: ModelFormatAction): void {
+    if (!action.columns?.length) {
+      return;
+    }
+    if (action.columnSettings && Object.keys(action.columnSettings).length > 0) {
+      for (const column of action.columns) {
+        this.ensureFormatColumnSettings(action, column);
+      }
+      return;
+    }
+    action.columnSettings = {};
+    const defaults = this.createColumnSettingsFromAction(action);
+    for (const column of action.columns) {
+      action.columnSettings[column] = { ...defaults };
     }
   }
 
@@ -3057,25 +3140,141 @@ export class AutoProcessingModelsComponent implements OnInit {
     return (action.columns || []).includes(column);
   }
 
+  selectAllFormatActionColumns(action: ModelFormatAction): void {
+    action.columns = [...this.getPreProcessingColumns()];
+    for (const column of action.columns) {
+      this.ensureFormatColumnSettings(action, column);
+    }
+  }
+
+  deselectAllFormatActionColumns(action: ModelFormatAction): void {
+    action.columns = [];
+    delete action.columnSettings;
+  }
+
+  areAllFormatActionColumnsSelected(action: ModelFormatAction): boolean {
+    const available = this.getPreProcessingColumns();
+    return available.length > 0 && available.every(col => (action.columns || []).includes(col));
+  }
+
   getFormatActionByType(type: ModelFormatActionType): ModelFormatAction {
     let action = this.modelFormatActions.find(item => item.type === type);
     if (!action) {
       action = this.createDefaultFormatAction(type);
       this.modelFormatActions.push(action);
+      this.syncFormatActionOrders();
     }
     return action;
   }
 
-  private initDefaultFormatActions(): void {
-    this.formatActionTypes.forEach(item => {
-      if (!this.modelFormatActions.some(action => action.type === item.type)) {
-        this.modelFormatActions.push(this.createDefaultFormatAction(item.type));
-      }
+  getFormatActionLabel(type: ModelFormatActionType): string {
+    return this.formatActionTypes.find(item => item.type === type)?.label ?? type;
+  }
+
+  getFormatActionDisplayLabel(action: ModelFormatAction, index: number): string {
+    const base = this.getFormatActionLabel(action.type);
+    const instanceNumber = this.modelFormatActions
+      .slice(0, index + 1)
+      .filter(item => item.type === action.type).length;
+    const totalSameType = this.modelFormatActions.filter(item => item.type === action.type).length;
+    return totalSameType > 1 ? `${base} (#${instanceNumber})` : base;
+  }
+
+  addFormatAction(type: ModelFormatActionType = this.newFormatActionType): void {
+    this.modelFormatActions.push(this.createDefaultFormatAction(type));
+    this.syncFormatActionOrders();
+    this.newFormatActionType = type;
+    this.cdr.markForCheck();
+  }
+
+  duplicateFormatAction(index: number): void {
+    const source = this.modelFormatActions[index];
+    if (!source) {
+      return;
+    }
+    const clone: ModelFormatAction = {
+      ...this.createDefaultFormatAction(source.type),
+      ...source,
+      id: this.createFormatActionId(),
+      enabled: source.enabled,
+      columns: [...(source.columns || [])],
+      columnSettings: source.columnSettings
+        ? Object.fromEntries(
+          Object.entries(source.columnSettings).map(([column, settings]) => [column, { ...settings }])
+        )
+        : undefined
+    };
+    this.modelFormatActions.splice(index + 1, 0, clone);
+    this.syncFormatActionOrders();
+    this.cdr.markForCheck();
+  }
+
+  removeFormatAction(index: number): void {
+    if (index < 0 || index >= this.modelFormatActions.length) {
+      return;
+    }
+    this.modelFormatActions.splice(index, 1);
+    this.syncFormatActionOrders();
+    this.cdr.markForCheck();
+  }
+
+  onFormatActionDrop(event: CdkDragDrop<ModelFormatAction[]>): void {
+    if (event.previousIndex === event.currentIndex) {
+      return;
+    }
+    moveItemInArray(this.modelFormatActions, event.previousIndex, event.currentIndex);
+    this.syncFormatActionOrders();
+  }
+
+  moveFormatActionUp(index: number): void {
+    if (index <= 0) {
+      return;
+    }
+    moveItemInArray(this.modelFormatActions, index, index - 1);
+    this.syncFormatActionOrders();
+  }
+
+  moveFormatActionDown(index: number): void {
+    if (index >= this.modelFormatActions.length - 1) {
+      return;
+    }
+    moveItemInArray(this.modelFormatActions, index, index + 1);
+    this.syncFormatActionOrders();
+  }
+
+  private syncFormatActionOrders(): void {
+    this.modelFormatActions.forEach((action, index) => {
+      action.order = index + 1;
     });
+  }
+
+  private createFormatActionId(): string {
+    return `format-${this.nextModelFormatActionId++}`;
+  }
+
+  private ensureFormatActionIds(): void {
+    for (const action of this.modelFormatActions) {
+      if (!action.id) {
+        action.id = this.createFormatActionId();
+      } else if (action.id.startsWith('format-')) {
+        const numericPart = Number.parseInt(action.id.replace('format-', ''), 10);
+        if (Number.isFinite(numericPart) && numericPart >= this.nextModelFormatActionId) {
+          this.nextModelFormatActionId = numericPart + 1;
+        }
+      }
+    }
+  }
+
+  private initDefaultFormatActions(): void {
+    this.modelFormatActions = this.formatActionTypes.map(item =>
+      this.createDefaultFormatAction(item.type)
+    );
+    this.syncFormatActionOrders();
   }
 
   private createDefaultFormatAction(type: ModelFormatActionType): ModelFormatAction {
     return {
+      id: this.createFormatActionId(),
       type,
       enabled: false,
       columns: [],
@@ -3090,7 +3289,10 @@ export class AutoProcessingModelsComponent implements OnInit {
       indicatifType: 'international',
       customIndicatif: '+33',
       decimalSeparator: ',',
-      keepTrailingZeros: false
+      keepTrailingZeros: false,
+      applyConditionEnabled: false,
+      conditionColumn: '',
+      conditionValue: ''
     };
   }
 
@@ -3104,9 +3306,21 @@ export class AutoProcessingModelsComponent implements OnInit {
         enabled: filter.enabled !== false
       }));
 
-    const formatActions = this.modelFormatActions
-      .filter(action => action.enabled && action.columns?.length)
-      .map(action => ({ ...action, columns: [...action.columns] }));
+    this.ensureFormatActionIds();
+    const formatActions = this.modelFormatActions.map((action, index) => {
+      this.migrateFormatActionColumnSettings(action);
+      return {
+        ...action,
+        id: action.id || this.createFormatActionId(),
+        order: index + 1,
+        columns: [...(action.columns || [])],
+        columnSettings: action.columnSettings
+          ? Object.fromEntries(
+            Object.entries(action.columnSettings).map(([column, settings]) => [column, { ...settings }])
+          )
+          : undefined
+      };
+    });
 
     const valueMappings = this.modelValueMappings
       .filter(mapping => mapping.column && mapping.fromValue?.trim())
@@ -3154,6 +3368,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.nextModelConcatRuleId = 1;
     this.nextModelValueMappingId = 1;
     this.nextModelColumnRenameId = 1;
+    this.nextModelFormatActionId = 1;
 
     if (!config) {
       return;
@@ -3166,11 +3381,24 @@ export class AutoProcessingModelsComponent implements OnInit {
       enabled: filter.enabled !== false
     }));
 
-    this.modelFormatActions = (config.formatActions || []).map(action => ({
-      ...this.createDefaultFormatAction(action.type),
-      ...action,
-      columns: [...(action.columns || [])]
-    }));
+    this.modelFormatActions = (config.formatActions || [])
+      .map(action => {
+        const defaults = this.createDefaultFormatAction(action.type);
+        return {
+          ...defaults,
+          ...action,
+          id: action.id || defaults.id,
+          columns: [...(action.columns || [])],
+          columnSettings: action.columnSettings
+            ? Object.fromEntries(
+              Object.entries(action.columnSettings).map(([column, settings]) => [column, { ...settings }])
+            )
+            : undefined
+        };
+      })
+      .sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER));
+    this.modelFormatActions.forEach(action => this.migrateFormatActionColumnSettings(action));
+    this.ensureFormatActionIds();
 
     this.modelValueMappings = (config.valueMappings || []).map(mapping => ({
       id: mapping.id || `mapping-${this.nextModelValueMappingId++}`,
@@ -3230,6 +3458,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.nextModelConcatRuleId = 1;
     this.nextModelValueMappingId = 1;
     this.nextModelColumnRenameId = 1;
+    this.nextModelFormatActionId = 1;
     this.showRowFiltersSection = false;
     this.showFormatActionsSection = false;
     this.showColumnConcatSection = false;

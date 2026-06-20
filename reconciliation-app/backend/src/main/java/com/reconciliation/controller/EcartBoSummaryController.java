@@ -2,6 +2,7 @@ package com.reconciliation.controller;
 
 import com.reconciliation.model.EcartBoSummary;
 import com.reconciliation.model.EcartBoSummaryDTO;
+import com.reconciliation.model.EcartBoSummaryStatusLinkUpdateDTO;
 import com.reconciliation.service.EcartBoSummaryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -107,17 +108,32 @@ public class EcartBoSummaryController {
     }
     
     @PutMapping("/{id:[0-9]+}")
-    public ResponseEntity<EcartBoSummary> updateEcartBoSummary(@PathVariable Long id, @RequestBody EcartBoSummary ecartBoSummary) {
+    public ResponseEntity<?> updateEcartBoSummary(@PathVariable Long id, @RequestBody EcartBoSummary ecartBoSummary) {
         try {
             EcartBoSummary updated = ecartBoSummaryService.updateEcartBoSummary(id, ecartBoSummary);
             return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Bad Request");
+            error.put("message", e.getMessage() != null ? e.getMessage() : "Requête invalide");
+            return ResponseEntity.badRequest().body(error);
         } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
+            if (e.getMessage() != null && e.getMessage().contains("non trouvé")) {
+                return ResponseEntity.notFound().build();
+            }
+            throw e;
         }
     }
 
     @PostMapping("/batch/status-links/apply")
-    public ResponseEntity<Map<String, Object>> updateStatusLinks(@RequestBody List<Map<String, Object>> updates) {
+    public ResponseEntity<Map<String, Object>> updateStatusLinks(
+            @RequestBody(required = false) List<EcartBoSummaryStatusLinkUpdateDTO> updates) {
+        if (updates == null || updates.isEmpty()) {
+            Map<String, Object> empty = new HashMap<>();
+            empty.put("updated", 0);
+            empty.put("skipped", 0);
+            return ResponseEntity.ok(empty);
+        }
         Map<String, Object> result = ecartBoSummaryService.updateStatusLinks(updates);
         return ResponseEntity.ok(result);
     }

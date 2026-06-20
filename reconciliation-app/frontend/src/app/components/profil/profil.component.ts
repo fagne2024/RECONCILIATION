@@ -10,6 +10,7 @@ import { Pays, ProfilPays } from '../../models/pays.model';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Observable, timer, throwError } from 'rxjs';
 import { retryWhen, mergeMap, finalize } from 'rxjs/operators';
+import { PopupService } from '../../services/popup.service';
 
 @Component({
   selector: 'app-profil',
@@ -90,7 +91,8 @@ export class ProfilComponent implements OnInit {
     private profilService: ProfilService,
     private paysService: PaysService,
     private fb: FormBuilder,
-    private cd: ChangeDetectorRef
+    private cd: ChangeDetectorRef,
+    private popupService: PopupService
   ) {
     this.addForm = this.fb.group({
       nom: ['', [Validators.required, Validators.minLength(2)]],
@@ -436,11 +438,14 @@ export class ProfilComponent implements OnInit {
     return this.isDeleting;
   }
 
-  deleteProfil(profil: Profil) {
+  async deleteProfil(profil: Profil): Promise<void> {
     console.log('🗑️ Tentative de suppression du profil:', profil);
     
     if (profil.id) {
-      const confirmed = confirm(`Êtes-vous sûr de vouloir supprimer le profil "${profil.nom}" ?\n\nCette action est irréversible.`);
+      const confirmed = await this.popupService.showConfirm(
+        `Êtes-vous sûr de vouloir supprimer le profil « ${profil.nom} » ?\n\nCette action est irréversible.`,
+        'Suppression du profil'
+      );
       
       if (confirmed) {
         console.log('✅ Confirmation reçue, suppression du profil ID:', profil.id);
@@ -457,24 +462,16 @@ export class ProfilComponent implements OnInit {
             // Recharger les permissions pour mettre à jour les décomptes
             this.loadAllProfilPermissions();
             this.isDeleting = false;
-            alert('Profil supprimé avec succès.');
+            void this.popupService.showSuccess('Profil supprimé avec succès.', 'Suppression réussie');
           },
           error: (error) => {
             console.error('❌ Erreur lors de la suppression du profil:', error);
             console.error('Détails de l\'erreur:', error.status, error.message);
             this.isDeleting = false;
-
-            // Extraire le message d'erreur du backend
-            let errorMessage = 'Erreur lors de la suppression du profil.';
-            if (error.error && error.error.error) {
-              errorMessage = error.error.error;
-            } else if (error.error && typeof error.error === 'string') {
-              errorMessage = error.error;
-            } else if (error.message) {
-              errorMessage = error.message;
-            }
-
-            alert(errorMessage);
+            void this.popupService.showError(
+              this.extractErrorMessage(error, 'Erreur lors de la suppression du profil.'),
+              'Suppression impossible'
+            );
           },
           complete: () => {
             console.log('✅ Requête DELETE terminée');
@@ -528,9 +525,13 @@ export class ProfilComponent implements OnInit {
     }
   }
 
-  deleteModule(module: Module) {
+  async deleteModule(module: Module): Promise<void> {
     // À implémenter côté backend si besoin, ici on retire juste du tableau pour la démo
-    if (confirm('Supprimer ce menu ?')) {
+    const confirmed = await this.popupService.showConfirm(
+      `Supprimer le menu « ${module.nom} » ?`,
+      'Suppression du menu'
+    );
+    if (confirmed) {
       // Si un endpoint delete existe côté backend, décommentez la ligne suivante :
       // this.profilService.deleteModule(module.id!).subscribe(() => this.loadModules());
       this.modules = this.modules.filter(m => m.id !== module.id);
@@ -1621,21 +1622,35 @@ export class ProfilComponent implements OnInit {
       error: (error) => {
         console.error('❌ Erreur lors de la sauvegarde des pays:', error);
         console.error('❌ Détails de l\'erreur:', JSON.stringify(error, null, 2));
-        let errorMessage = 'Erreur lors de la sauvegarde des pays.';
-        if (error.error) {
-          if (error.error.error) {
-            errorMessage = error.error.error;
-          } else if (error.error.message) {
-            errorMessage = error.error.message;
-          } else if (typeof error.error === 'string') {
-            errorMessage = error.error;
-          }
-        } else if (error.message) {
-          errorMessage = error.message;
-        }
-        alert('Erreur: ' + errorMessage);
+        void this.popupService.showError(
+          this.extractErrorMessage(error, 'Erreur lors de la sauvegarde des pays.'),
+          'Sauvegarde impossible'
+        );
         this.isSavingPays = false;
       }
     });
+  }
+
+  private extractErrorMessage(error: unknown, fallback: string): string {
+    const httpError = error as HttpErrorResponse;
+    let message = fallback;
+
+    if (httpError?.error) {
+      if (typeof httpError.error === 'string') {
+        message = httpError.error;
+      } else if (httpError.error.error) {
+        message = String(httpError.error.error);
+      } else if (httpError.error.message) {
+        message = String(httpError.error.message);
+      }
+    } else if (httpError?.message) {
+      message = httpError.message;
+    }
+
+    if (/rollback-only/i.test(message)) {
+      return 'La suppression a échoué car ce profil est encore utilisé (utilisateurs associés ou dépendances actives). Retirez ces associations puis réessayez.';
+    }
+
+    return message;
   }
 } 

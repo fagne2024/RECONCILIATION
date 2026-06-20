@@ -6,7 +6,9 @@ import { FieldTypeDetectionService, ColumnAnalysis } from '../../services/field-
 import { DataProcessingService } from '../../services/data-processing.service';
 import { ExportOptimizationService, ExportProgress } from '../../services/export-optimization.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import { readCsvFileUltraFast } from '../../utils/fast-csv-reader.util';
 import { buildConcatenatedValue } from '../../utils/concat.util';
+import { renameKeyPreservingOrder } from '../../utils/row-column.util';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
@@ -575,83 +577,24 @@ End Sub`;
 
   // Méthodes optimisées pour le traitement ultra-rapide
   private async readCsvFileOptimized(file: File): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async (e: any) => {
-        try {
-          const csv = e.target.result;
-          const lines = csv.split('\n');
-          
-          if (lines.length === 0) {
-            resolve();
-            return;
-          }
-          
-          // Détecter le séparateur
-          const firstLine = lines[0];
-          const delimiter = this.detectDelimiter(firstLine);
-          
-          // Extraire les en-têtes avec correction des caractères spéciaux
-          const headers = firstLine.split(delimiter).map((h: string) => fixGarbledCharacters(h.trim()));
-          
-          // Traitement par chunks optimisé pour gros fichiers (jusqu'à 1M lignes)
-          const totalLines = lines.length - 1; // Exclure l'en-tête
-          const isLargeFile = totalLines > 100000; // Plus de 100k lignes
-          const chunkSize = isLargeFile ? 5000 : 1000; // Chunks plus gros pour gros fichiers
-          
-          console.log(`📊 Traitement optimisé: ${totalLines} lignes, chunks de ${chunkSize} (${isLargeFile ? 'gros fichier' : 'fichier normal'})`);
-          
-          // Mise à jour de la progression pour gros fichiers
-          let processedLines = 0;
-          const updateProgress = () => {
-            if (isLargeFile) {
-              this.processingProgress = Math.min(95, (processedLines / totalLines) * 100);
-              this.processingMessage = `Traitement CSV: ${processedLines.toLocaleString()}/${totalLines.toLocaleString()} lignes`;
-            }
-          };
-          
-          for (let i = 1; i < lines.length; i += chunkSize) {
-            const chunkEnd = Math.min(i + chunkSize, lines.length);
-            const chunkLines = lines.slice(i, chunkEnd);
-            
-            const chunkRows: any[] = [];
-            for (const line of chunkLines) {
-              if (line.trim()) {
-                const values = line.split(delimiter);
-                const row: any = {};
-                headers.forEach((header: string, index: number) => {
-                  row[header] = fixGarbledCharacters(values[index] || '');
-                });
-                chunkRows.push(row);
-              }
-            }
-            
-            // Ajouter le chunk aux données
-            this.allRows.push(...chunkRows);
-            processedLines += chunkLines.length;
-            
-            // Mettre à jour la progression pour gros fichiers
-            if (isLargeFile) {
-              updateProgress();
-            }
-            
-            // Permettre à l'interface de respirer (plus fréquent pour gros fichiers)
-            const yieldInterval = isLargeFile ? chunkSize : chunkSize * 5;
-            if (i % yieldInterval === 0) {
-              await new Promise(resolve => setTimeout(resolve, isLargeFile ? 0 : 1));
-            }
-          }
-          
-          console.log(`✅ Traitement CSV terminé: ${this.allRows.length.toLocaleString()} lignes`);
-          resolve();
-        } catch (error) {
-          console.error('❌ Erreur lors du traitement optimisé:', error);
-          reject(error);
+    const isLargeFile = file.size > 512 * 1024;
+    const parsed = await readCsvFileUltraFast(file, {
+      stripAirtelPreamble: true,
+      onProgress: (processed, total) => {
+        if (isLargeFile && processed % 2500 === 0) {
+          this.processingProgress = Math.min(95, (processed / total) * 100);
+          this.processingMessage = `Traitement CSV: ${processed.toLocaleString()}/${total.toLocaleString()} lignes`;
+          this.cd.detectChanges();
         }
-      };
-      reader.onerror = reject;
-      reader.readAsText(file, 'UTF-8');
+      },
+      yieldFn: () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)))
     });
+
+    for (let i = 0; i < parsed.rows.length; i++) {
+      this.allRows.push(parsed.rows[i]);
+    }
+
+    console.log(`✅ Traitement CSV terminé: ${parsed.rows.length.toLocaleString()} lignes`);
   }
   
   // Méthode optimisée pour détecter le délimiteur
@@ -2419,10 +2362,7 @@ End Sub`;
       return row;
     }
 
-    const updated = { ...row };
-    updated[newName] = updated[sourceColumn];
-    delete updated[sourceColumn];
-    return updated;
+    return renameKeyPreservingOrder(row, sourceColumn, newName);
   }
 
   applyFormatting() {
@@ -2787,6 +2727,7 @@ End Sub`;
 
   // Propriétés pour l'affichage/masquage des sections
   showSections = {
+    autoTreatment: false,
     selectCols: false,
     extract: false,
     filter: false,

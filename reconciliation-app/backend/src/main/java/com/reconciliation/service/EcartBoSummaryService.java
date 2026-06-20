@@ -3,6 +3,7 @@ package com.reconciliation.service;
 import com.reconciliation.entity.EcartBoSummaryEntity;
 import com.reconciliation.model.EcartBoSummary;
 import com.reconciliation.model.EcartBoSummaryDTO;
+import com.reconciliation.model.EcartBoSummaryStatusLinkUpdateDTO;
 import com.reconciliation.repository.EcartBoSummaryRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -12,9 +13,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.Optional;
 
@@ -149,6 +153,7 @@ public class EcartBoSummaryService {
         
         List<EcartBoSummaryEntity> entitiesToSave = new java.util.ArrayList<>();
         List<Map<String, Object>> duplicateRecords = new java.util.ArrayList<>();
+        Set<String> batchSignatures = new HashSet<>();
         DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
         
         for (EcartBoSummaryDTO summary : summaryData) {
@@ -177,18 +182,55 @@ public class EcartBoSummaryService {
                 final String finalService = summary.getService();
                 final String finalPays = summary.getPays();
                 final Integer finalNombreTransactions = summary.getNombreTransactions() != null ? summary.getNombreTransactions() : 0;
+                final Double finalMontant = summary.getMontant() != null ? summary.getMontant() : 0.0;
+                final String finalEnv = summary.getEnv() != null && !summary.getEnv().trim().isEmpty()
+                        ? summary.getEnv().trim().toUpperCase()
+                        : "BO";
+                final String finalEnvCode = summary.getEnvCode() != null && !summary.getEnvCode().trim().isEmpty()
+                        ? summary.getEnvCode().trim()
+                        : null;
 
-                // Vérifier si un enregistrement similaire existe déjà
+                String batchSignature = buildDuplicateSignature(
+                        finalDateTransaction.toLocalDate(),
+                        finalAgence,
+                        finalService,
+                        finalPays,
+                        finalNombreTransactions,
+                        finalMontant,
+                        finalEnv,
+                        finalEnvCode
+                );
+                if (!batchSignatures.add(batchSignature)) {
+                    Map<String, Object> duplicateInfo = new HashMap<>();
+                    duplicateInfo.put("agence", finalAgence);
+                    duplicateInfo.put("service", finalService);
+                    duplicateInfo.put("pays", finalPays);
+                    duplicateInfo.put("dateTransaction", finalDateTransaction.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                    duplicateInfo.put("statut", finalStatut);
+                    duplicateInfo.put("montant", finalMontant);
+                    duplicateInfo.put("nombreTransactions", finalNombreTransactions);
+                    duplicateInfo.put("env", finalEnv);
+                    duplicateInfo.put("envCode", finalEnvCode);
+                    duplicateInfo.put("message", "Doublon dans le lot envoyé (même date, agence, service, pays, ENV, nombre et montant).");
+                    duplicateInfo.put("idExistant", null);
+                    duplicateRecords.add(duplicateInfo);
+                    continue;
+                }
+
+                // Vérifier si un enregistrement similaire existe déjà en base
                 List<EcartBoSummaryEntity> existing = ecartBoSummaryRepository.findByAgenceAndServiceAndPays(
                     finalAgence, finalService, finalPays);
                 
-                // Vérifier si c'est un doublon exact (même date, agence, service, pays et nombre de transactions)
                 EcartBoSummaryEntity duplicateEntity = existing.stream()
-                    .filter(e -> 
-                        e.getDateTransaction().toLocalDate().equals(finalDateTransaction.toLocalDate()) &&
-                        e.getNombreTransactions() != null && 
-                        e.getNombreTransactions().equals(finalNombreTransactions)
-                    )
+                    .filter(e -> matchesDuplicateSignature(
+                            e,
+                            finalDateTransaction.toLocalDate(),
+                            finalNombreTransactions,
+                            finalMontant,
+                            finalEnv,
+                            finalEnvCode,
+                            null
+                    ))
                     .findFirst()
                     .orElse(null);
                 
@@ -333,14 +375,113 @@ public class EcartBoSummaryService {
             entity.setToken(ecartBoSummary.getToken().trim().isEmpty() ? null : ecartBoSummary.getToken().trim());
         }
 
+        List<EcartBoSummaryEntity> existing = ecartBoSummaryRepository.findByAgenceAndServiceAndPays(
+                entity.getAgence(), entity.getService(), entity.getPays());
+        if (entity.getDateTransaction() != null) {
+            final Long entityId = entity.getId();
+            final String updatedSignature = buildDuplicateSignature(
+                    entity.getDateTransaction().toLocalDate(),
+                    entity.getAgence(),
+                    entity.getService(),
+                    entity.getPays(),
+                    entity.getNombreTransactions(),
+                    entity.getMontantTotal(),
+                    entity.getEnv(),
+                    entity.getEnvCode()
+            );
+            boolean duplicate = existing.stream()
+                    .filter(other -> other.getId() != null && !other.getId().equals(entityId))
+                    .filter(other -> other.getDateTransaction() != null)
+                    .anyMatch(other -> updatedSignature.equals(buildDuplicateSignature(
+                            other.getDateTransaction().toLocalDate(),
+                            other.getAgence(),
+                            other.getService(),
+                            other.getPays(),
+                            other.getNombreTransactions(),
+                            other.getMontantTotal(),
+                            other.getEnv(),
+                            other.getEnvCode()
+                    )));
+            if (duplicate) {
+                throw new IllegalArgumentException(
+                        "Un enregistrement identique existe déjà (date, agence, service, pays, ENV, nombre et montant).");
+            }
+        }
+
         entity = ecartBoSummaryRepository.save(entity);
         return convertToModel(entity);
     }
 
+    private String buildDuplicateSignature(
+            LocalDate date,
+            String agence,
+            String service,
+            String pays,
+            Integer nombreTransactions,
+            Double montantTotal,
+            String env,
+            String envCode) {
+        String datePart = date != null ? date.toString() : "";
+        String envNorm = env != null && !env.trim().isEmpty() ? env.trim().toUpperCase() : "BO";
+        String envCodeNorm = envCode != null && !envCode.trim().isEmpty() ? envCode.trim().toUpperCase() : "";
+        String montantPart = montantTotal != null ? String.format(java.util.Locale.US, "%.2f", montantTotal) : "0.00";
+        int nombre = nombreTransactions != null ? nombreTransactions : 0;
+        return String.join("|",
+                datePart,
+                safeTrim(agence),
+                safeTrim(service),
+                safeTrim(pays),
+                envNorm,
+                envCodeNorm,
+                String.valueOf(nombre),
+                montantPart);
+    }
+
+    private boolean matchesDuplicateSignature(
+            EcartBoSummaryEntity entity,
+            LocalDate date,
+            Integer nombreTransactions,
+            Double montantTotal,
+            String env,
+            String envCode,
+            Long excludeId) {
+        if (excludeId != null && excludeId.equals(entity.getId())) {
+            return false;
+        }
+        if (entity.getDateTransaction() == null || date == null) {
+            return false;
+        }
+        String left = buildDuplicateSignature(
+                entity.getDateTransaction().toLocalDate(),
+                entity.getAgence(),
+                entity.getService(),
+                entity.getPays(),
+                entity.getNombreTransactions(),
+                entity.getMontantTotal(),
+                entity.getEnv(),
+                entity.getEnvCode()
+        );
+        String right = buildDuplicateSignature(
+                date,
+                entity.getAgence(),
+                entity.getService(),
+                entity.getPays(),
+                nombreTransactions,
+                montantTotal,
+                env,
+                envCode
+        );
+        return left.equals(right);
+    }
+
+    private static String safeTrim(String value) {
+        return value != null ? value.trim() : "";
+    }
+
     @Transactional
-    public Map<String, Object> updateStatusLinks(List<Map<String, Object>> updates) {
+    public Map<String, Object> updateStatusLinks(List<EcartBoSummaryStatusLinkUpdateDTO> updates) {
         List<Long> ids = updates.stream()
-                .map(update -> toLong(update.get("id")))
+                .map(EcartBoSummaryStatusLinkUpdateDTO::getId)
                 .filter(id -> id != null && id > 0)
                 .distinct()
                 .collect(Collectors.toList());
@@ -349,11 +490,11 @@ public class EcartBoSummaryService {
         ecartBoSummaryRepository.findAllById(ids)
                 .forEach(entity -> entitiesById.put(entity.getId(), entity));
 
-        List<EcartBoSummaryEntity> entitiesToSave = new ArrayList<>();
+        Map<Long, EcartBoSummaryEntity> entitiesToSave = new LinkedHashMap<>();
         int skipped = 0;
 
-        for (Map<String, Object> update : updates) {
-            Long id = toLong(update.get("id"));
+        for (EcartBoSummaryStatusLinkUpdateDTO update : updates) {
+            Long id = update.getId();
             if (id == null || id <= 0) {
                 skipped++;
                 continue;
@@ -365,37 +506,42 @@ public class EcartBoSummaryService {
                 continue;
             }
 
-            Object statut = update.get("statut");
-            if (statut != null) {
-                entity.setStatut(String.valueOf(statut));
+            if (update.getStatut() != null && !update.getStatut().trim().isEmpty()) {
+                entity.setStatut(update.getStatut().trim());
             }
 
-            Object env = update.get("env");
-            if (env != null && !String.valueOf(env).trim().isEmpty()) {
-                entity.setEnv(String.valueOf(env).trim());
+            if (update.getEnv() != null && !update.getEnv().trim().isEmpty()) {
+                entity.setEnv(update.getEnv().trim());
             }
 
-            if (update.containsKey("envCode")) {
-                Object envCode = update.get("envCode");
-                String code = envCode == null ? "" : String.valueOf(envCode).trim();
+            if (update.getEnvCode() != null) {
+                String code = update.getEnvCode().trim();
                 entity.setEnvCode(code.isEmpty() ? null : code);
             }
 
-            if (update.containsKey("token")) {
-                Object token = update.get("token");
-                String tokenValue = token == null ? "" : String.valueOf(token).trim();
-                entity.setToken(tokenValue.isEmpty() ? null : tokenValue);
+            if (update.getToken() != null) {
+                String tokenValue = update.getToken().trim();
+                entity.setToken(tokenValue.isEmpty() ? null : truncateToken(tokenValue));
             }
 
-            entitiesToSave.add(entity);
+            entitiesToSave.put(id, entity);
         }
 
-        ecartBoSummaryRepository.saveAll(entitiesToSave);
+        if (!entitiesToSave.isEmpty()) {
+            ecartBoSummaryRepository.saveAll(new ArrayList<>(entitiesToSave.values()));
+        }
 
         Map<String, Object> result = new HashMap<>();
         result.put("updated", entitiesToSave.size());
         result.put("skipped", skipped);
         return result;
+    }
+
+    private static String truncateToken(String token) {
+        if (token == null) {
+            return null;
+        }
+        return token.length() <= 64 ? token : token.substring(0, 64);
     }
 
     private Long toLong(Object value) {

@@ -6,6 +6,7 @@ import com.reconciliation.entity.ProfilEntity;
 import com.reconciliation.entity.ProfilPermissionEntity;
 import com.reconciliation.repository.ProfilPermissionRepository;
 import com.reconciliation.service.JwtService;
+import com.reconciliation.service.LoginLockService;
 import com.reconciliation.service.TwoFactorAuthService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +38,8 @@ public class AuthController {
     private JwtService jwtService;
     @Autowired
     private TwoFactorAuthService twoFactorAuthService;
+    @Autowired
+    private LoginLockService loginLockService;
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> payload) {
@@ -52,6 +55,12 @@ public class AuthController {
         }
 
         UserEntity user = userOpt.get();
+
+        Optional<ResponseEntity<?>> lockedResponse = loginLockService.buildLockedResponse(user);
+        if (lockedResponse.isPresent()) {
+            return lockedResponse.get();
+        }
+
         if (!user.getEnabled()) {
             return ResponseEntity.status(403).body(Map.of("error", "Ce compte utilisateur est désactivé. Contactez un administrateur."));
         }
@@ -69,8 +78,14 @@ public class AuthController {
         }
 
         if (!passwordMatches) {
-            return ResponseEntity.status(401).body(Map.of("error", "Login ou mot de passe incorrect"));
+            Map<String, Object> failure = loginLockService.recordFailedAttempt(user);
+            if (Boolean.TRUE.equals(failure.get("locked"))) {
+                return ResponseEntity.status(423).body(failure);
+            }
+            return ResponseEntity.status(401).body(failure);
         }
+
+        loginLockService.resetFailedAttempts(user);
 
         Map<String, Object> response = new java.util.HashMap<>();
         response.put("username", user.getUsername());
@@ -149,62 +164,69 @@ public class AuthController {
         
         try {
             int totpCode = Integer.parseInt(code);
-            
-            return userRepository.findByUsername(username)
-                    .filter(user -> user.getEnabled())
-                    .filter(user -> {
-                        if (!user.getEnabled2FA() || user.getSecret2FA() == null) {
-                            return false;
-                        }
-                        // Valider le code TOTP
-                        return twoFactorAuthService.validateCode(user.getSecret2FA(), totpCode);
-                    })
-                    .map(user -> {
-                        // Code valide, marquer le QR code comme scanné si c'est la première fois
-                        if (!user.getQrCodeScanned()) {
-                            user.setQrCodeScanned(true);
-                            userRepository.save(user);
-                        }
-                        
-                        // Générer le token JWT
-                        Map<String, Object> extraClaims = new java.util.HashMap<>();
-                        if ("admin".equals(user.getUsername())) {
-                            extraClaims.put("role", "ADMIN");
-                        } else {
-                            extraClaims.put("role", "USER");
-                        }
-                        String token = jwtService.generateToken(user.getUsername(), extraClaims);
-                        
-                        Map<String, Object> response = new java.util.HashMap<>();
-                        response.put("username", user.getUsername());
-                        response.put("token", token);
-                        response.put("type", "Bearer");
-                        
-                        if ("admin".equals(user.getUsername())) {
-                            List<ModuleEntity> modules = moduleRepository.findAll();
-                            List<PermissionEntity> permissions = permissionRepository.findAll();
-                            List<Map<String, String>> droits = new java.util.ArrayList<>();
-                            for (ModuleEntity m : modules) {
-                                for (PermissionEntity p : permissions) {
-                                    droits.add(Map.of("module", m.getNom(), "permission", p.getNom()));
-                                }
-                            }
-                            response.put("profil", "ADMIN");
-                            response.put("droits", droits);
-                        } else {
-                            ProfilEntity profil = user.getProfil();
-                            List<ProfilPermissionEntity> droits = profil != null ? profilPermissionRepository.findAll().stream()
-                                .filter(pp -> pp.getProfil().getId().equals(profil.getId()))
-                                .toList() : List.of();
-                            response.put("profil", profil != null ? profil.getNom() : null);
-                            response.put("droits", droits.stream().map(pp -> Map.of(
-                                "module", pp.getModule().getNom(),
-                                "permission", pp.getPermission().getNom()
-                            )).toList());
-                        }
-                        return ResponseEntity.ok().body(response);
-                    })
-                    .orElse(ResponseEntity.status(401).body(Map.of("error", "Code invalide ou 2FA non activé")));
+
+            Optional<UserEntity> userOpt = userRepository.findByUsername(username);
+            if (userOpt.isEmpty() || !userOpt.get().getEnabled()) {
+                return ResponseEntity.status(401).body(Map.of("error", "Code invalide ou 2FA non activé"));
+            }
+
+            UserEntity user = userOpt.get();
+            Optional<ResponseEntity<?>> lockedResponse = loginLockService.buildLockedResponse(user);
+            if (lockedResponse.isPresent()) {
+                return lockedResponse.get();
+            }
+
+            if (!user.getEnabled2FA() || user.getSecret2FA() == null
+                    || !twoFactorAuthService.validateCode(user.getSecret2FA(), totpCode)) {
+                Map<String, Object> failure = loginLockService.recordFailedAttempt(user);
+                if (Boolean.TRUE.equals(failure.get("locked"))) {
+                    return ResponseEntity.status(423).body(failure);
+                }
+                return ResponseEntity.status(401).body(failure);
+            }
+
+            loginLockService.resetFailedAttempts(user);
+            if (!user.getQrCodeScanned()) {
+                user.setQrCodeScanned(true);
+                userRepository.save(user);
+            }
+
+            Map<String, Object> extraClaims = new java.util.HashMap<>();
+            if ("admin".equals(user.getUsername())) {
+                extraClaims.put("role", "ADMIN");
+            } else {
+                extraClaims.put("role", "USER");
+            }
+            String token = jwtService.generateToken(user.getUsername(), extraClaims);
+
+            Map<String, Object> response = new java.util.HashMap<>();
+            response.put("username", user.getUsername());
+            response.put("token", token);
+            response.put("type", "Bearer");
+
+            if ("admin".equals(user.getUsername())) {
+                List<ModuleEntity> modules = moduleRepository.findAll();
+                List<PermissionEntity> permissions = permissionRepository.findAll();
+                List<Map<String, String>> droits = new java.util.ArrayList<>();
+                for (ModuleEntity m : modules) {
+                    for (PermissionEntity p : permissions) {
+                        droits.add(Map.of("module", m.getNom(), "permission", p.getNom()));
+                    }
+                }
+                response.put("profil", "ADMIN");
+                response.put("droits", droits);
+            } else {
+                ProfilEntity profil = user.getProfil();
+                List<ProfilPermissionEntity> droits = profil != null ? profilPermissionRepository.findAll().stream()
+                    .filter(pp -> pp.getProfil().getId().equals(profil.getId()))
+                    .toList() : List.of();
+                response.put("profil", profil != null ? profil.getNom() : null);
+                response.put("droits", droits.stream().map(pp -> Map.of(
+                    "module", pp.getModule().getNom(),
+                    "permission", pp.getPermission().getNom()
+                )).toList());
+            }
+            return ResponseEntity.ok().body(response);
         } catch (NumberFormatException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "Code doit être un nombre à 6 chiffres"));
         }

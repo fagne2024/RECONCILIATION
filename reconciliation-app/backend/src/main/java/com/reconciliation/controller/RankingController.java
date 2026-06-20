@@ -36,7 +36,6 @@ public class RankingController {
     
     /**
      * Récupérer la liste des pays distincts normalisés
-     * Les variantes comme CI et CICTH sont regroupées en un seul CI
      */
     @GetMapping("/countries")
     public ResponseEntity<List<String>> getDistinctCountries() {
@@ -45,6 +44,24 @@ public class RankingController {
             return ResponseEntity.ok(countries);
         } catch (Exception e) {
             logger.error("Error getting countries: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    /**
+     * Classements agences + services en une seule requête (chargement initial optimisé)
+     */
+    @GetMapping("/bundle")
+    public ResponseEntity<Map<String, Object>> getRankingsBundle(
+            @RequestParam(required = false) List<String> country,
+            @RequestParam(required = false, defaultValue = "month") String period,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        try {
+            Map<String, Object> bundle = rankingService.getRankingsBundle(country, period, startDate, endDate);
+            return ResponseEntity.ok(bundle);
+        } catch (Exception e) {
+            logger.error("Error getting rankings bundle: {}", e.getMessage(), e);
             return ResponseEntity.badRequest().build();
         }
     }
