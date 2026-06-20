@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output, ChangeDetectorRef, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ChangeDetectorRef, NgZone, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, AutoProcessingModel, ProcessingResult, ColumnProcessingRule } from '../../services/auto-processing.service';
 import { ModelPreProcessingService } from '../../services/model-preprocessing.service';
@@ -55,6 +55,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     /** Section embarquée sur /traitement : panneau « Traitement Automatique » sans UI de réconciliation. */
     @Input() embedTraitementSection = false;
+    /** Progression du traitement automatique (section embarquée /traitement). */
+    @Output() embedTraitementProgress = new EventEmitter<string>();
 
     /** Page /upload : Option 1 uniquement (mode manuel). */
     manualOnly = false;
@@ -93,6 +95,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     traitementProcessing = false;
     traitementProgressMessage = '';
     traitementAutoSelectedModelHint = '';
+    private treatmentProgressLastUi = 0;
 
     /** Modèle partenaire mémorisé après traitement assisté (évite la re-détection par nom de fichier). */
     assistedPartnerReconciliationModelId: string | null = null;
@@ -250,7 +253,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         private progressIndicatorService: ProgressIndicatorService,
         private exportOptimizationService: ExportOptimizationService,
         private modelPreProcessingService: ModelPreProcessingService,
-        private cd: ChangeDetectorRef
+        private cd: ChangeDetectorRef,
+        private ngZone: NgZone
     ) {
         // Initialiser le type de réconciliation depuis le service (forcé à 1-1)
         const serviceType = this.appStateService.getReconciliationType();
@@ -330,12 +334,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.cd.detectChanges();
     }
 
-    closeTraitementModal(force = false): void {
+    closeTraitementModal(force = false, options?: { keepProcessing?: boolean }): void {
         if (this.traitementProcessing && !force) {
             return;
         }
         this.showTraitementModal = false;
-        this.traitementProcessing = false;
+        if (!options?.keepProcessing) {
+            this.traitementProcessing = false;
+        }
         this.resetTraitementPanel();
     }
 
@@ -622,7 +628,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         this.traitementProcessing = true;
-        const perf = this.startTreatmentPerf('Traitement assisté', {
+        this.treatmentProgressLastUi = 0;
+        const perf = this.startTreatmentPerf(
+            this.embedTraitementSection ? 'Traitement automatique (/traitement)' : 'Traitement assisté',
+            {
             fichiers: this.traitementFiles.map(f => ({ nom: f.name, ko: Math.round(f.size / 1024) })),
             modele: model.name,
             pattern: model.filePattern
@@ -647,10 +656,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 dureeLectureMs: Math.round(performance.now() - readPerf),
                 mode: needsCompilation ? 'fusion' : 'lecture-directe'
             });
-            this.traitementProgressMessage =
-                `Lecture terminée (${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)) — chargement du modèle...`;
-            this.cd.detectChanges();
-            await this.yieldToMainThread(true);
+            await this.updateTraitementProgress(
+                `Lecture terminée (${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)) — chargement du modèle...`
+            );
             if (!compiled.rows.length) {
                 await this.popupService.showWarning(
                     'Aucune donnée lisible dans les fichiers sélectionnés.',
@@ -663,9 +671,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 model.id,
                 AutoProcessingService.RECONCILIATION_MODULE
             );
-            this.traitementProgressMessage = 'Règles du modèle chargées — préparation des données...';
-            this.cd.detectChanges();
-            await this.yieldToMainThread(true);
+            await this.updateTraitementProgress('Règles du modèle chargées — préparation des données...');
             perf.mark('Chargement règles colonnes', { regles: columnRules.length });
             const inputColumns = this.collectAssistedTreatmentInputColumns(model, columnRules);
             let workingRows = compiled.rows;
@@ -673,19 +679,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             perf.mark('Analyse colonnes modèle', { colonnes: inputColumns.length, enrichissement: needsEnrichment });
 
             if (needsEnrichment) {
-                this.traitementProgressMessage =
-                    `Préparation des colonnes : 0 / ${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)...`;
-                this.cd.detectChanges();
-                await this.yieldToMainThread(true);
+                await this.updateTraitementProgress(
+                    `Préparation des colonnes : 0 / ${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)...`
+                );
                 const enrichStart = performance.now();
                 workingRows = await this.enrichAssistedRowsAsync(
                     compiled.rows,
                     inputColumns,
-                    (done, total) => {
-                        this.traitementProgressMessage =
-                            `Préparation des colonnes : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
-                        this.cd.detectChanges();
-                    }
+                    (done, total) => this.updateTraitementProgress(
+                        `Préparation des colonnes : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`
+                    )
                 );
                 perf.mark('Enrichissement colonnes FR', {
                     lignes: workingRows.length,
@@ -698,26 +701,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
             // 1) Pré-traitement du modèle sur les colonnes brutes (comme /traitement)
             if (this.modelPreProcessingService.hasPreProcessing(model.preProcessingConfig)) {
-                this.traitementProgressMessage = 'Pré-traitement du modèle : démarrage...';
-                this.cd.detectChanges();
-                await this.yieldToMainThread(true);
+                await this.updateTraitementProgress('Pré-traitement du modèle : démarrage...');
                 const preStart = performance.now();
                 const rowsBeforePreProcessing = workingRows.length;
-                let lastPreProcessUiUpdate = 0;
                 workingRows = await this.modelPreProcessingService.applyPreProcessingAsync(
                     workingRows,
                     model.preProcessingConfig,
                     {
                         batchSize: workingRows.length > 100000 ? 10000 : 500,
                         onProgress: async (message, done, total) => {
-                            this.traitementProgressMessage =
-                                `${message} ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
-                            const now = performance.now();
-                            if (done === 0 || done >= total || now - lastPreProcessUiUpdate > 100) {
-                                this.cd.detectChanges();
-                                lastPreProcessUiUpdate = now;
-                            }
-                            await this.yieldToMainThread(true);
+                            await this.updateTraitementProgress(
+                                `${message} ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`
+                            );
                         },
                         yieldFn: () => this.yieldToMainThread(true)
                     }
@@ -744,10 +739,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 }
             }
 
-            // 3) Règles de colonnes du modèle
-            this.traitementProgressMessage =
-                `Application des règles sur ${workingRows.length.toLocaleString('fr-FR')} ligne(s) (${this.traitementFiles.length} fichier(s))...`;
-            this.cd.detectChanges();
+            await this.updateTraitementProgress(
+                `Application des règles sur ${workingRows.length.toLocaleString('fr-FR')} ligne(s) (${this.traitementFiles.length} fichier(s))...`
+            );
 
             const rulesStart = performance.now();
             const processed = columnRules.length
@@ -756,8 +750,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     columnRules,
                     workingRows.length > 100000 ? 10000 : 500,
                     async (done, total) => {
-                        this.traitementProgressMessage = `Règles appliquées : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
-                        this.cd.detectChanges();
+                        await this.updateTraitementProgress(
+                            `Règles appliquées : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`
+                        );
                     },
                     () => this.yieldToMainThread(true)
                 )
@@ -797,10 +792,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
             const outputName = this.buildProcessedOutputFileName(model, compiled.referenceFile);
 
-            this.traitementProgressMessage = `Téléchargement : ${outputName}`;
-            this.cd.detectChanges();
+            await this.updateTraitementProgress(`Téléchargement : ${outputName}`);
             const exportStart = performance.now();
-            await this.downloadProcessedTreatmentFile(uniqueProcessed, outputName, { skipNormalize: allCsvSource });
+            await this.downloadProcessedTreatmentFile(uniqueProcessed, outputName, { skipNormalize: true });
             perf.mark('Export fichier', { nom: outputName, dureeMs: Math.round(performance.now() - exportStart) });
 
             const duplicateInfo = dedupResult.duplicatesRemoved > 0
@@ -835,8 +829,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 : 'BO (Back Office)';
             const sideChoice = await this.popupService.showSelectInput(
                 `${this.traitementFiles.length > 1 ? this.traitementFiles.length + ' fichier(s) fusionnés' : 'Fichier traité'}.\n` +
-                `${uniqueProcessed.length} ligne(s) unique(s).${duplicateInfo}${compileInfo}${preProcessingInfo}\n` +
-                `Fichier produit téléchargé : ${outputName}.\n` +
+                `${uniqueProcessed.length.toLocaleString('fr-FR')} ligne(s) unique(s).${duplicateInfo}\n` +
+                `Fichier produit : ${outputName}.\n` +
                 `Assigner ce fichier à quel emplacement pour la réconciliation ?`,
                 'Destination BO ou Partenaire',
                 ['BO (Back Office)', 'Partenaire'],
@@ -848,12 +842,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             }
 
             const side: 'bo' | 'partner' = sideChoice.startsWith('BO') ? 'bo' : 'partner';
-            this.assignProcessedTreatmentData(uniqueProcessed, outputName, side, model.id);
+            this.closeTraitementModal(true, { keepProcessing: true });
+            await this.updateTraitementProgress('Assignation du fichier en cours...', { force: true });
+            await this.assignProcessedTreatmentDataAsync(uniqueProcessed, outputName, side, model.id);
 
             const bothReady = this.canProceedAuto();
             this.traitementProcessing = false;
-            this.closeTraitementModal(true);
+            this.traitementProgressMessage = '';
+            this.cd.detectChanges();
             perf.end('Traitement terminé', { lignes: uniqueProcessed.length, fichier: outputName });
+            await this.yieldToMainThread(true);
             await this.popupService.showSuccess(
                 `Fichier traité et téléchargé (${outputName}).${duplicateSummary}${preProcessingSuccess}` +
                 (bothReady
@@ -873,7 +871,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         } finally {
             this.traitementProcessing = false;
             this.traitementProgressMessage = '';
-            this.cd.detectChanges();
+            this.ngZone.run(() => this.cd.detectChanges());
         }
     }
 
@@ -2102,6 +2100,28 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         });
     }
 
+    /** Met à jour la barre de progression (modal assisté ou panneau /traitement) sans bloquer le thread UI. */
+    private async updateTraitementProgress(
+        message: string,
+        options?: { force?: boolean; skipYield?: boolean }
+    ): Promise<void> {
+        this.traitementProgressMessage = message;
+        if (this.embedTraitementSection) {
+            this.embedTraitementProgress.emit(message);
+        }
+
+        const now = performance.now();
+        const force = options?.force ?? false;
+        if (force || now - this.treatmentProgressLastUi > 80) {
+            this.ngZone.run(() => this.cd.detectChanges());
+            this.treatmentProgressLastUi = now;
+        }
+
+        if (!options?.skipYield) {
+            await this.yieldToMainThread(true);
+        }
+    }
+
     private buildColumnValueCounts(
         data: Record<string, string>[],
         column: string | null
@@ -2322,20 +2342,44 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         outputBaseName: string,
         options?: { skipNormalize?: boolean }
     ): Promise<void> {
-        const normalizedData = options?.skipNormalize ? data : this.normalizeData(data);
-        const columns = this.getColumnsFromData(normalizedData);
+        let exportRows = data;
+        if (!options?.skipNormalize && data.length > 3000) {
+            exportRows = await this.normalizeDataAsync(data, async (done, total) => {
+                await this.updateTraitementProgress(
+                    `Préparation export : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`
+                );
+            });
+        } else if (!options?.skipNormalize) {
+            exportRows = this.normalizeData(data);
+        }
+
+        const columns = this.getColumnsFromData(exportRows);
         const lowerName = outputBaseName.toLowerCase();
+        const exportOptions = {
+            chunkSize: exportRows.length > 100000 ? 5000 : exportRows.length > 20000 ? 2000 : 1000,
+            onProgress: async (progress: { current: number; total: number }) => {
+                await this.updateTraitementProgress(
+                    `Téléchargement : ${progress.current.toLocaleString('fr-FR')} / ${progress.total.toLocaleString('fr-FR')} ligne(s)...`
+                );
+            },
+            yieldFn: () => this.yieldToMainThread(true)
+        };
 
         if (this.isExcelFile(lowerName)) {
             const format = lowerName.endsWith('.xls') ? 'xls' : 'xlsx';
             await this.exportOptimizationService.exportExcelOptimized(
-                normalizedData,
+                exportRows,
                 columns,
                 outputBaseName,
-                { format }
+                { format, ...exportOptions }
             );
         } else {
-            await this.exportOptimizationService.exportCSVOptimized(normalizedData, columns, outputBaseName);
+            await this.exportOptimizationService.exportCSVOptimized(
+                exportRows,
+                columns,
+                outputBaseName,
+                exportOptions
+            );
         }
     }
 
@@ -2345,6 +2389,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         side: 'bo' | 'partner',
         modelId?: string
     ): void {
+        void this.assignProcessedTreatmentDataAsync(data, fileName, side, modelId);
+    }
+
+    private async assignProcessedTreatmentDataAsync(
+        data: Record<string, string>[],
+        fileName: string,
+        side: 'bo' | 'partner',
+        modelId?: string
+    ): Promise<void> {
         const treatedFormat: 'csv' | 'excel' = 'csv';
         if (side === 'bo') {
             this.autoBoSourceFormat = treatedFormat;
@@ -2355,7 +2408,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.assistedBoTreatmentModelId = modelId;
             }
 
-            if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
+            await this.yieldToMainThread(true);
+            if (await this.detectTRXBOAndExtractServicesAsync(this.autoBoData)) {
                 if (this.availableAgencies.length > 0) {
                     this.showAgencySelectionStep();
                 } else {
@@ -2364,17 +2418,171 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             }
         } else {
             this.autoPartnerSourceFormat = treatedFormat;
-            this.autoPartnerData = this.convertDebitCreditToNumberInPlace(data);
+            this.autoPartnerData = data;
             this.autoPartnerFile = null;
             this.autoPartnerFileName = fileName;
             if (modelId) {
                 this.assistedPartnerReconciliationModelId = modelId;
             }
-            this.handleAutoPartnerSelectionFlow();
+
+            await this.convertDebitCreditToNumberAsync(this.autoPartnerData);
+            await this.yieldToMainThread(true);
+            await this.handleAutoPartnerSelectionFlowAsync();
         }
 
         this._canProceedCache = null;
-        this.cd.detectChanges();
+        this.ngZone.run(() => this.cd.detectChanges());
+    }
+
+    private collectUniqueColumnValues(
+        data: Record<string, string>[],
+        column: string
+    ): string[] {
+        const seen = new Set<string>();
+        for (let i = 0; i < data.length; i++) {
+            const value = data[i][column];
+            if (value !== undefined && value !== null && String(value).trim()) {
+                seen.add(String(value).trim());
+            }
+        }
+        return [...seen].sort();
+    }
+
+    private async collectUniqueColumnValuesAsync(
+        data: Record<string, string>[],
+        column: string
+    ): Promise<string[]> {
+        if (data.length <= 5000) {
+            return this.collectUniqueColumnValues(data, column);
+        }
+
+        const seen = new Set<string>();
+        const batchSize = 5000;
+        for (let start = 0; start < data.length; start += batchSize) {
+            const end = Math.min(start + batchSize, data.length);
+            for (let i = start; i < end; i++) {
+                const value = data[i][column];
+                if (value !== undefined && value !== null && String(value).trim()) {
+                    seen.add(String(value).trim());
+                }
+            }
+            await this.yieldToMainThread(true);
+        }
+        return [...seen].sort();
+    }
+
+    private async detectTRXBOAndExtractServicesAsync(data: Record<string, string>[]): Promise<boolean> {
+        if (!data?.length) {
+            return false;
+        }
+
+        const columns = Object.keys(data[0]);
+        const hasServiceColumn = columns.some(col => {
+            const lower = col.toLowerCase();
+            return lower.includes('service') || lower.includes('serv');
+        });
+        if (!hasServiceColumn) {
+            return false;
+        }
+
+        const agencyColumn = columns.find(col => {
+            const lower = col.toLowerCase();
+            return lower.includes('agence') || lower.includes('agency');
+        });
+
+        if (agencyColumn) {
+            this.availableAgencies = await this.collectUniqueColumnValuesAsync(data, agencyColumn);
+            this.agencySelectionData = data;
+            this.agencyColumn = agencyColumn;
+            return true;
+        }
+
+        return this.extractServicesFromTRXBOAsync(data);
+    }
+
+    private async extractServicesFromTRXBOAsync(data: Record<string, string>[]): Promise<boolean> {
+        if (!data?.length) {
+            return false;
+        }
+
+        const columns = Object.keys(data[0]);
+        const serviceColumn = columns.find(col => {
+            const lower = col.toLowerCase();
+            return lower.includes('service') || lower.includes('serv');
+        });
+        const statusColumn = columns.find(col => {
+            const lower = col.toLowerCase();
+            return lower.includes('statut') || lower.includes('status') || lower.includes('état') || lower.includes('state');
+        });
+        this.autoStatusColumn = statusColumn || null;
+
+        if (!serviceColumn) {
+            return false;
+        }
+
+        this.availableServices = await this.collectUniqueColumnValuesAsync(data, serviceColumn);
+        this.serviceSelectionData = data;
+        return true;
+    }
+
+    private async handleAutoPartnerSelectionFlowAsync(): Promise<void> {
+        const detected = await this.detectPartnerServiceTypeAndStatusAsync(this.autoPartnerData);
+        if (detected === 'agency') {
+            this.showPartnerAgencySelectionStep();
+        } else if (detected === 'services') {
+            this.showPartnerServiceSelectionStep();
+        }
+    }
+
+    private async detectPartnerServiceTypeAndStatusAsync(
+        data: Record<string, string>[]
+    ): Promise<false | 'agency' | 'services'> {
+        if (!data?.length) {
+            return false;
+        }
+
+        this.partnerAgencyColumn = null;
+        this.partnerAgencySelectionData = [];
+        this.partnerAvailableAgencies = [];
+        this.partnerServiceSelectionData = [];
+        this.partnerServiceCounts = {};
+        this.partnerAvailableServices = [];
+
+        const columns = Object.keys(data[0]);
+        const serviceColumn = columns.find(col => {
+            const colLower = col.toLowerCase();
+            return colLower.includes('service') || colLower.includes('serv') || colLower.includes('type');
+        });
+        const statusColumn = columns.find(col => {
+            const colLower = col.toLowerCase();
+            return colLower.includes('statut') || colLower.includes('status') || colLower.includes('état')
+                || colLower.includes('généré le') || colLower.includes('genere le');
+        });
+        const agencyColumn = columns.find(col => {
+            const lower = col.toLowerCase();
+            return lower.includes('agence') || lower.includes('agency');
+        });
+
+        if (!serviceColumn) {
+            return false;
+        }
+
+        this.partnerServiceColumn = serviceColumn;
+        this.partnerStatusColumn = statusColumn || null;
+
+        if (agencyColumn) {
+            const agencies = await this.collectUniqueColumnValuesAsync(data, agencyColumn);
+            if (agencies.length > 0) {
+                this.partnerAvailableAgencies = agencies;
+                this.partnerAgencySelectionData = data;
+                this.partnerAgencyColumn = agencyColumn;
+                return 'agency';
+            }
+        }
+
+        this.partnerAvailableServices = await this.collectUniqueColumnValuesAsync(data, serviceColumn);
+        this.assignPartnerServiceSelectionData(data);
+        return 'services';
     }
 
     private readAssistedTreatmentFileRows(file: File): Promise<{
@@ -4592,8 +4800,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 console.log('📋 Colonne Agence trouvée:', agencyColumn);
                 
                 // Extraire toutes les agences uniques
-                const agencies = [...new Set(data.map(row => row[agencyColumn]).filter(agency => agency && agency.toString().trim()))];
-                this.availableAgencies = agencies.sort();
+                const agencies = this.collectUniqueColumnValues(data, agencyColumn);
+                this.availableAgencies = agencies;
                 this.agencySelectionData = data;
                 this.agencyColumn = agencyColumn;
                 
@@ -4633,8 +4841,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         
         if (serviceColumn) {
             // Extraire tous les services uniques
-            const services = [...new Set(data.map(row => row[serviceColumn]).filter(service => service && service.trim()))];
-            this.availableServices = services.sort();
+            const services = this.collectUniqueColumnValues(data, serviceColumn);
+            this.availableServices = services;
             this.serviceSelectionData = data;
             
             if (statusColumn) {
@@ -4675,8 +4883,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 console.log('📋 Colonne Agence trouvée (mode manuel):', agencyColumn);
                 
                 // Extraire toutes les agences uniques
-                const agencies = [...new Set(data.map(row => row[agencyColumn]).filter(agency => agency && agency.toString().trim()))];
-                this.availableAgencies = agencies.sort();
+                const agencies = this.collectUniqueColumnValues(data, agencyColumn);
+                this.availableAgencies = agencies;
                 this.agencySelectionData = data;
                 this.agencyColumn = agencyColumn;
                 

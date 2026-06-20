@@ -115,7 +115,10 @@
       Normalisez et formatez vos fichiers via les modèles de traitement (même logique que le mode assisté).
       Détection automatique des en-têtes, compilation multi-fichiers, application des règles du modèle, puis téléchargement.
     </p>
-    <app-file-upload [embedTraitementSection]="true"></app-file-upload>
+    <app-file-upload
+      [embedTraitementSection]="true"
+      (embedTraitementProgress)="onAutoTreatmentProgress($event)">
+    </app-file-upload>
   </div>
 </div>
 

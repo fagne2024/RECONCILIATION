@@ -227,7 +227,12 @@ if (-not $SkipBuild) {
         robocopy $builtFrontend $frontendDestDev /MIR /NFL /NDL /NJH /NJS /NC /NS | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "Copie frontend DEV echouee." }
     }
+    $frontendDestProd = Join-Path $ServerRoot 'frontend\dist\csv-reconciliation'
+    New-Item -ItemType Directory -Force -Path $frontendDestProd | Out-Null
+    robocopy $builtFrontend $frontendDestProd /MIR /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "Copie frontend dist (port 4200) echouee." }
     Write-Host "Frontend DEV : $frontendDestDev" -ForegroundColor Green
+    Write-Host "Frontend prod (4200) : $frontendDestProd" -ForegroundColor Green
 }
 
 # --- 4. Build backend ---

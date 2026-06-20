@@ -28,6 +28,8 @@ export interface ExportOptions {
   useWebWorker?: boolean;
   enableCompression?: boolean;
   format?: 'csv' | 'xlsx' | 'xls';
+  onProgress?: (progress: ExportProgress) => void | Promise<void>;
+  yieldFn?: () => Promise<void>;
 }
 
 export interface ExportWithCommentColorsOptions {
@@ -74,80 +76,123 @@ export class ExportOptimizationService {
     fileName: string, 
     options: ExportOptions = {}
   ): Promise<void> {
-    const { chunkSize = 10000 } = options;
-    await this.exportCSVSynchronous(rows, columns, fileName, chunkSize);
+    const chunkSize = options.chunkSize ?? (rows.length > 100000 ? 5000 : rows.length > 20000 ? 2000 : 1000);
+    await this.exportCSVSynchronous(rows, columns, fileName, chunkSize, options);
+  }
+
+  private async yieldExport(options: ExportOptions): Promise<void> {
+    if (options.yieldFn) {
+      await options.yieldFn();
+      return;
+    }
+    await new Promise<void>(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  }
+
+  private formatCellForCsv(raw: unknown): string {
+    if (raw === undefined || raw === null) {
+      return '';
+    }
+
+    let val: string;
+    if (typeof raw === 'object') {
+      try {
+        val = JSON.stringify(raw);
+      } catch {
+        val = String(raw);
+      }
+    } else {
+      val = String(raw);
+    }
+
+    if (/Ã.|Â.|ï¿½|\uFFFD/.test(val)) {
+      val = fixCellEncoding(val);
+    }
+
+    if (val.includes('"')) {
+      val = val.replace(/"/g, '""');
+    }
+    if (val.includes(';') || val.includes('"') || val.includes('\n') || val.includes('\r')) {
+      val = `"${val}"`;
+    }
+    return val;
+  }
+
+  private buildCsvLine(row: Record<string, unknown>, columns: string[]): string {
+    const cells = new Array<string>(columns.length);
+    for (let i = 0; i < columns.length; i++) {
+      cells[i] = this.formatCellForCsv(row[columns[i]]);
+    }
+    return cells.join(';');
   }
 
   /**
-   * Export CSV synchrone optimisé
+   * Export CSV par chunks sur le thread principal, sans concaténer une méga-chaîne.
    */
   private async exportCSVSynchronous(
     rows: any[], 
     columns: string[], 
     fileName: string, 
-    chunkSize: number
+    chunkSize: number,
+    options: ExportOptions = {}
   ): Promise<void> {
     const totalRows = rows.length;
-    let csvContent = '';
-    
-    const encodedColumns = columns.map(col => fixCellEncoding(col));
-    csvContent += encodedColumns.join(';') + '\r\n';
-    
-    // Traitement par chunks avec progression
-    for (let i = 0; i < totalRows; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-      const chunkContent = chunk.map(row => {
-        return encodedColumns.map((col, idx) => {
-          const raw = row[columns[idx]];
-          let val = '';
-          if (raw !== undefined && raw !== null) {
-            if (typeof raw === 'object') {
-              try {
-                val = fixCellEncoding(JSON.stringify(raw));
-              } catch {
-                val = fixCellEncoding(String(raw));
-              }
-            } else {
-              val = fixCellEncoding(String(raw));
-            }
-          }
-          if (val.includes('"')) val = val.replace(/"/g, '""');
-          if (val.includes(';') || val.includes('"') || val.includes('\n')) {
-            val = '"' + val + '"';
-          }
-          return val;
-        }).join(';');
-      }).join('\r\n');
-      
-      csvContent += chunkContent + '\r\n';
-      
-      // Mettre à jour la progression
-      const progress = Math.min(i + chunkSize, totalRows);
-      this._exportProgress.next({
+    const encodedColumns = columns.map(col => {
+      const header = col || '';
+      return /Ã.|Â.|ï¿½|\uFFFD/.test(header) ? fixCellEncoding(header) : header;
+    });
+    const parts: BlobPart[] = [];
+    const encoder = new TextEncoder();
+    parts.push(encoder.encode(`${encodedColumns.join(';')}\r\n`));
+
+    this._exportProgress.next({
+      current: 0,
+      total: totalRows,
+      percentage: 0,
+      message: `Export CSV: 0/${totalRows.toLocaleString()} lignes`,
+      isComplete: false
+    });
+    await options.onProgress?.({
+      current: 0,
+      total: totalRows,
+      percentage: 0,
+      message: `Export CSV: 0/${totalRows.toLocaleString()} lignes`,
+      isComplete: false
+    });
+    await this.yieldExport(options);
+
+    for (let start = 0; start < totalRows; start += chunkSize) {
+      const end = Math.min(start + chunkSize, totalRows);
+      const lines = new Array<string>(end - start);
+      for (let i = start; i < end; i++) {
+        lines[i - start] = this.buildCsvLine(rows[i], columns);
+      }
+      parts.push(encoder.encode(`${lines.join('\r\n')}\r\n`));
+
+      const progress = end;
+      const progressPayload: ExportProgress = {
         current: progress,
         total: totalRows,
-        percentage: (progress / totalRows) * 100,
+        percentage: totalRows ? (progress / totalRows) * 100 : 100,
         message: `Export CSV: ${progress.toLocaleString()}/${totalRows.toLocaleString()} lignes`,
         isComplete: false
-      });
-
-      // Permettre au navigateur de respirer
-      if (i % (chunkSize * 5) === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
+      };
+      this._exportProgress.next(progressPayload);
+      await options.onProgress?.(progressPayload);
+      await this.yieldExport(options);
     }
-    
-    // Télécharger le fichier
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    this.downloadFile(blob, fileName.endsWith('.csv') ? fileName : fileName + '.csv');
-    
-    this._exportProgress.next({
+
+    const blob = new Blob(parts, { type: 'text/csv;charset=utf-8;' });
+    this.downloadFile(blob, fileName.endsWith('.csv') ? fileName : `${fileName}.csv`);
+
+    const donePayload: ExportProgress = {
       current: totalRows,
       total: totalRows,
       percentage: 100,
       message: `✅ Export CSV terminé: ${fileName}`,
       isComplete: true
-    });
+    };
+    this._exportProgress.next(donePayload);
+    await options.onProgress?.(donePayload);
   }
 
   /**
@@ -159,25 +204,14 @@ export class ExportOptimizationService {
     fileName: string, 
     options: ExportOptions = {}
   ): Promise<void> {
-    const { chunkSize = 5000, format = 'xlsx' } = options;
-    const excelFormat = format === 'xls' ? 'xls' : 'xlsx';
-    const encodedColumns = columns.map(col => fixCellEncoding(col));
-
-    // Normaliser les lignes : colonnes montant/volume en nombres pour Excel
-    const normalizedRows = rows.map(row => {
-      const r: any = {};
-      columns.forEach((col, idx) => {
-        const encodedCol = encodedColumns[idx];
-        const rawValue = getRowColumnValue(row, col);
-        const base = this.serializeCellForExport(rawValue);
-        r[encodedCol] = this.cellValueForExcel(encodedCol, base);
-      });
-      return r;
+    const chunkSize = options.chunkSize ?? (rows.length > 100000 ? 5000 : rows.length > 20000 ? 2000 : 1000);
+    const excelFormat = options.format === 'xls' ? 'xls' : 'xlsx';
+    const encodedColumns = columns.map(col => {
+      const header = col || '';
+      return /Ã.|Â.|ï¿½|\uFFFD/.test(header) ? fixCellEncoding(header) : header;
     });
 
-    // IMPORTANT: le worker inline n'a pas accès au bundle XLSX (importScripts CDN fragile / CSP).
-    // Pour fiabiliser l'export Excel, on reste sur le thread principal.
-    await this.exportExcelSynchronous(normalizedRows, encodedColumns, fileName, chunkSize, excelFormat);
+    await this.exportExcelSynchronous(rows, columns, encodedColumns, fileName, chunkSize, excelFormat, options);
   }
 
   /**
@@ -329,24 +363,26 @@ export class ExportOptimizationService {
    */
   private async exportExcelSynchronous(
     rows: any[], 
-    columns: string[], 
+    sourceColumns: string[],
+    headerColumns: string[],
     fileName: string, 
     chunkSize: number,
-    format: 'xlsx' | 'xls' = 'xlsx'
+    format: 'xlsx' | 'xls' = 'xlsx',
+    options: ExportOptions = {}
   ): Promise<void> {
     const totalRows = rows.length;
 
     if (format === 'xls') {
-      await this.exportExcelSynchronousXlsxLib(rows, columns, fileName, chunkSize, 'xls');
+      await this.exportExcelSynchronousXlsxLib(rows, sourceColumns, headerColumns, fileName, chunkSize, 'xls', options);
       return;
     }
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Données', { views: [{ state: 'frozen', ySplit: 1 }] });
-    const headerRow = worksheet.addRow(columns);
+    const headerRow = worksheet.addRow(headerColumns);
     headerRow.font = { bold: true };
 
-    columns.forEach((col, idx) => {
+    headerColumns.forEach((col, idx) => {
       if (this.isKeyColumn(col)) {
         worksheet.getColumn(idx + 1).numFmt = '@';
       }
@@ -355,13 +391,14 @@ export class ExportOptimizationService {
     for (let i = 0; i < totalRows; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
       for (const row of chunk) {
-        const rowValues = columns.map(col => {
+        const rowValues = sourceColumns.map((col, idx) => {
+          const headerCol = headerColumns[idx] ?? col;
           const base = this.serializeCellForExport(this.readRowCell(row, col));
-          return this.cellValueForExcel(col, base);
+          return this.cellValueForExcel(headerCol, base);
         });
         const excelRow = worksheet.addRow(rowValues);
         excelRow.eachCell((cell, colNumber) => {
-          const col = columns[colNumber - 1];
+          const col = headerColumns[colNumber - 1];
           if (!this.isKeyColumn(col)) {
             return;
           }
@@ -372,20 +409,19 @@ export class ExportOptimizationService {
       }
 
       const progress = Math.min(i + chunkSize, totalRows);
-      this._exportProgress.next({
+      const progressPayload: ExportProgress = {
         current: progress,
         total: totalRows,
         percentage: (progress / totalRows) * 100,
         message: `Export Excel: ${progress.toLocaleString()}/${totalRows.toLocaleString()} lignes`,
         isComplete: false
-      });
-
-      if (i % (chunkSize * 3) === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
+      };
+      this._exportProgress.next(progressPayload);
+      await options.onProgress?.(progressPayload);
+      await this.yieldExport(options);
     }
 
-    columns.forEach((col, idx) => {
+    headerColumns.forEach((col, idx) => {
       worksheet.getColumn(idx + 1).width = Math.min(Math.max(String(col).length + 2, 12), 50);
     });
 
@@ -405,23 +441,26 @@ export class ExportOptimizationService {
 
   private async exportExcelSynchronousXlsxLib(
     rows: any[],
-    columns: string[],
+    sourceColumns: string[],
+    headerColumns: string[],
     fileName: string,
     chunkSize: number,
-    format: 'xlsx' | 'xls' = 'xlsx'
+    format: 'xlsx' | 'xls' = 'xlsx',
+    options: ExportOptions = {}
   ): Promise<void> {
     const totalRows = rows.length;
     const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet([columns]);
+    const worksheet = XLSX.utils.aoa_to_sheet([headerColumns]);
     
     // Traitement par chunks
     for (let i = 0; i < totalRows; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
       const chunkData = chunk.map(row =>
-        columns.map(col => {
-          const base = this.serializeCellForExport(row[col]);
-          const val = this.cellValueForExcel(col, base);
-          if (this.isKeyColumn(col) && val !== '') {
+        sourceColumns.map((col, idx) => {
+          const headerCol = headerColumns[idx] ?? col;
+          const base = this.serializeCellForExport(this.readRowCell(row, col));
+          const val = this.cellValueForExcel(headerCol, base);
+          if (this.isKeyColumn(headerCol) && val !== '') {
             return { t: 's', v: stripAllWhitespace(val), z: '@' };
           }
           return val;
@@ -433,18 +472,16 @@ export class ExportOptimizationService {
       
       // Mettre à jour la progression
       const progress = Math.min(i + chunkSize, totalRows);
-      this._exportProgress.next({
+      const progressPayload: ExportProgress = {
         current: progress,
         total: totalRows,
         percentage: (progress / totalRows) * 100,
         message: `Export Excel: ${progress.toLocaleString()}/${totalRows.toLocaleString()} lignes`,
         isComplete: false
-      });
-
-      // Permettre au navigateur de respirer
-      if (i % (chunkSize * 3) === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
+      };
+      this._exportProgress.next(progressPayload);
+      await options.onProgress?.(progressPayload);
+      await this.yieldExport(options);
     }
     
     // Finaliser le workbook

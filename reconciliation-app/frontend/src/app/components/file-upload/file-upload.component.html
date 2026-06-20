@@ -73,6 +73,10 @@
         </div>
     </div>
 
+    <div class="assisted-post-treatment-progress" *ngIf="isAssistedLike && !showTraitementModal && traitementProcessing && traitementProgressMessage">
+        <i class="fas fa-spinner fa-spin"></i> {{ traitementProgressMessage }}
+    </div>
+
     <!-- Section d'information sur le mode 1-1 -->
     <div class="info-section" *ngIf="reconciliationMode === 'manual' && !manualOnly">
         <div class="info-card">

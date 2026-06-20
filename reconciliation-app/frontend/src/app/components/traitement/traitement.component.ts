@@ -2727,7 +2727,7 @@ End Sub`;
 
   // Propriétés pour l'affichage/masquage des sections
   showSections = {
-    autoTreatment: false,
+    autoTreatment: true,
     selectCols: false,
     extract: false,
     filter: false,
@@ -2900,6 +2900,11 @@ End Sub`;
   // Méthode pour basculer l'affichage d'une section
   toggleSection(sectionName: keyof typeof this.showSections) {
     this.showSections[sectionName] = !this.showSections[sectionName];
+  }
+
+  /** Rafraîchit la page /traitement pendant le traitement automatique embarqué. */
+  onAutoTreatmentProgress(_message: string): void {
+    this.cd.detectChanges();
   }
 
   // Méthode pour afficher automatiquement la section d'aperçu quand des données sont disponibles

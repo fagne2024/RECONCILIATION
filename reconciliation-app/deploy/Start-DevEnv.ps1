@@ -27,6 +27,7 @@ if (-not (Test-Path $Jar)) {
     $Jar = Join-Path $BackendDir 'target\csv-reconciliation-1.0.0.jar'
 }
 $DistDev = 'C:\reconciliation-app\frontend\dist-dev\csv-reconciliation'
+$DistProd = 'C:\reconciliation-app\frontend\dist\csv-reconciliation'
 $DevUrl = 'https://dev.reconciliation.intouchgroup.net:8444'
 $DevUrlAlt = 'https://reconciliation.intouchgroup.net:8444'
 $PnlDeploy = 'C:\pnlapp\deploy'
@@ -103,6 +104,8 @@ if (-not (Test-Path "$srcDist\index.html")) {
 New-Item -ItemType Directory -Force -Path $DistDev | Out-Null
 if (Test-Path $srcDist) {
     robocopy $srcDist $DistDev /MIR /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+    New-Item -ItemType Directory -Force -Path $DistProd | Out-Null
+    robocopy $srcDist $DistProd /MIR /NFL /NDL /NJH /NJS /NC /NS | Out-Null
 }
 
 # Backend

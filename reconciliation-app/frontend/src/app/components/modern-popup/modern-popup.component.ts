@@ -62,6 +62,11 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
     this.closePopup();
   }
 
+  /** Laisse le navigateur fermer le popup avant de reprendre le traitement lourd. */
+  private static scheduleAfterPopupClose<T>(value: T, resolve: (v: T) => void): void {
+    requestAnimationFrame(() => setTimeout(() => resolve(value), 0));
+  }
+
   private closePopup(): void {
     this.isVisible = false;
     document.body.style.overflow = 'auto';
@@ -394,7 +399,7 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
           popupElement.remove();
           cleanup();
           document.removeEventListener('keydown', handleEscape);
-          resolve(true);
+          ModernPopupComponent.scheduleAfterPopupClose(true, resolve);
         });
       }
 
@@ -669,7 +674,13 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
       const cancelBtn = overlay.querySelector('.popup-btn-cancel');
       const closeBtn = overlay.querySelector('.popup-close');
 
-      if (okBtn) okBtn.addEventListener('click', () => close(select ? select.value : ''));
+      if (okBtn) okBtn.addEventListener('click', () => {
+        const value = select ? select.value : '';
+        overlay.remove();
+        cleanup();
+        document.removeEventListener('keydown', onEsc);
+        ModernPopupComponent.scheduleAfterPopupClose(value, resolve);
+      });
       if (cancelBtn) cancelBtn.addEventListener('click', () => close(null));
       if (closeBtn) closeBtn.addEventListener('click', () => close(null));
       if (select) select.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') close(select!.value); });
