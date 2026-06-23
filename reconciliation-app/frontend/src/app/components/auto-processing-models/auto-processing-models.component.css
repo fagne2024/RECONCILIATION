@@ -2005,6 +2005,26 @@ textarea.form-control {
   line-height: 1.2;
 }
 
+.preprocessing-section-order-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  background: #fff;
+}
+
+.preprocessing-section-order-label {
+  font-weight: 600;
+}
+
+.preprocessing-section-order-badge {
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+
 .format-columns-toolbar {
   display: flex;
   flex-wrap: wrap;

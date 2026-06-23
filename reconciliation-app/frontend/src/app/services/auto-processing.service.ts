@@ -107,12 +107,32 @@ export function matchesConditionValues(actualValue: string, conditionValue?: str
   return expectedValues.some(expected => actual === expected);
 }
 
+export type ModelPreProcessingSectionId =
+  | 'rowFilters'
+  | 'formatActions'
+  | 'columnConcatRules'
+  | 'columnMathRules'
+  | 'valueMappings'
+  | 'columnRenameRules';
+
+export const DEFAULT_PRE_PROCESSING_SECTION_ORDER: ModelPreProcessingSectionId[] = [
+  'rowFilters',
+  'formatActions',
+  'columnConcatRules',
+  'columnMathRules',
+  'valueMappings',
+  'columnRenameRules'
+];
+
 export interface ModelPreProcessingConfig {
   rowFilters?: ModelRowFilter[];
   formatActions?: ModelFormatAction[];
   columnConcatRules?: ModelColumnConcatRule[];
+  columnMathRules?: ModelColumnMathRule[];
   valueMappings?: ModelColumnValueMapping[];
   columnRenameRules?: ModelColumnRenameRule[];
+  /** Ordre d'exécution des sections de pré-traitement. */
+  sectionOrder?: ModelPreProcessingSectionId[];
 }
 
 export interface ModelColumnRenameRule {
@@ -127,6 +147,15 @@ export interface ModelColumnConcatRule {
   sourceColumns: string[];
   targetColumn: string;
   separator: string;
+  enabled: boolean;
+}
+
+export interface ModelColumnMathRule {
+  id: string;
+  sourceColumnA: string;
+  sourceColumnB: string;
+  targetColumn: string;
+  operation: 'add' | 'subtract';
   enabled: boolean;
 }
 

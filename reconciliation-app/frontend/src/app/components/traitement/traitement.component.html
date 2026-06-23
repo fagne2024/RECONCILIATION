@@ -1678,10 +1678,10 @@
             <select [(ngModel)]="removeCharPosition">
               <option value="start">{{ removeCharMode === 'keep' ? 'Depuis la gauche' : 'Depuis le début' }}</option>
               <option value="end">{{ removeCharMode === 'keep' ? 'Depuis la droite' : 'Depuis la fin' }}</option>
-              <option *ngIf="removeCharMode === 'remove'" value="specific">Position spécifique</option>
+              <option value="specific">Position spécifique</option>
             </select>
           </div>
-          <div class="option-group" *ngIf="removeCharMode === 'remove' && removeCharPosition === 'specific'">
+          <div class="option-group" *ngIf="removeCharPosition === 'specific'">
             <label>Position (1-based) :</label>
             <input type="number" [(ngModel)]="removeCharSpecificPosition" min="1" style="width: 80px;">
           </div>

@@ -455,9 +455,54 @@
             </button>
           </div>
 
+          <!-- Ordre d'exécution des sections de pré-traitement -->
+          <div class="preprocessing-subsection preprocessing-section-order">
+            <h5>
+              <i class="fas fa-sort"></i> Ordre d'exécution des sections
+            </h5>
+            <p class="section-description">
+              Glissez les rubriques pour définir l'ordre d'application du pré-traitement (1 → 2 → 3…), comme pour le formatage automatique.
+            </p>
+            <div
+              class="format-actions-drop-list"
+              cdkDropList
+              cdkDropListLockAxis="y"
+              (cdkDropListDropped)="onPreProcessingSectionDrop($event)">
+              <div
+                class="preprocessing-section-order-item"
+                *ngFor="let sectionId of preProcessingSectionOrder; let i = index"
+                cdkDrag>
+                <div class="format-action-order-bar">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary format-order-btn"
+                    [disabled]="i === 0"
+                    (click)="movePreProcessingSectionUp(i)"
+                    title="Monter">
+                    <i class="fas fa-chevron-up"></i>
+                  </button>
+                  <span class="format-action-order-badge" cdkDragHandle title="Glisser pour réordonner">
+                    <i class="fas fa-grip-vertical"></i>
+                    {{ i + 1 }}
+                  </span>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary format-order-btn"
+                    [disabled]="i === preProcessingSectionOrder.length - 1"
+                    (click)="movePreProcessingSectionDown(i)"
+                    title="Descendre">
+                    <i class="fas fa-chevron-down"></i>
+                  </button>
+                </div>
+                <span class="preprocessing-section-order-label">{{ preProcessingSectionLabels[sectionId] }}</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Filtres de lignes (comme /traitement) -->
           <div class="preprocessing-subsection">
             <h5>
+              <span class="format-action-order-badge preprocessing-section-order-badge">{{ getPreProcessingSectionOrderIndex('rowFilters') + 1 }}</span>
               <i class="fas fa-filter"></i> Filtrer les lignes
               <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleRowFiltersSection()">
                 {{ showRowFiltersSection ? 'Masquer' : 'Afficher' }}
@@ -512,6 +557,7 @@
           <!-- Formatage automatique (comme /traitement) -->
           <div class="preprocessing-subsection">
             <h5>
+              <span class="format-action-order-badge preprocessing-section-order-badge">{{ getPreProcessingSectionOrderIndex('formatActions') + 1 }}</span>
               <i class="fas fa-magic"></i> Formatage automatique
               <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleFormatActionsSection()">
                 {{ showFormatActionsSection ? 'Masquer' : 'Afficher' }}
@@ -923,6 +969,7 @@
           <!-- Concaténer plusieurs colonnes -->
           <div class="preprocessing-subsection">
             <h5>
+              <span class="format-action-order-badge preprocessing-section-order-badge">{{ getPreProcessingSectionOrderIndex('columnConcatRules') + 1 }}</span>
               <i class="fas fa-link"></i> Concaténer plusieurs colonnes
               <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleColumnConcatSection()">
                 {{ showColumnConcatSection ? 'Masquer' : 'Afficher' }}
@@ -1002,9 +1049,77 @@
             </div>
           </div>
 
+          <!-- Addition / soustraction entre colonnes -->
+          <div class="preprocessing-subsection">
+            <h5>
+              <span class="format-action-order-badge preprocessing-section-order-badge">{{ getPreProcessingSectionOrderIndex('columnMathRules') + 1 }}</span>
+              <i class="fas fa-calculator"></i> Addition / soustraction de colonnes
+              <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleColumnMathSection()">
+                {{ showColumnMathSection ? 'Masquer' : 'Afficher' }}
+              </button>
+            </h5>
+            <p class="section-description">
+              Calcule une nouvelle colonne à partir de deux colonnes numériques (addition ou soustraction).
+            </p>
+
+            <div *ngIf="showColumnMathSection">
+              <div *ngIf="modelColumnMathRules.length === 0" class="alert alert-light">
+                Aucun calcul configuré. Ajoutez une règle pour créer une colonne à partir de deux colonnes sources.
+              </div>
+
+              <div *ngFor="let rule of modelColumnMathRules; let i = index" class="preprocessing-filter-item">
+                <div class="form-row">
+                  <div class="form-group col-md-3">
+                    <label>Colonne A</label>
+                    <select class="form-control" [(ngModel)]="rule.sourceColumnA" [ngModelOptions]="{standalone: true}">
+                      <option value="">-- Choisir --</option>
+                      <option *ngFor="let col of getPreProcessingColumns()" [value]="col">{{ col }}</option>
+                    </select>
+                  </div>
+                  <div class="form-group col-md-2">
+                    <label>Opération</label>
+                    <select class="form-control" [(ngModel)]="rule.operation" [ngModelOptions]="{standalone: true}">
+                      <option value="add">Addition (+)</option>
+                      <option value="subtract">Soustraction (−)</option>
+                    </select>
+                  </div>
+                  <div class="form-group col-md-3">
+                    <label>Colonne B</label>
+                    <select class="form-control" [(ngModel)]="rule.sourceColumnB" [ngModelOptions]="{standalone: true}">
+                      <option value="">-- Choisir --</option>
+                      <option *ngFor="let col of getPreProcessingColumns()" [value]="col">{{ col }}</option>
+                    </select>
+                  </div>
+                  <div class="form-group col-md-2">
+                    <label>Nouvelle colonne</label>
+                    <input type="text" class="form-control" [(ngModel)]="rule.targetColumn" [ngModelOptions]="{standalone: true}"
+                           placeholder="Ex: TOTAL">
+                  </div>
+                  <div class="form-group col-md-1">
+                    <label>
+                      <input type="checkbox" [(ngModel)]="rule.enabled" [ngModelOptions]="{standalone: true}">
+                      Actif
+                    </label>
+                  </div>
+                  <div class="form-group col-md-1">
+                    <label>&nbsp;</label>
+                    <button type="button" class="btn btn-sm btn-outline-danger btn-block" (click)="removeModelColumnMathRule(i)">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <button type="button" class="btn btn-outline-primary btn-sm" (click)="addModelColumnMathRule()">
+                <i class="fas fa-plus"></i> Ajouter un calcul
+              </button>
+            </div>
+          </div>
+
           <!-- Renommage des valeurs de colonnes -->
           <div class="preprocessing-subsection">
             <h5>
+              <span class="format-action-order-badge preprocessing-section-order-badge">{{ getPreProcessingSectionOrderIndex('valueMappings') + 1 }}</span>
               <i class="fas fa-exchange-alt"></i> Renommer les valeurs de colonnes
               <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleValueMappingsSection()">
                 {{ showValueMappingsSection ? 'Masquer' : 'Afficher' }}
@@ -1063,6 +1178,7 @@
           <!-- Renommage des en-têtes de colonnes -->
           <div class="preprocessing-subsection">
             <h5>
+              <span class="format-action-order-badge preprocessing-section-order-badge">{{ getPreProcessingSectionOrderIndex('columnRenameRules') + 1 }}</span>
               <i class="fas fa-i-cursor"></i> Renommer un en-tête de colonne
               <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleColumnRenameSection()">
                 {{ showColumnRenameSection ? 'Masquer' : 'Afficher' }}

@@ -88,6 +88,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     traitementFiles: File[] = [];
     traitementModels: AutoProcessingModel[] = [];
     selectedTraitementModelId = '';
+    /** Sélection multiple des modèles (module /traitement uniquement). */
+    selectedTraitementModelIds = new Set<string>();
     traitementModelSearch = '';
     traitementOutputDate = '';
     /** Texte optionnel inséré dans le nom : pattern_<texte>_YYYYMMDD.ext */
@@ -318,6 +320,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     async initTraitementPanel(): Promise<void> {
         this.traitementFiles = [];
         this.selectedTraitementModelId = '';
+        this.selectedTraitementModelIds.clear();
         this.traitementModelSearch = '';
         this.traitementOutputDate = this.formatDateForInput(this.getDefaultTraitementOutputDate());
         this.traitementOutputNameSuffix = '';
@@ -334,6 +337,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
         this.traitementFiles = [];
         this.selectedTraitementModelId = '';
+        this.selectedTraitementModelIds.clear();
         this.traitementModelSearch = '';
         this.traitementOutputDate = this.formatDateForInput(this.getDefaultTraitementOutputDate());
         this.traitementOutputNameSuffix = '';
@@ -380,6 +384,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
+        if (this.isTraitementMultiModelMode) {
+            this.autoSelectTraitementModelsFromSearchMulti(query, filtered);
+            return;
+        }
+
         const best = filtered.length === 1
             ? filtered[0]
             : this.pickBestTraitementModelForSearch(query, filtered);
@@ -398,8 +407,102 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.traitementAutoSelectedModelHint = hint;
     }
 
+    /**
+     * Mode /traitement : la recherche ajoute les modèles visibles à la sélection
+     * sans retirer ceux déjà cochés (y compris hors filtre).
+     */
+    private autoSelectTraitementModelsFromSearchMulti(
+        query: string,
+        filtered: AutoProcessingModel[]
+    ): void {
+        let added = 0;
+        for (const model of filtered) {
+            const id = this.getTraitementModelId(model);
+            if (!id || this.selectedTraitementModelIds.has(id)) {
+                continue;
+            }
+            this.selectedTraitementModelIds.add(id);
+            added++;
+        }
+        this.syncTraitementPrimaryModelFromMultiSelection();
+
+        const total = this.selectedTraitementModelIds.size;
+        if (added > 0) {
+            this.traitementAutoSelectedModelHint =
+                `${added} modèle(s) ajouté(s) pour « ${query} » — ${total} sélectionné(s) au total.`;
+        } else if (total > 0) {
+            this.traitementAutoSelectedModelHint =
+                `${total} modèle(s) déjà sélectionné(s) — aucun nouveau pour « ${query} ».`;
+        } else {
+            this.traitementAutoSelectedModelHint =
+                `Aucun modèle sélectionné — cochez les modèles à appliquer sur le(s) fichier(s) chargé(s).`;
+        }
+    }
+
     private getTraitementModelId(model?: AutoProcessingModel | null): string {
         return model?.id || model?.modelId || '';
+    }
+
+    /** Sélection multiple activée uniquement sur le module /traitement embarqué. */
+    get isTraitementMultiModelMode(): boolean {
+        return this.embedTraitementSection;
+    }
+
+    get selectedTraitementModels(): AutoProcessingModel[] {
+        if (this.isTraitementMultiModelMode) {
+            return this.traitementModels.filter(m => {
+                const id = this.getTraitementModelId(m);
+                return id && this.selectedTraitementModelIds.has(id);
+            });
+        }
+        const single = this.traitementModels.find(m => this.getTraitementModelId(m) === this.selectedTraitementModelId);
+        return single ? [single] : [];
+    }
+
+    get showTraitementColumnSection(): boolean {
+        if (!this.isTraitementMultiModelMode) {
+            return !!this.selectedTraitementModelId;
+        }
+        return this.selectedTraitementModelIds.size === 1 && !!this.selectedTraitementModelId;
+    }
+
+    isTraitementModelSelected(model: AutoProcessingModel): boolean {
+        const id = this.getTraitementModelId(model);
+        if (!id) {
+            return false;
+        }
+        if (this.isTraitementMultiModelMode) {
+            return this.selectedTraitementModelIds.has(id);
+        }
+        return this.selectedTraitementModelId === id;
+    }
+
+    toggleTraitementModelSelection(model: AutoProcessingModel, selected: boolean): void {
+        const id = this.getTraitementModelId(model);
+        if (!id) {
+            return;
+        }
+        if (selected) {
+            this.selectedTraitementModelIds.add(id);
+        } else {
+            this.selectedTraitementModelIds.delete(id);
+        }
+        this.syncTraitementPrimaryModelFromMultiSelection();
+        this.onTraitementModelSelectionChange();
+        this.cd.detectChanges();
+    }
+
+    private syncTraitementPrimaryModelFromMultiSelection(): void {
+        const ids = [...this.selectedTraitementModelIds];
+        if (ids.length === 1) {
+            this.selectedTraitementModelId = ids[0];
+            return;
+        }
+        this.selectedTraitementModelId = '';
+        if (ids.length !== 1) {
+            this.traitementColumnFilterEnabled = false;
+            this.clearTraitementColumnCatalog();
+        }
     }
 
     private traitementModelMatchesSearch(model: AutoProcessingModel, query: string): boolean {
@@ -537,6 +640,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     /** Détecte et sélectionne le modèle dont le pattern correspond aux fichiers uploadés. */
     private suggestTraitementModelFromFiles(): void {
+        if (this.isTraitementMultiModelMode) {
+            this.suggestTraitementModelsFromFilesMulti();
+            return;
+        }
+
         const detected = this.detectTraitementModelFromFiles(this.traitementFiles);
         if (!detected?.id) {
             this.traitementAutoSelectedModelHint = this.traitementFiles.length
@@ -559,6 +667,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             hint += ` — ${preSummary.summaryText} configurés`;
         }
         this.traitementAutoSelectedModelHint = hint;
+    }
+
+    /** En mode multiple : ne pas présélectionner par pattern — l'utilisateur choisit les modèles à appliquer sur le même fichier. */
+    private suggestTraitementModelsFromFilesMulti(): void {
+        if (!this.traitementFiles.length) {
+            this.traitementAutoSelectedModelHint = '';
+            return;
+        }
+        const fileNames = this.traitementFiles.map(f => f.name).join(', ');
+        this.traitementAutoSelectedModelHint =
+            `${this.traitementFiles.length} fichier(s) chargé(s) (${fileNames}). ` +
+            `Cochez un ou plusieurs modèles : chacun sera appliqué sur le(s) même(s) fichier(s) et produira un téléchargement.`;
     }
 
     private detectTraitementModelFromFiles(files: File[]): AutoProcessingModel | null {
@@ -746,9 +866,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     canApplyTraitement(): boolean {
+        const hasModel = this.isTraitementMultiModelMode
+            ? this.selectedTraitementModelIds.size > 0
+            : !!this.selectedTraitementModelId;
         return !this.traitementProcessing
             && this.traitementFiles.length > 0
-            && !!this.selectedTraitementModelId
+            && hasModel
             && !!this.traitementOutputDate;
     }
 
@@ -757,265 +880,158 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
-        const model = this.traitementModels.find(m => m.id === this.selectedTraitementModelId);
+        if (this.isTraitementMultiModelMode && this.selectedTraitementModelIds.size > 1) {
+            await this.applyEmbedMultiModelTraitement();
+            return;
+        }
+
+        const model = this.selectedTraitementModels[0];
         if (!model?.id) {
             await this.popupService.showError('Veuillez sélectionner un modèle de traitement.', 'Modèle requis');
             return;
         }
 
+        await this.applySingleModelTraitement(model, this.traitementFiles);
+    }
+
+    /** Traite plusieurs modèles en une fois (module /traitement) — même fichier(s) pour chaque modèle. */
+    private async applyEmbedMultiModelTraitement(): Promise<void> {
+        const models = this.selectedTraitementModels;
+        const files = [...this.traitementFiles];
+        if (!models.length) {
+            await this.popupService.showError('Sélectionnez au moins un modèle de traitement.', 'Modèle requis');
+            return;
+        }
+        if (!files.length) {
+            await this.popupService.showError('Ajoutez au moins un fichier à traiter.', 'Fichier requis');
+            return;
+        }
+
+        this.traitementProcessing = true;
+        this.treatmentProgressLastUi = 0;
+
+        const successes: string[] = [];
+        const skipped: string[] = [];
+
+        try {
+            for (let i = 0; i < models.length; i++) {
+                const model = models[i];
+                await this.updateTraitementProgress(
+                    `Modèle ${i + 1}/${models.length} — ${model.name} (${files.length} fichier(s))...`
+                );
+
+                const result = await this.runAssistedFileTreatmentForModel(model, files);
+                if (result.success && result.outputName) {
+                    successes.push(
+                        `${model.name} → ${result.outputName} (${result.lineCount?.toLocaleString('fr-FR') ?? 0} ligne(s))`
+                    );
+                } else if (result.warningMessage) {
+                    skipped.push(`${model.name} : ${result.warningMessage}`);
+                }
+            }
+
+            if (!successes.length) {
+                await this.popupService.showWarning(
+                    skipped.length
+                        ? `Aucun fichier produit.\n\n${skipped.join('\n')}`
+                        : 'Aucun fichier produit.',
+                    'Traitement multiple'
+                );
+                return;
+            }
+
+            let message = `${successes.length} fichier(s) téléchargé(s) :\n${successes.join('\n')}`;
+            if (skipped.length) {
+                message += `\n\nNon produit(s) :\n${skipped.join('\n')}`;
+            }
+            this.resetTraitementPanel();
+            await this.popupService.showSuccess(message, 'Traitement multiple terminé');
+        } catch (error: any) {
+            await this.popupService.showError(
+                `Erreur lors du traitement multiple : ${error?.message || error}`,
+                'Erreur'
+            );
+        } finally {
+            this.traitementProcessing = false;
+            this.traitementProgressMessage = '';
+            this.ngZone.run(() => this.cd.detectChanges());
+        }
+    }
+
+    private async applySingleModelTraitement(model: AutoProcessingModel, files: File[]): Promise<void> {
         this.traitementProcessing = true;
         this.treatmentProgressLastUi = 0;
         const perf = this.startTreatmentPerf(
             this.embedTraitementSection ? 'Traitement automatique (/traitement)' : 'Traitement assisté',
             {
-            fichiers: this.traitementFiles.map(f => ({ nom: f.name, ko: Math.round(f.size / 1024) })),
-            modele: model.name,
-            pattern: model.filePattern
-        });
+                fichiers: files.map(f => ({ nom: f.name, ko: Math.round(f.size / 1024) })),
+                modele: model.name,
+                pattern: model.filePattern
+            }
+        );
 
         try {
-            const needsCompilation = await this.needsAssistedCompilation(this.traitementFiles);
-            perf.mark('Décision fusion multi-sources', {
-                needsCompilation,
-                fichierUnique: this.traitementFiles.length === 1,
-                message: needsCompilation
-                    ? 'Fusion requise (plusieurs fichiers ou feuilles Excel)'
-                    : 'Lecture directe (1 fichier, pas de fusion)'
-            });
-
-            const readPerf = performance.now();
-            const compiled = needsCompilation
-                ? await this.compileAssistedTreatmentFileRows(this.traitementFiles)
-                : await this.loadSingleAssistedTreatmentFile(this.traitementFiles[0]);
-            perf.mark('Lecture fichier(s)', {
-                lignes: compiled.rows.length,
-                dureeLectureMs: Math.round(performance.now() - readPerf),
-                mode: needsCompilation ? 'fusion' : 'lecture-directe'
-            });
-            await this.updateTraitementProgress(
-                `Lecture terminée (${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)) — chargement du modèle...`
-            );
-            if (!compiled.rows.length) {
-                await this.popupService.showWarning(
-                    'Aucune donnée lisible dans les fichiers sélectionnés.',
-                    'Fichiers vides'
-                );
-                return;
-            }
-
-            const columnRules = await this.autoProcessingService.getColumnProcessingRules(
-                model.id,
-                AutoProcessingService.RECONCILIATION_MODULE
-            );
-            await this.updateTraitementProgress('Règles du modèle chargées — préparation des données...');
-            perf.mark('Chargement règles colonnes', { regles: columnRules.length });
-            const inputColumns = this.collectAssistedTreatmentInputColumns(model, columnRules);
-            let workingRows = compiled.rows;
-            const needsEnrichment = this.needsAssistedColumnEnrichment(compiled.rows[0], inputColumns);
-            perf.mark('Analyse colonnes modèle', { colonnes: inputColumns.length, enrichissement: needsEnrichment });
-
-            if (needsEnrichment) {
-                await this.updateTraitementProgress(
-                    `Préparation des colonnes : 0 / ${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)...`
-                );
-                const enrichStart = performance.now();
-                workingRows = await this.enrichAssistedRowsAsync(
-                    compiled.rows,
-                    inputColumns,
-                    (done, total) => this.updateTraitementProgress(
-                        `Préparation des colonnes : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`
-                    )
-                );
-                perf.mark('Enrichissement colonnes FR', {
-                    lignes: workingRows.length,
-                    dureeMs: Math.round(performance.now() - enrichStart)
-                });
-            }
-
-            const allCsvSource = this.traitementFiles.every(f => f.name.toLowerCase().endsWith('.csv'));
-            let preProcessingResultMessage = '';
-
-            // 1) Pré-traitement du modèle sur les colonnes brutes (comme /traitement)
-            if (this.modelPreProcessingService.hasPreProcessing(model.preProcessingConfig)) {
-                await this.updateTraitementProgress('Pré-traitement du modèle : démarrage...');
-                const preStart = performance.now();
-                const rowsBeforePreProcessing = workingRows.length;
-                workingRows = await this.modelPreProcessingService.applyPreProcessingAsync(
-                    workingRows,
-                    model.preProcessingConfig,
-                    {
-                        batchSize: workingRows.length > 100000 ? 10000 : 500,
-                        onProgress: async (message, done, total) => {
-                            await this.updateTraitementProgress(
-                                `${message} ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`
-                            );
-                        },
-                        yieldFn: () => this.yieldToMainThread(true)
-                    }
-                );
-                workingRows = await this.stripKeyColumnWhitespaceAsync(workingRows);
-                preProcessingResultMessage = this.modelPreProcessingService.buildApplicationResult(
-                    rowsBeforePreProcessing,
-                    workingRows.length,
-                    model.preProcessingConfig
-                );
-                perf.mark('Pré-traitement modèle', {
-                    avant: rowsBeforePreProcessing,
-                    apres: workingRows.length,
-                    dureeMs: Math.round(performance.now() - preStart)
-                });
-
-                if (!workingRows.length) {
-                    await this.popupService.showWarning(
-                        'Aucune ligne restante après filtres/formatage configurés dans le modèle.\n\n' +
-                        (preProcessingResultMessage || ''),
-                        'Traitement'
-                    );
-                    return;
+            const result = await this.runAssistedFileTreatmentForModel(model, files);
+            if (!result.success) {
+                if (result.warningMessage) {
+                    await this.popupService.showWarning(result.warningMessage, 'Traitement');
                 }
-            }
-
-            await this.updateTraitementProgress(
-                `Application des règles sur ${workingRows.length.toLocaleString('fr-FR')} ligne(s) (${this.traitementFiles.length} fichier(s))...`
-            );
-
-            const rulesStart = performance.now();
-            const processed = columnRules.length
-                ? await applyColumnProcessingRulesAsync(
-                    workingRows,
-                    columnRules,
-                    workingRows.length > 100000 ? 10000 : 500,
-                    async (done, total) => {
-                        await this.updateTraitementProgress(
-                            `Règles appliquées : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`
-                        );
-                    },
-                    () => this.yieldToMainThread(true)
-                )
-                : workingRows;
-            perf.mark('Règles de colonnes', {
-                regles: columnRules.length,
-                lignes: processed?.length ?? 0,
-                dureeMs: Math.round(performance.now() - rulesStart)
-            });
-
-            if (!processed?.length) {
-                await this.popupService.showWarning(
-                    'Aucun résultat après traitement du fichier compilé.',
-                    'Traitement'
-                );
                 return;
             }
 
-            const normalizedProcessed = processed;
-
-            const dedupStart = performance.now();
-            const dedupResult = await this.removeDuplicateTreatmentRowsAsync(normalizedProcessed);
-            const uniqueProcessed = dedupResult.uniqueRows;
-            perf.mark('Déduplication', {
-                doublons: dedupResult.duplicatesRemoved,
-                lignes: uniqueProcessed.length,
-                dureeMs: Math.round(performance.now() - dedupStart)
-            });
-
-            if (!uniqueProcessed.length) {
-                await this.popupService.showWarning(
-                    'Aucune ligne unique après suppression des doublons.',
-                    'Traitement'
-                );
-                return;
-            }
-
-            const exportColumns = this.getSelectedTraitementExportColumns();
-            if (this.traitementColumnFilterEnabled && this.traitementOutputColumns.length > 0 && exportColumns.length === 0) {
-                await this.popupService.showWarning(
-                    'Sélectionnez au moins une colonne à conserver dans le fichier final.',
-                    'Colonnes du modèle'
-                );
-                return;
-            }
-
-            let exportRows = uniqueProcessed;
-            if (exportColumns.length) {
-                exportRows = this.modelPreProcessingService.projectRowsToExportColumns(
-                    uniqueProcessed,
-                    exportColumns,
-                    columnRules,
-                    model
-                );
-                perf.mark('Projection colonnes export', {
-                    colonnes: exportColumns.length,
-                    totalModele: this.traitementOutputColumns.length
-                });
-            }
-
-            const outputName = this.buildProcessedOutputFileName(model, compiled.referenceFile);
-
-            await this.updateTraitementProgress(`Téléchargement : ${outputName}`);
-            const exportStart = performance.now();
-            await this.downloadProcessedTreatmentFile(exportRows, outputName, {
-                skipNormalize: true,
-                columns: exportColumns.length ? exportColumns : undefined
-            });
-            perf.mark('Export fichier', { nom: outputName, dureeMs: Math.round(performance.now() - exportStart) });
-
-            const duplicateInfo = dedupResult.duplicatesRemoved > 0
-                ? `\n${dedupResult.duplicatesRemoved} doublon(s) ignoré(s).`
+            const duplicateSummary = (result.duplicatesRemoved ?? 0) > 0
+                ? ` ${result.duplicatesRemoved} doublon(s) ignoré(s).`
                 : '';
-            const compileInfo = this.traitementFiles.length > 1
-                ? `\n${this.traitementFiles.length} fichiers fusionnés : ${compiled.sourceSummary}`
-                : `\n${compiled.sourceSummary}`;
-            const preProcessingInfo = preProcessingResultMessage
-                ? `\n\nPré-traitement du modèle ${model.name} :\n${preProcessingResultMessage}`
+            const preProcessingSuccess = result.preProcessingResultMessage
+                ? `\n\n${result.preProcessingResultMessage}`
                 : '';
-            const duplicateSummary = dedupResult.duplicatesRemoved > 0
-                ? ` ${dedupResult.duplicatesRemoved} doublon(s) ignoré(s).`
-                : '';
-            const preProcessingSuccess = preProcessingResultMessage
-                ? `\n\n${preProcessingResultMessage}`
+            const duplicateInfo = (result.duplicatesRemoved ?? 0) > 0
+                ? `\n${result.duplicatesRemoved} doublon(s) ignoré(s).`
                 : '';
 
             if (this.embedTraitementSection) {
-                this.traitementProcessing = false;
                 this.resetTraitementPanel();
-                perf.end('Traitement terminé (embed)', { lignes: uniqueProcessed.length, fichier: outputName });
+                perf.end('Traitement terminé (embed)', {
+                    lignes: result.lineCount,
+                    fichier: result.outputName
+                });
                 await this.popupService.showSuccess(
-                    `Fichier traité et téléchargé (${outputName}).${duplicateSummary}${preProcessingSuccess}`,
+                    `Fichier traité et téléchargé (${result.outputName}).${duplicateSummary}${preProcessingSuccess}`,
                     'Traitement terminé'
                 );
                 return;
             }
 
-            const defaultSide = model.fileType === 'partner'
-                ? 'Partenaire'
-                : 'BO (Back Office)';
+            const defaultSide = model.fileType === 'partner' ? 'Partenaire' : 'BO (Back Office)';
             const sideChoice = await this.popupService.showSelectInput(
-                `${this.traitementFiles.length > 1 ? this.traitementFiles.length + ' fichier(s) fusionnés' : 'Fichier traité'}.\n` +
-                `${uniqueProcessed.length.toLocaleString('fr-FR')} ligne(s) unique(s).${duplicateInfo}\n` +
-                `Fichier produit : ${outputName}.\n` +
+                `${files.length > 1 ? files.length + ' fichier(s) fusionnés' : 'Fichier traité'}.\n` +
+                `${(result.lineCount ?? 0).toLocaleString('fr-FR')} ligne(s) unique(s).${duplicateInfo}\n` +
+                `Fichier produit : ${result.outputName}.\n` +
                 `Assigner ce fichier à quel emplacement pour la réconciliation ?`,
                 'Destination BO ou Partenaire',
                 ['BO (Back Office)', 'Partenaire'],
                 defaultSide
             );
 
-            if (!sideChoice) {
+            if (!sideChoice || !result.exportRows) {
                 return;
             }
 
             const side: 'bo' | 'partner' = sideChoice.startsWith('BO') ? 'bo' : 'partner';
             this.closeTraitementModal(true, { keepProcessing: true });
             await this.updateTraitementProgress('Assignation du fichier en cours...', { force: true });
-            await this.assignProcessedTreatmentDataAsync(exportRows, outputName, side, model.id);
+            await this.assignProcessedTreatmentDataAsync(
+                result.exportRows,
+                result.outputName!,
+                side,
+                model.id
+            );
 
             const bothReady = this.canProceedAuto();
-            this.traitementProcessing = false;
-            this.traitementProgressMessage = '';
-            this.cd.detectChanges();
-            perf.end('Traitement terminé', { lignes: uniqueProcessed.length, fichier: outputName });
+            perf.end('Traitement terminé', { lignes: result.lineCount, fichier: result.outputName });
             await this.yieldToMainThread(true);
             await this.popupService.showSuccess(
-                `Fichier traité et téléchargé (${outputName}).${duplicateSummary}${preProcessingSuccess}` +
+                `Fichier traité et téléchargé (${result.outputName}).${duplicateSummary}${preProcessingSuccess}` +
                 (bothReady
                     ? '\n\nBO et Partenaire sont prêts : vous pouvez lancer la réconciliation.'
                     : '\n\nChargez ou traitez l\'autre fichier (BO ou Partenaire) puis lancez la réconciliation.'),
@@ -1023,7 +1039,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
         } catch (error: any) {
             perf.end('Traitement échoué', { erreur: error?.message || String(error) });
-            this.traitementProcessing = false;
             this.closeTraitementModal(true);
             await this.popupService.showError(
                 `Erreur lors du traitement : ${error?.message || error}`,
@@ -1034,6 +1049,149 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.traitementProgressMessage = '';
             this.ngZone.run(() => this.cd.detectChanges());
         }
+    }
+
+    private async runAssistedFileTreatmentForModel(
+        model: AutoProcessingModel,
+        files: File[],
+        options?: { suppressWarnings?: boolean }
+    ): Promise<{
+        success: boolean;
+        outputName?: string;
+        lineCount?: number;
+        duplicatesRemoved?: number;
+        preProcessingResultMessage?: string;
+        exportRows?: Record<string, string>[];
+        warningMessage?: string;
+    }> {
+        const needsCompilation = await this.needsAssistedCompilation(files);
+        const compiled = needsCompilation
+            ? await this.compileAssistedTreatmentFileRows(files)
+            : await this.loadSingleAssistedTreatmentFile(files[0]);
+
+        await this.updateTraitementProgress(
+            `Lecture terminée (${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)) — ${model.name}...`
+        );
+
+        if (!compiled.rows.length) {
+            return {
+                success: false,
+                warningMessage: 'Aucune donnée lisible dans les fichiers sélectionnés.'
+            };
+        }
+
+        const columnRules = await this.autoProcessingService.getColumnProcessingRules(
+            model.id!,
+            AutoProcessingService.RECONCILIATION_MODULE
+        );
+        const inputColumns = this.collectAssistedTreatmentInputColumns(model, columnRules);
+        let workingRows = compiled.rows;
+        const needsEnrichment = this.needsAssistedColumnEnrichment(compiled.rows[0], inputColumns);
+
+        if (needsEnrichment) {
+            workingRows = await this.enrichAssistedRowsAsync(
+                compiled.rows,
+                inputColumns,
+                (done, total) => this.updateTraitementProgress(
+                    `${model.name} — colonnes : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`
+                )
+            );
+        }
+
+        let preProcessingResultMessage = '';
+        if (this.modelPreProcessingService.hasPreProcessing(model.preProcessingConfig)) {
+            const rowsBeforePreProcessing = workingRows.length;
+            workingRows = await this.modelPreProcessingService.applyPreProcessingAsync(
+                workingRows,
+                model.preProcessingConfig,
+                {
+                    batchSize: workingRows.length > 100000 ? 10000 : 500,
+                    onProgress: async (message, done, total) => {
+                        await this.updateTraitementProgress(
+                            `${model.name} — ${message} ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`
+                        );
+                    },
+                    yieldFn: () => this.yieldToMainThread(true)
+                }
+            );
+            workingRows = await this.stripKeyColumnWhitespaceAsync(workingRows);
+            preProcessingResultMessage = this.modelPreProcessingService.buildApplicationResult(
+                rowsBeforePreProcessing,
+                workingRows.length,
+                model.preProcessingConfig
+            );
+
+            if (!workingRows.length) {
+                return {
+                    success: false,
+                    warningMessage: 'Aucune ligne restante après pré-traitement du modèle.'
+                };
+            }
+        }
+
+        await this.updateTraitementProgress(
+            `${model.name} — règles sur ${workingRows.length.toLocaleString('fr-FR')} ligne(s)...`
+        );
+
+        const processed = columnRules.length
+            ? await applyColumnProcessingRulesAsync(
+                workingRows,
+                columnRules,
+                workingRows.length > 100000 ? 10000 : 500,
+                async (done, total) => {
+                    await this.updateTraitementProgress(
+                        `${model.name} — règles : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`
+                    );
+                },
+                () => this.yieldToMainThread(true)
+            )
+            : workingRows;
+
+        if (!processed?.length) {
+            return { success: false, warningMessage: 'Aucun résultat après application des règles.' };
+        }
+
+        const dedupResult = await this.removeDuplicateTreatmentRowsAsync(processed);
+        const uniqueProcessed = dedupResult.uniqueRows;
+
+        if (!uniqueProcessed.length) {
+            return { success: false, warningMessage: 'Aucune ligne unique après déduplication.' };
+        }
+
+        const useColumnFilter = !this.isTraitementMultiModelMode || this.selectedTraitementModelIds.size === 1;
+        const exportColumns = useColumnFilter ? this.getSelectedTraitementExportColumns() : [];
+        if (useColumnFilter && this.traitementColumnFilterEnabled && this.traitementOutputColumns.length > 0 && exportColumns.length === 0) {
+            return {
+                success: false,
+                warningMessage: 'Sélectionnez au moins une colonne à conserver dans le fichier final.'
+            };
+        }
+
+        let exportRows = uniqueProcessed;
+        if (exportColumns.length) {
+            exportRows = this.modelPreProcessingService.projectRowsToExportColumns(
+                uniqueProcessed,
+                exportColumns,
+                columnRules,
+                model
+            );
+        }
+
+        const outputName = this.buildProcessedOutputFileName(model, compiled.referenceFile);
+        await this.updateTraitementProgress(`Téléchargement : ${outputName}`);
+        await this.downloadProcessedTreatmentFile(exportRows, outputName, {
+            skipNormalize: true,
+            columns: exportColumns.length ? exportColumns : undefined
+        });
+
+        return {
+            success: true,
+            outputName,
+            lineCount: uniqueProcessed.length,
+            duplicatesRemoved: dedupResult.duplicatesRemoved,
+            preProcessingResultMessage,
+            exportRows
+        };
     }
 
     /** Fusion multi-fichiers uniquement ; Excel mono-fichier (y compris multi-feuilles) = lecture directe. */
@@ -1077,6 +1235,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     getTraitementActionLabel(): string {
+        if (this.isTraitementMultiModelMode && this.selectedTraitementModelIds.size > 1) {
+            return `Traiter ${this.selectedTraitementModelIds.size} modèles`;
+        }
         return this.traitementFiles.length > 1
             ? 'Compiler et appliquer le traitement'
             : 'Appliquer le traitement';

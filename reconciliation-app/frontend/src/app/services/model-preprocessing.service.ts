@@ -2,16 +2,20 @@ import { Injectable } from '@angular/core';
 import {
   AutoProcessingModel,
   ColumnProcessingRule,
+  DEFAULT_PRE_PROCESSING_SECTION_ORDER,
   ModelFormatAction,
   ModelPreProcessingConfig,
+  ModelPreProcessingSectionId,
   ModelRowFilter,
   ModelColumnValueMapping,
   ModelColumnConcatRule,
+  ModelColumnMathRule,
   ModelColumnRenameRule,
   matchesConditionValues,
   parseConditionValues
 } from './auto-processing.service';
 import { buildConcatenatedValue } from '../utils/concat.util';
+import { parseAmountValue } from '../utils/record-amount.util';
 import {
   normalizeColumnKey,
   renameKeyPreservingOrder,
@@ -47,45 +51,67 @@ export class ModelPreProcessingService {
 
     const batchSize = options?.batchSize ?? (rows.length > 100000 ? 10000 : 5000);
     let result = rows;
+    const sectionOrder = this.resolveSectionOrder(config.sectionOrder);
 
-    if (config.rowFilters?.length) {
-      await options?.onProgress?.('Filtres du modèle...', 0, result.length);
-      await options?.yieldFn?.();
-      result = await this.applyRowFiltersAsync(result, config.rowFilters, batchSize, options);
-    }
-
-    if (config.formatActions?.length) {
-      result = await this.applyFormatActionsAsync(result, config.formatActions, batchSize, options);
-    }
-
-    if (config.columnConcatRules?.length) {
-      result = await this.mapRowsBatched(
-        result,
-        batchSize,
-        row => this.applyColumnConcatRulesToRow(row, config.columnConcatRules!),
-        'Concaténation du modèle...',
-        options
-      );
-    }
-
-    if (config.valueMappings?.length) {
-      result = await this.mapRowsBatched(
-        result,
-        batchSize,
-        row => this.applyValueMappingsToRow(row, config.valueMappings!),
-        'Renommage des valeurs...',
-        options
-      );
-    }
-
-    if (config.columnRenameRules?.length) {
-      result = await this.mapRowsBatched(
-        result,
-        batchSize,
-        row => this.applyColumnRenameRulesToRow(row, config.columnRenameRules!),
-        'Renommage des en-têtes...',
-        options
-      );
+    for (const sectionId of sectionOrder) {
+      switch (sectionId) {
+        case 'rowFilters':
+          if (config.rowFilters?.length) {
+            await options?.onProgress?.('Filtres du modèle...', 0, result.length);
+            await options?.yieldFn?.();
+            result = await this.applyRowFiltersAsync(result, config.rowFilters, batchSize, options);
+          }
+          break;
+        case 'formatActions':
+          if (config.formatActions?.length) {
+            result = await this.applyFormatActionsAsync(result, config.formatActions, batchSize, options);
+          }
+          break;
+        case 'columnConcatRules':
+          if (config.columnConcatRules?.length) {
+            result = await this.mapRowsBatched(
+              result,
+              batchSize,
+              row => this.applyColumnConcatRulesToRow(row, config.columnConcatRules!),
+              'Concaténation du modèle...',
+              options
+            );
+          }
+          break;
+        case 'columnMathRules':
+          if (config.columnMathRules?.length) {
+            result = await this.mapRowsBatched(
+              result,
+              batchSize,
+              row => this.applyColumnMathRulesToRow(row, config.columnMathRules!),
+              'Calcul de colonnes...',
+              options
+            );
+          }
+          break;
+        case 'valueMappings':
+          if (config.valueMappings?.length) {
+            result = await this.mapRowsBatched(
+              result,
+              batchSize,
+              row => this.applyValueMappingsToRow(row, config.valueMappings!),
+              'Renommage des valeurs...',
+              options
+            );
+          }
+          break;
+        case 'columnRenameRules':
+          if (config.columnRenameRules?.length) {
+            result = await this.mapRowsBatched(
+              result,
+              batchSize,
+              row => this.applyColumnRenameRulesToRow(row, config.columnRenameRules!),
+              'Renommage des en-têtes...',
+              options
+            );
+          }
+          break;
+      }
     }
 
     return result;
@@ -298,6 +324,39 @@ export class ModelPreProcessingService {
     return newRow;
   }
 
+  private applyColumnMathRulesToRow(
+    row: Record<string, string>,
+    rules: ModelColumnMathRule[]
+  ): Record<string, string> {
+    const activeRules = this.getActiveColumnMathRules(rules);
+    if (!activeRules.length) {
+      return row;
+    }
+
+    for (const rule of activeRules) {
+      const keyA = resolveColumnKeyInRow(row, rule.sourceColumnA);
+      const keyB = resolveColumnKeyInRow(row, rule.sourceColumnB);
+      const rawA = keyA ? row[keyA] : undefined;
+      const rawB = keyB ? row[keyB] : undefined;
+      const valueA = parseAmountValue(rawA);
+      const valueB = parseAmountValue(rawB);
+      const result = rule.operation === 'subtract' ? valueA - valueB : valueA + valueB;
+      row[rule.targetColumn] = this.formatMathResult(result, rawA, rawB);
+    }
+    return row;
+  }
+
+  private formatMathResult(result: number, rawA: unknown, rawB: unknown): string {
+    if (!Number.isFinite(result)) {
+      return '';
+    }
+    const usesComma = [rawA, rawB].some(raw => typeof raw === 'string' && raw.includes(','));
+    const formatted = Number.isInteger(result)
+      ? String(result)
+      : result.toFixed(6).replace(/\.?0+$/, '');
+    return usesComma ? formatted.replace('.', ',') : formatted;
+  }
+
   private applyValueMappingsToRow(
     row: Record<string, string>,
     mappings: ModelColumnValueMapping[]
@@ -353,25 +412,41 @@ export class ModelPreProcessingService {
     }
 
     let result = rows.map(row => ({ ...row }));
+    const sectionOrder = this.resolveSectionOrder(config.sectionOrder);
 
-    if (config.rowFilters?.length) {
-      result = this.applyRowFilters(result, config.rowFilters);
-    }
-
-    if (config.formatActions?.length) {
-      result = this.applyFormatActions(result, config.formatActions);
-    }
-
-    if (config.columnConcatRules?.length) {
-      result = this.applyColumnConcatRules(result, config.columnConcatRules);
-    }
-
-    if (config.valueMappings?.length) {
-      result = this.applyValueMappings(result, config.valueMappings);
-    }
-
-    if (config.columnRenameRules?.length) {
-      result = this.applyColumnRenameRules(result, config.columnRenameRules);
+    for (const sectionId of sectionOrder) {
+      switch (sectionId) {
+        case 'rowFilters':
+          if (config.rowFilters?.length) {
+            result = this.applyRowFilters(result, config.rowFilters);
+          }
+          break;
+        case 'formatActions':
+          if (config.formatActions?.length) {
+            result = this.applyFormatActions(result, config.formatActions);
+          }
+          break;
+        case 'columnConcatRules':
+          if (config.columnConcatRules?.length) {
+            result = this.applyColumnConcatRules(result, config.columnConcatRules);
+          }
+          break;
+        case 'columnMathRules':
+          if (config.columnMathRules?.length) {
+            result = this.applyColumnMathRules(result, config.columnMathRules);
+          }
+          break;
+        case 'valueMappings':
+          if (config.valueMappings?.length) {
+            result = this.applyValueMappings(result, config.valueMappings);
+          }
+          break;
+        case 'columnRenameRules':
+          if (config.columnRenameRules?.length) {
+            result = this.applyColumnRenameRules(result, config.columnRenameRules);
+          }
+          break;
+      }
     }
 
     return result;
@@ -484,6 +559,18 @@ export class ModelPreProcessingService {
     }
 
     return rows.map(row => this.applyColumnConcatRulesToRow(row, rules));
+  }
+
+  applyColumnMathRules(
+    rows: Record<string, string>[],
+    rules: ModelColumnMathRule[]
+  ): Record<string, string>[] {
+    const activeRules = this.getActiveColumnMathRules(rules);
+    if (!activeRules.length) {
+      return rows;
+    }
+
+    return rows.map(row => this.applyColumnMathRulesToRow({ ...row }, rules));
   }
 
   applyColumnRenameRules(
@@ -657,8 +744,8 @@ export class ModelPreProcessingService {
   private applyRemoveCharacters(value: string, action: ModelFormatAction): string {
     const mode = action.removeCharMode ?? 'remove';
     const position = action.removeCharPosition ?? 'start';
-    const count = action.removeCharCount ?? 1;
-    const specificPosition = action.removeCharSpecificPosition ?? 1;
+    const count = Math.max(1, Number(action.removeCharCount) || 1);
+    const specificPosition = Math.max(1, Number(action.removeCharSpecificPosition) || 1);
 
     if (mode === 'keep') {
       switch (position) {
@@ -666,6 +753,13 @@ export class ModelPreProcessingService {
           return value.substring(0, count);
         case 'end':
           return value.substring(Math.max(0, value.length - count));
+        case 'specific': {
+          const pos = specificPosition - 1;
+          if (pos >= 0 && pos < value.length) {
+            return value.substring(pos, pos + count);
+          }
+          return value;
+        }
         default:
           return value;
       }
@@ -822,6 +916,7 @@ export class ModelPreProcessingService {
     return this.getActiveFilters(config).length > 0
       || this.getActiveFormatActions(config).length > 0
       || this.getActiveColumnConcatRules(config?.columnConcatRules).length > 0
+      || this.getActiveColumnMathRules(config?.columnMathRules).length > 0
       || this.getActiveValueMappings(config?.valueMappings).length > 0
       || this.getActiveColumnRenameRules(config?.columnRenameRules).length > 0;
   }
@@ -850,6 +945,14 @@ export class ModelPreProcessingService {
 
     for (const rule of this.getActiveColumnConcatRules(config?.columnConcatRules)) {
       rule.sourceColumns?.forEach(column => columns.add(column));
+      if (rule.targetColumn) {
+        columns.add(rule.targetColumn);
+      }
+    }
+
+    for (const rule of this.getActiveColumnMathRules(config?.columnMathRules)) {
+      columns.add(rule.sourceColumnA);
+      columns.add(rule.sourceColumnB);
       if (rule.targetColumn) {
         columns.add(rule.targetColumn);
       }
@@ -901,6 +1004,11 @@ export class ModelPreProcessingService {
       rule.sourceColumns?.forEach(column => columns.add(column));
     }
 
+    for (const rule of this.getActiveColumnMathRules(config?.columnMathRules)) {
+      columns.add(rule.sourceColumnA);
+      columns.add(rule.sourceColumnB);
+    }
+
     for (const mapping of this.getActiveValueMappings(config?.valueMappings)) {
       if (mapping.column) {
         columns.add(mapping.column);
@@ -946,6 +1054,36 @@ export class ModelPreProcessingService {
     );
   }
 
+  getActiveColumnMathRules(rules?: ModelColumnMathRule[] | null): ModelColumnMathRule[] {
+    return (rules ?? []).filter(
+      rule => rule.enabled
+        && !!rule.sourceColumnA
+        && !!rule.sourceColumnB
+        && !!rule.targetColumn?.trim()
+        && rule.sourceColumnA !== rule.sourceColumnB
+    );
+  }
+
+  resolveSectionOrder(order?: ModelPreProcessingSectionId[] | null): ModelPreProcessingSectionId[] {
+    const base = [...DEFAULT_PRE_PROCESSING_SECTION_ORDER];
+    if (!order?.length) {
+      return base;
+    }
+
+    const resolved: ModelPreProcessingSectionId[] = [];
+    for (const sectionId of order) {
+      if (base.includes(sectionId) && !resolved.includes(sectionId)) {
+        resolved.push(sectionId);
+      }
+    }
+    for (const sectionId of base) {
+      if (!resolved.includes(sectionId)) {
+        resolved.push(sectionId);
+      }
+    }
+    return resolved;
+  }
+
   getActiveColumnRenameRules(rules?: ModelColumnRenameRule[] | null): ModelColumnRenameRule[] {
     return (rules ?? []).filter(
       rule => rule.enabled
@@ -959,6 +1097,7 @@ export class ModelPreProcessingService {
     activeFilterCount: number;
     activeFormatCount: number;
     activeConcatCount: number;
+    activeMathCount: number;
     activeValueMappingCount: number;
     activeColumnRenameCount: number;
     summaryText: string;
@@ -967,6 +1106,7 @@ export class ModelPreProcessingService {
     const filters = this.getActiveFilters(config);
     const formats = this.getActiveFormatActions(config);
     const concatRules = this.getActiveColumnConcatRules(config?.columnConcatRules);
+    const mathRules = this.getActiveColumnMathRules(config?.columnMathRules);
     const valueMappings = this.getActiveValueMappings(config?.valueMappings);
     const columnRenameRules = this.getActiveColumnRenameRules(config?.columnRenameRules);
     const parts: string[] = [];
@@ -979,6 +1119,9 @@ export class ModelPreProcessingService {
     }
     if (concatRules.length) {
       parts.push(`${concatRules.length} concaténation(s) de colonnes`);
+    }
+    if (mathRules.length) {
+      parts.push(`${mathRules.length} calcul(s) de colonnes`);
     }
     if (valueMappings.length) {
       parts.push(`${valueMappings.length} renommage(s) de valeurs`);
@@ -1002,6 +1145,12 @@ export class ModelPreProcessingService {
         `• Concaténation : ${rule.sourceColumns.join(' + ')} → ${rule.targetColumn} (séparateur ${separatorLabel})`
       );
     });
+    mathRules.forEach(rule => {
+      const operator = rule.operation === 'subtract' ? '−' : '+';
+      detailLines.push(
+        `• Calcul : ${rule.sourceColumnA} ${operator} ${rule.sourceColumnB} → ${rule.targetColumn}`
+      );
+    });
     valueMappings.forEach(mapping => {
       detailLines.push(`• Renommage : ${mapping.column} — « ${mapping.fromValue} » → « ${mapping.toValue} »`);
     });
@@ -1013,6 +1162,7 @@ export class ModelPreProcessingService {
       activeFilterCount: filters.length,
       activeFormatCount: formats.length,
       activeConcatCount: concatRules.length,
+      activeMathCount: mathRules.length,
       activeValueMappingCount: valueMappings.length,
       activeColumnRenameCount: columnRenameRules.length,
       summaryText: parts.length ? parts.join(' + ') : '',
@@ -1144,6 +1294,11 @@ export class ModelPreProcessingService {
         for (const column of rule.sourceColumns || []) {
           addInput(column);
         }
+        addOutput(rule.targetColumn);
+      }
+      for (const rule of this.getActiveColumnMathRules(cfg.columnMathRules)) {
+        addInput(rule.sourceColumnA);
+        addInput(rule.sourceColumnB);
         addOutput(rule.targetColumn);
       }
       for (const mapping of this.getActiveValueMappings(cfg.valueMappings)) {

@@ -1,7 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { FormBuilder, FormGroup, Validators, FormArray } from '@angular/forms';
-import { AutoProcessingService, AutoProcessingModel, ModelFormatAction, ModelFormatActionType, ModelFormatColumnSettings, ModelPreProcessingConfig, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule } from '../../services/auto-processing.service';
+import { AutoProcessingService, AutoProcessingModel, DEFAULT_PRE_PROCESSING_SECTION_ORDER, ModelColumnMathRule, ModelFormatAction, ModelFormatActionType, ModelFormatColumnSettings, ModelPreProcessingConfig, ModelPreProcessingSectionId, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule } from '../../services/auto-processing.service';
 import { FileWatcherService } from '../../services/file-watcher.service';
 import { ModelManagementService } from '../../services/model-management.service';
 import { PopupService } from '../../services/popup.service';
@@ -61,15 +61,27 @@ export class AutoProcessingModelsComponent implements OnInit {
   showRowFiltersSection = false;
   showFormatActionsSection = false;
   showColumnConcatSection = false;
+  showColumnMathSection = false;
   showValueMappingsSection = false;
   showColumnRenameSection = false;
   modelRowFilters: ModelRowFilter[] = [];
   modelFormatActions: ModelFormatAction[] = [];
   modelColumnConcatRules: ModelColumnConcatRule[] = [];
+  modelColumnMathRules: ModelColumnMathRule[] = [];
   modelValueMappings: ModelColumnValueMapping[] = [];
   modelColumnRenameRules: ModelColumnRenameRule[] = [];
+  preProcessingSectionOrder: ModelPreProcessingSectionId[] = [...DEFAULT_PRE_PROCESSING_SECTION_ORDER];
+  readonly preProcessingSectionLabels: Record<ModelPreProcessingSectionId, string> = {
+    rowFilters: 'Filtrer les lignes',
+    formatActions: 'Formatage automatique',
+    columnConcatRules: 'Concaténer plusieurs colonnes',
+    columnMathRules: 'Addition / soustraction de colonnes',
+    valueMappings: 'Renommer les valeurs de colonnes',
+    columnRenameRules: 'Renommer un en-tête de colonne'
+  };
   nextModelFilterId = 1;
   nextModelConcatRuleId = 1;
+  nextModelMathRuleId = 1;
   nextModelValueMappingId = 1;
   nextModelColumnRenameId = 1;
   nextModelFormatActionId = 1;
@@ -2915,6 +2927,10 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.showColumnConcatSection = !this.showColumnConcatSection;
   }
 
+  toggleColumnMathSection(): void {
+    this.showColumnMathSection = !this.showColumnMathSection;
+  }
+
   toggleColumnRenameSection(): void {
     this.showColumnRenameSection = !this.showColumnRenameSection;
   }
@@ -2945,6 +2961,47 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   removeModelColumnConcatRule(index: number): void {
     this.modelColumnConcatRules.splice(index, 1);
+  }
+
+  addModelColumnMathRule(): void {
+    const columns = this.getPreProcessingColumns();
+    this.modelColumnMathRules.push({
+      id: `math-${this.nextModelMathRuleId++}`,
+      sourceColumnA: columns[0] || '',
+      sourceColumnB: columns[1] || columns[0] || '',
+      targetColumn: '',
+      operation: 'add',
+      enabled: true
+    });
+  }
+
+  removeModelColumnMathRule(index: number): void {
+    this.modelColumnMathRules.splice(index, 1);
+  }
+
+  getPreProcessingSectionOrderIndex(sectionId: ModelPreProcessingSectionId): number {
+    return this.preProcessingSectionOrder.indexOf(sectionId);
+  }
+
+  onPreProcessingSectionDrop(event: CdkDragDrop<ModelPreProcessingSectionId[]>): void {
+    if (event.previousIndex === event.currentIndex) {
+      return;
+    }
+    moveItemInArray(this.preProcessingSectionOrder, event.previousIndex, event.currentIndex);
+  }
+
+  movePreProcessingSectionUp(index: number): void {
+    if (index <= 0) {
+      return;
+    }
+    moveItemInArray(this.preProcessingSectionOrder, index, index - 1);
+  }
+
+  movePreProcessingSectionDown(index: number): void {
+    if (index >= this.preProcessingSectionOrder.length - 1) {
+      return;
+    }
+    moveItemInArray(this.preProcessingSectionOrder, index, index + 1);
   }
 
   isConcatSourceColumnSelected(rule: ModelColumnConcatRule, column: string): boolean {
@@ -3342,6 +3399,22 @@ export class AutoProcessingModelsComponent implements OnInit {
         enabled: rule.enabled !== false
       }));
 
+    const columnMathRules = this.modelColumnMathRules
+      .filter(rule =>
+        rule.targetColumn?.trim()
+        && rule.sourceColumnA
+        && rule.sourceColumnB
+        && rule.sourceColumnA !== rule.sourceColumnB
+      )
+      .map(rule => ({
+        id: rule.id,
+        sourceColumnA: rule.sourceColumnA,
+        sourceColumnB: rule.sourceColumnB,
+        targetColumn: rule.targetColumn.trim(),
+        operation: rule.operation,
+        enabled: rule.enabled !== false
+      }));
+
     const columnRenameRules = this.modelColumnRenameRules
       .filter(rule => rule.sourceColumn && rule.targetColumn?.trim() && rule.sourceColumn !== rule.targetColumn.trim())
       .map(rule => ({
@@ -3351,21 +3424,40 @@ export class AutoProcessingModelsComponent implements OnInit {
         enabled: rule.enabled !== false
       }));
 
-    if (!rowFilters.length && !formatActions.length && !columnConcatRules.length && !valueMappings.length && !columnRenameRules.length) {
-      return { rowFilters: [], formatActions: [], columnConcatRules: [], valueMappings: [], columnRenameRules: [] };
+    if (!rowFilters.length && !formatActions.length && !columnConcatRules.length && !columnMathRules.length && !valueMappings.length && !columnRenameRules.length) {
+      return {
+        rowFilters: [],
+        formatActions: [],
+        columnConcatRules: [],
+        columnMathRules: [],
+        valueMappings: [],
+        columnRenameRules: [],
+        sectionOrder: [...this.preProcessingSectionOrder]
+      };
     }
 
-    return { rowFilters, formatActions, columnConcatRules, valueMappings, columnRenameRules };
+    return {
+      rowFilters,
+      formatActions,
+      columnConcatRules,
+      columnMathRules,
+      valueMappings,
+      columnRenameRules,
+      sectionOrder: [...this.preProcessingSectionOrder]
+    };
   }
 
   loadPreProcessingConfig(config?: ModelPreProcessingConfig | null): void {
     this.modelRowFilters = [];
     this.modelFormatActions = [];
     this.modelColumnConcatRules = [];
+    this.modelColumnMathRules = [];
     this.modelValueMappings = [];
     this.modelColumnRenameRules = [];
+    this.preProcessingSectionOrder = [...DEFAULT_PRE_PROCESSING_SECTION_ORDER];
     this.nextModelFilterId = 1;
     this.nextModelConcatRuleId = 1;
+    this.nextModelMathRuleId = 1;
     this.nextModelValueMappingId = 1;
     this.nextModelColumnRenameId = 1;
     this.nextModelFormatActionId = 1;
@@ -3416,6 +3508,30 @@ export class AutoProcessingModelsComponent implements OnInit {
       enabled: rule.enabled !== false
     }));
 
+    this.modelColumnMathRules = (config.columnMathRules || []).map(rule => ({
+      id: rule.id || `math-${this.nextModelMathRuleId++}`,
+      sourceColumnA: rule.sourceColumnA || '',
+      sourceColumnB: rule.sourceColumnB || '',
+      targetColumn: rule.targetColumn || '',
+      operation: rule.operation === 'subtract' ? 'subtract' : 'add',
+      enabled: rule.enabled !== false
+    }));
+
+    if (config.sectionOrder?.length) {
+      const resolved: ModelPreProcessingSectionId[] = [];
+      for (const sectionId of config.sectionOrder) {
+        if (DEFAULT_PRE_PROCESSING_SECTION_ORDER.includes(sectionId) && !resolved.includes(sectionId)) {
+          resolved.push(sectionId);
+        }
+      }
+      for (const sectionId of DEFAULT_PRE_PROCESSING_SECTION_ORDER) {
+        if (!resolved.includes(sectionId)) {
+          resolved.push(sectionId);
+        }
+      }
+      this.preProcessingSectionOrder = resolved;
+    }
+
     this.modelColumnRenameRules = (config.columnRenameRules || []).map(rule => ({
       id: rule.id || `rename-${this.nextModelColumnRenameId++}`,
       sourceColumn: rule.sourceColumn || '',
@@ -3435,6 +3551,10 @@ export class AutoProcessingModelsComponent implements OnInit {
       this.showColumnConcatSection = true;
     }
 
+    if (this.modelColumnMathRules.length) {
+      this.showColumnMathSection = true;
+    }
+
     if (this.modelValueMappings.length) {
       this.showValueMappingsSection = true;
     }
@@ -3452,16 +3572,20 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.modelRowFilters = [];
     this.modelFormatActions = [];
     this.modelColumnConcatRules = [];
+    this.modelColumnMathRules = [];
     this.modelValueMappings = [];
     this.modelColumnRenameRules = [];
+    this.preProcessingSectionOrder = [...DEFAULT_PRE_PROCESSING_SECTION_ORDER];
     this.nextModelFilterId = 1;
     this.nextModelConcatRuleId = 1;
+    this.nextModelMathRuleId = 1;
     this.nextModelValueMappingId = 1;
     this.nextModelColumnRenameId = 1;
     this.nextModelFormatActionId = 1;
     this.showRowFiltersSection = false;
     this.showFormatActionsSection = false;
     this.showColumnConcatSection = false;
+    this.showColumnMathSection = false;
     this.showValueMappingsSection = false;
     this.showColumnRenameSection = false;
   }

@@ -3925,13 +3925,23 @@ End Sub`;
 
 
   private transformCharactersValue(value: string): string {
+    const count = Math.max(1, Number(this.removeCharCount) || 1);
+    const specificPosition = Math.max(1, Number(this.removeCharSpecificPosition) || 1);
+
     switch (this.removeCharMode) {
       case 'keep':
         switch (this.removeCharPosition) {
           case 'start':
-            return value.substring(0, this.removeCharCount);
+            return value.substring(0, count);
           case 'end':
-            return value.substring(Math.max(0, value.length - this.removeCharCount));
+            return value.substring(Math.max(0, value.length - count));
+          case 'specific': {
+            const pos = specificPosition - 1;
+            if (pos >= 0 && pos < value.length) {
+              return value.substring(pos, pos + count);
+            }
+            return value;
+          }
           default:
             return value;
         }
@@ -3939,21 +3949,22 @@ End Sub`;
       default:
         switch (this.removeCharPosition) {
           case 'start':
-            if (value.length >= this.removeCharCount) {
-              return value.substring(this.removeCharCount);
+            if (value.length >= count) {
+              return value.substring(count);
             }
             return value;
           case 'end':
-            if (value.length >= this.removeCharCount) {
-              return value.substring(0, value.length - this.removeCharCount);
+            if (value.length >= count) {
+              return value.substring(0, value.length - count);
             }
             return value;
-          case 'specific':
-            const pos = this.removeCharSpecificPosition - 1; // Convert to 0-based
-            if (pos >= 0 && pos < value.length && pos + this.removeCharCount <= value.length) {
-              return value.substring(0, pos) + value.substring(pos + this.removeCharCount);
+          case 'specific': {
+            const pos = specificPosition - 1;
+            if (pos >= 0 && pos < value.length && pos + count <= value.length) {
+              return value.substring(0, pos) + value.substring(pos + count);
             }
             return value;
+          }
         }
     }
 
@@ -3961,9 +3972,7 @@ End Sub`;
   }
 
   onRemoveCharModeChange(): void {
-    if (this.removeCharMode === 'keep' && this.removeCharPosition === 'specific') {
-      this.removeCharPosition = 'start';
-    }
+    // Position spécifique supportée en mode conserver et supprimer.
   }
 
   applyRemoveCharactersFormatting() {
@@ -3978,7 +3987,8 @@ End Sub`;
       return;
     }
 
-    if (!this.removeCharCount || this.removeCharCount <= 0) {
+    const charCount = Number(this.removeCharCount) || 0;
+    if (charCount <= 0) {
       const message = this.removeCharMode === 'keep'
         ? 'Veuillez spécifier un nombre de caractères à garder (supérieur à 0)'
         : 'Veuillez spécifier un nombre de caractères à supprimer (supérieur à 0)';
@@ -3986,15 +3996,12 @@ End Sub`;
       return;
     }
 
-    // Vérification supplémentaire pour la position spécifique
-    if (this.removeCharMode === 'keep' && this.removeCharPosition === 'specific') {
-      this.showError('format', 'La conservation n\'est disponible que depuis la gauche ou la droite');
-      return;
-    }
-
-    if (this.removeCharPosition === 'specific' && (!this.removeCharSpecificPosition || this.removeCharSpecificPosition <= 0)) {
-      this.showError('format', 'Veuillez spécifier une position valide pour la suppression spécifique');
-      return;
+    if (this.removeCharPosition === 'specific') {
+      const specificPosition = Number(this.removeCharSpecificPosition) || 0;
+      if (specificPosition <= 0) {
+        this.showError('format', 'Veuillez spécifier une position valide (supérieure à 0)');
+        return;
+      }
     }
 
 

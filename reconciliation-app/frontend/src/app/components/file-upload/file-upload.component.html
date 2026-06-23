@@ -1386,6 +1386,9 @@
             Chargez un ou plusieurs fichiers non normalisés : détection automatique de la ligne d'en-tête,
             suppression des lignes inutiles, traitement via le modèle choisi puis téléchargement.
             <ng-container *ngIf="traitementFiles.length > 1"> Fusion de plusieurs fichiers en un seul résultat.</ng-container>
+            <ng-container *ngIf="embedTraitementSection">
+                Cochez plusieurs modèles : le ou les fichier(s) chargé(s) sera(ont) traité(s) par chaque modèle sélectionné, un par un, avec un fichier téléchargé par modèle.
+            </ng-container>
         </p>
         <p class="traitement-upload-info" *ngIf="embedTraitementSection">
             <small>⚡ Lecture ultra-rapide — fusion uniquement si plusieurs fichiers ou plusieurs feuilles Excel</small>
@@ -1415,7 +1418,9 @@
         </div>
 
         <div class="traitement-section">
-            <label class="traitement-section-title">2. Modèle de traitement (pattern)</label>
+            <label class="traitement-section-title">
+                2. Modèle{{ embedTraitementSection ? 's' : '' }} de traitement{{ embedTraitementSection ? ' (sélection multiple)' : ' (pattern)' }}
+            </label>
             <div class="traitement-models-loading" *ngIf="traitementModelsLoading">
                 <i class="fas fa-spinner fa-spin"></i> Chargement des modèles...
             </div>
@@ -1439,8 +1444,15 @@
                     <label
                         class="traitement-model-option"
                         *ngFor="let model of filteredTraitementModels"
-                        [class.selected]="selectedTraitementModelId === model.id">
+                        [class.selected]="isTraitementModelSelected(model)">
                         <input
+                            *ngIf="embedTraitementSection"
+                            type="checkbox"
+                            [checked]="isTraitementModelSelected(model)"
+                            [disabled]="traitementProcessing"
+                            (change)="toggleTraitementModelSelection(model, $any($event.target).checked)">
+                        <input
+                            *ngIf="!embedTraitementSection"
                             type="radio"
                             name="traitementModel"
                             [value]="model.id"
@@ -1462,7 +1474,7 @@
             </ng-container>
         </div>
 
-        <div class="traitement-section" *ngIf="selectedTraitementModelId">
+        <div class="traitement-section" *ngIf="showTraitementColumnSection">
             <label class="traitement-section-title">3. Colonnes à garder ou supprimer <span class="traitement-optional-badge">(optionnel)</span></label>
             <label class="traitement-column-filter-toggle">
                 <input
