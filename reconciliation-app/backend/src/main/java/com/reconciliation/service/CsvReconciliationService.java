@@ -3,6 +3,7 @@ package com.reconciliation.service;
 import com.reconciliation.dto.ReconciliationRequest;
 import com.reconciliation.dto.ReconciliationResponse;
 import com.reconciliation.dto.ColumnComparison;
+import com.reconciliation.model.ReconciliationProgress;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.DisposableBean;
 import org.slf4j.Logger;
@@ -43,12 +44,15 @@ public class CsvReconciliationService implements DisposableBean {
     private static final Logger logger = LoggerFactory.getLogger(CsvReconciliationService.class);
     private final ConfigurableReconciliationService configurableReconciliationService;
     private final ColumnProcessingService columnProcessingService;
+    private final ReconciliationProgressService progressService;
     private static final int BATCH_SIZE = 10000; // Taille de lot augmentée pour performance
     
     public CsvReconciliationService(ConfigurableReconciliationService configurableReconciliationService,
-                                   ColumnProcessingService columnProcessingService) {
+                                   ColumnProcessingService columnProcessingService,
+                                   ReconciliationProgressService progressService) {
         this.configurableReconciliationService = configurableReconciliationService;
         this.columnProcessingService = columnProcessingService;
+        this.progressService = progressService;
     }
     private static final int PARALLEL_THREADS = Math.max(1, Math.min(2, Runtime.getRuntime().availableProcessors()));
     private final ConcurrentHashMap<String, Integer> progressMap = new ConcurrentHashMap<>();
@@ -205,6 +209,16 @@ public class CsvReconciliationService implements DisposableBean {
             // Appliquer les filtres BO si présents (sur les données traitées)
             List<Map<String, String>> filteredBoRecords = applyBOFilters(processedBoData, request.getBoColumnFilters());
             logger.info("✅ Nombre d'enregistrements BO après filtrage: {}", filteredBoRecords.size());
+            publishProgress(
+                request,
+                1.0,
+                "Indexation des enregistrements partenaire...",
+                0,
+                filteredBoRecords.size(),
+                0,
+                0,
+                processedPartnerData.size()
+            );
             
             // Initialise la réponse
             ReconciliationResponse response = new ReconciliationResponse();
@@ -271,6 +285,16 @@ public class CsvReconciliationService implements DisposableBean {
 
             // Traitement séquentiel par lots (évite la file de CompletableFuture et réduit le pic mémoire)
             logger.info("🔄 Début du traitement par lots (taille: {})", BATCH_SIZE);
+            publishProgress(
+                request,
+                2.0,
+                "Traitement des enregistrements BO...",
+                0,
+                filteredBoRecords.size(),
+                0,
+                0,
+                countPartnerIndexRemaining(partnerIndex)
+            );
             
             int totalRecords = filteredBoRecords.size();
             int processedRecords = 0;
@@ -292,10 +316,31 @@ public class CsvReconciliationService implements DisposableBean {
                 
                 logger.info("📊 Progression: {}% ({}/{} enregistrements) - Vitesse: {} rec/s - Temps: {} ms", 
                     String.format("%.2f", progress), processedRecords, totalRecords, String.format("%.0f", recordsPerSecond), elapsedTime);
+
+                publishProgress(
+                    request,
+                    progress,
+                    String.format("Traitement %,d / %,d enregistrements BO", processedRecords, totalRecords),
+                    processedRecords,
+                    totalRecords,
+                    response.getMatches().size(),
+                    response.getBoOnly().size(),
+                    countPartnerIndexRemaining(partnerIndex)
+                );
             }
 
             // Lignes partenaire non appariées à une ligne BO (reste des listes après consommation FIFO par clé)
             logger.info("🔍 Recherche optimisée des enregistrements uniquement partenaire...");
+            publishProgress(
+                request,
+                99.0,
+                "Recherche des enregistrements uniquement partenaire...",
+                totalRecords,
+                totalRecords,
+                response.getMatches().size(),
+                response.getBoOnly().size(),
+                countPartnerIndexRemaining(partnerIndex)
+            );
             int partnerOnlyCount = 0;
             for (List<Map<String, String>> partnersForKey : partnerIndex.values()) {
                 synchronized (partnersForKey) {
@@ -329,6 +374,17 @@ public class CsvReconciliationService implements DisposableBean {
             response.setExecutionTimeMs(totalTime);
             response.setProcessedRecords(totalRecords);
             response.setProgressPercentage(100.0);
+
+            publishProgress(
+                request,
+                100.0,
+                "Réconciliation terminée",
+                totalRecords,
+                totalRecords,
+                response.getTotalMatches(),
+                response.getTotalBoOnly(),
+                response.getTotalPartnerOnly()
+            );
             
             logger.info("🎯 RÉSULTATS FINAUX:");
             logger.info("📊 Total BO: {}", response.getTotalBoRecords());
@@ -1216,6 +1272,43 @@ public class CsvReconciliationService implements DisposableBean {
 
     public void removeProgress(String jobId) {
         progressMap.remove(jobId);
+    }
+
+    private void publishProgress(
+            ReconciliationRequest request,
+            double percentage,
+            String step,
+            int processedRecords,
+            int totalRecords,
+            int matchesCount,
+            int boOnlyCount,
+            int partnerRemaining) {
+        String sessionId = request.getProgressSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        progressService.updateProgress(
+            sessionId,
+            ReconciliationProgress.detailed(
+                Math.min(100.0, Math.max(0.0, percentage)),
+                step,
+                processedRecords,
+                totalRecords,
+                matchesCount,
+                boOnlyCount,
+                partnerRemaining
+            )
+        );
+    }
+
+    private int countPartnerIndexRemaining(Map<String, List<Map<String, String>>> partnerIndex) {
+        int total = 0;
+        for (List<Map<String, String>> partnersForKey : partnerIndex.values()) {
+            synchronized (partnersForKey) {
+                total += partnersForKey.size();
+            }
+        }
+        return total;
     }
 
     /**

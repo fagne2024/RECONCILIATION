@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+﻿import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
 import { DataNormalizationService } from './data-normalization.service';
@@ -107,13 +107,11 @@ export class AppStateService {
         private http: HttpClient,
         private dataNormalizationService: DataNormalizationService
     ) {
-        console.log('AppStateService initialized');
         // Charger l'utilisateur et le token depuis le localStorage au démarrage
         this.loadUserFromStorage();
     }
 
     setCurrentStep(step: number) {
-        console.log('Setting current step to:', step);
         this.currentStepSubject.next(step);
     }
 
@@ -122,9 +120,7 @@ export class AppStateService {
     }
 
     async setStatsData(data: any) {
-        console.log('Setting stats data:', JSON.stringify(data, null, 2));
         if (!data) {
-            console.warn('Attempting to set null stats data');
             return;
         }
         try {
@@ -152,16 +148,12 @@ export class AppStateService {
                     totalVolume: totalVolume || 0,
                     recordCount: recordCount || 0
                 };
-                console.log('Formatted item for backend:', JSON.stringify(formatted, null, 2));
                 return formatted;
             });
 
-            console.log('Sending formatted data to backend:', JSON.stringify(formattedData, null, 2));
             const response = await this.http.post('/api/statistics/save', formattedData).toPromise();
-            console.log('Backend response:', response);
             this.statsDataSubject.next(normalizedData);
         } catch (error) {
-            console.error('Error setting stats data:', error);
             throw error;
         }
     }
@@ -171,12 +163,10 @@ export class AppStateService {
     }
 
     clearStatsData() {
-        console.log('Clearing stats data');
         this.statsDataSubject.next([]);
     }
 
     startReconciliation(service: string) {
-        console.log('Starting reconciliation for service:', service);
         this.selectedServiceSubject.next(service);
         this.setCurrentStep(2);
         this.reconciliationStateSubject.next({
@@ -192,16 +182,11 @@ export class AppStateService {
 
     // Méthodes pour les données de réconciliation
     setReconciliationData(boData: Record<string, string>[], partnerData: Record<string, string>[]) {
-        console.log('Stockage des données de réconciliation:', {
-            boDataLength: boData.length,
-            partnerDataLength: partnerData.length
-        });
         this.boDataSubject.next(boData);
         this.partnerDataSubject.next(partnerData);
     }
 
     setReconciliationType(type: '1-1' | '1-2' | '1-3' | '1-4' | '1-5') {
-        console.log('Stockage du type de réconciliation:', type);
         // Stocker dans localStorage pour persistance
         localStorage.setItem('reconciliationType', type);
     }
@@ -277,13 +262,6 @@ export class AppStateService {
 
     // Méthodes pour les résultats de la réconciliation
     setReconciliationResults(results: ReconciliationResponse) {
-        console.log('💾 AppStateService - Stockage des résultats de la réconciliation:', results);
-        console.log('📊 TotalMatches:', results.totalMatches);
-        console.log('📊 TotalBoRecords:', results.totalBoRecords);
-        console.log('📊 TotalPartnerRecords:', results.totalPartnerRecords);
-        console.log('📊 Matches length:', results.matches?.length);
-        console.log('📊 BoOnly length:', results.boOnly?.length);
-        console.log('📊 PartnerOnly length:', results.partnerOnly?.length);
         this.reconciliationResultSubject.next(results);
     }
 
@@ -632,10 +610,6 @@ export class AppStateService {
 
     // Méthodes pour gérer les fichiers uploadés
     setUploadedFiles(files: { boFile: File | null; partnerFile: File | null }) {
-        console.log('📁 Sauvegarde des fichiers uploadés:', {
-            boFile: files.boFile?.name,
-            partnerFile: files.partnerFile?.name
-        });
         this.uploadedFilesSubject.next(files);
     }
 
@@ -645,17 +619,14 @@ export class AppStateService {
 
     // Méthodes pour gérer les données parsées
     setBoData(data: Record<string, string>[]) {
-        console.log('📊 Sauvegarde des données BO:', data.length, 'enregistrements');
         this.boDataSubject.next(data);
     }
 
     setPartnerData(data: Record<string, string>[]) {
-        console.log('📊 Sauvegarde des données Partenaire:', data.length, 'enregistrements');
         this.partnerDataSubject.next(data);
     }
 
     clearData() {
-        console.log('🧹 Nettoyage des données');
         this.boDataSubject.next([]);
         this.partnerDataSubject.next([]);
         this.uploadedFilesSubject.next({ boFile: null, partnerFile: null });

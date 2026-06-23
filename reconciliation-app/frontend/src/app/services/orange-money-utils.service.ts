@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+﻿import { Injectable } from '@angular/core';
 
 @Injectable({
   providedIn: 'root'
@@ -11,9 +11,7 @@ export class OrangeMoneyUtilsService {
    * Détecte si un fichier est un fichier Orange Money
    */
   isOrangeMoneyFile(fileName: string): boolean {
-    console.log('🔍 isOrangeMoneyFile appelée avec fileName:', fileName);
     const fileNameLower = fileName.toLowerCase();
-    console.log('🔍 fileName.toLowerCase():', fileNameLower);
     
     const hasCiomcm = fileNameLower.includes('ciomcm');
     const hasOrange = fileNameLower.includes('orange');
@@ -29,17 +27,8 @@ export class OrangeMoneyUtilsService {
     const hasCiomCountryPattern = ciomCountryPattern.test(fileName);
     const hasPmomCountryPattern = pmomCountryPattern.test(fileName);
     
-    console.log('🔍 Détection des clés:');
-    console.log('  - ciomcm:', hasCiomcm);
-    console.log('  - orange:', hasOrange);
-    console.log('  - orange money:', hasOrangeMoney);
-    console.log('  - pattern CIOM + 2 chiffres:', hasCiomPattern);
-    console.log('  - pattern PMOM + 2 chiffres:', hasPmomPattern);
-    console.log('  - pattern CIOM + codes pays:', hasCiomCountryPattern);
-    console.log('  - pattern PMOM + codes pays:', hasPmomCountryPattern);
     
     const result = hasCiomcm || hasOrange || hasOrangeMoney || hasCiomPattern || hasPmomPattern || hasCiomCountryPattern || hasPmomCountryPattern;
-    console.log('🔍 Résultat final:', result);
     
     return result;
   }
@@ -48,23 +37,19 @@ export class OrangeMoneyUtilsService {
    * Retourne les valeurs spécifiques pour un champ donné dans un fichier Orange Money
    */
   getOrangeMoneyFieldValues(fieldName: string): string[] {
-    console.log('🔍 getOrangeMoneyFieldValues appelée avec fieldName:', fieldName);
     
     // Normaliser le nom de la colonne pour la comparaison
     const normalizedFieldName = fieldName.toLowerCase().replace(/[^a-z0-9]/g, '');
     
     if (normalizedFieldName.includes('statut')) {
-      console.log('✅ Retour des valeurs Statut spécifiques Orange Money: ["Succès"]');
       return ['Succès'];
     }
     
     if (normalizedFieldName.includes('service')) {
-      console.log('✅ Retour des valeurs Service spécifiques Orange Money: ["Cash in", "Débit"]');
       return ['Cash in', 'Débit'];
     }
     
     // Pour tous les autres champs, retourner un tableau vide
-    console.log('❌ Aucune valeur spécifique trouvée pour:', fieldName);
     return [];
   }
 
@@ -72,7 +57,6 @@ export class OrangeMoneyUtilsService {
    * Retourne les valeurs mockées par défaut pour un champ donné
    */
   getMockColumnValues(columnName: string): string[] {
-    console.log('🔍 getMockColumnValues appelée avec columnName:', columnName);
     
     const mockData: { [key: string]: string[] } = {
       // Colonnes d'agence
@@ -152,7 +136,6 @@ export class OrangeMoneyUtilsService {
 
     // Rechercher une correspondance exacte
     if (mockData[columnName]) {
-      console.log('✅ Valeurs mockées trouvées pour:', columnName, mockData[columnName]);
       return mockData[columnName];
     }
 
@@ -160,13 +143,11 @@ export class OrangeMoneyUtilsService {
     const columnNameLower = columnName.toLowerCase();
     for (const [key, values] of Object.entries(mockData)) {
       if (key.toLowerCase().includes(columnNameLower) || columnNameLower.includes(key.toLowerCase())) {
-        console.log('✅ Correspondance partielle trouvée:', key, 'pour', columnName);
         return values;
       }
     }
 
     // Valeurs génériques par défaut
-    console.log('🔄 Utilisation des valeurs génériques pour:', columnName);
     return ['Valeur1', 'Valeur2', 'Valeur3', 'Valeur4', 'Valeur5'];
   }
 

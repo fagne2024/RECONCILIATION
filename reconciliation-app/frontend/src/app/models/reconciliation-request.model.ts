@@ -22,6 +22,9 @@ export interface ReconciliationRequest {
     
     // Type de réconciliation (1-1, 1-2, 1-3, 1-4, 1-5)
     reconciliationType?: string;
+
+    /** Identifiant de session pour le suivi de progression en temps réel. */
+    progressSessionId?: string;
 }
 
 export interface BOColumnFilter {

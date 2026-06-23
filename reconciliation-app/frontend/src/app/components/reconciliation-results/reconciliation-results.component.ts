@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, ChangeDetectorRef, OnChanges, SimpleChanges, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
+﻿import { Component, Input, OnInit, ChangeDetectorRef, OnChanges, SimpleChanges, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -3008,7 +3008,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Récupérer tous les résumés (toutes pages si besoin)
         const allSummaries = this.getAgencySummary();
         const selected = allSummaries.filter(s => this.selectedAgencySummaries.includes(this.getAgencyKey(s)));
-        console.log('Lignes sélectionnées à enregistrer :', selected);
         // Ici, tu peux appeler une API ou autre logique
     }
 
@@ -3128,14 +3127,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.isSavingEcartBo = true;
 
         try {
-            console.log('🔄 Début de la sauvegarde des ECART BO...');
-            console.log('DEBUG: Nombre d\'enregistrements ECART BO (disponibles):', availableRecords.length);
-            console.log('DEBUG: Nombre d\'enregistrements ECART BO (à sauvegarder):', sourceRecords.length);
 
             // Debug: Afficher les colonnes disponibles dans le premier enregistrement
             if (sourceRecords.length > 0) {
-                console.log('DEBUG: Colonnes disponibles dans ECART BO:', Object.keys(sourceRecords[0]));
-                console.log('DEBUG: Premier enregistrement ECART BO:', sourceRecords[0]);
             }
 
             // Convertir les données ECART BO en format EcartSolde
@@ -3150,8 +3144,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 };
 
                 // Debug: Afficher les colonnes disponibles pour cet enregistrement
-                console.log(`DEBUG: Enregistrement ${index + 1} - Colonnes disponibles:`, Object.keys(record));
-                console.log(`DEBUG: Enregistrement ${index + 1} - Données brutes:`, record);
 
                 // Extraire les informations d'agence et de service
                 const agencyInfo = this.getBoOnlyAgencyAndService(record);
@@ -3179,7 +3171,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         const excelEpoch = new Date(1900, 0, 1).getTime();
                         const millisecondsPerDay = 86400000;
                         const jsDate = new Date(excelEpoch + (numValue - 2) * millisecondsPerDay);
-                        console.log(`📅 Conversion Excel → JS: ${dateStr} → ${jsDate.toISOString()}`);
                         return jsDate.toISOString();
                     }
                     
@@ -3203,36 +3194,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     dateImport: new Date().toISOString()
                 };
 
-                console.log(`DEBUG: Enregistrement ${index + 1} préparé:`, {
-                    idTransaction: ecartSolde.idTransaction,
-                    agence: ecartSolde.agence,
-                    service: ecartSolde.service,
-                    // Forcer montant négatif si service contient CASHIN
-                    montant: (() => {
-                        const s = (ecartSolde.service || '').toLowerCase();
-                        const m = Number(ecartSolde.montant) || 0;
-                        return s.includes('cashin') ? -Math.abs(m) : m;
-                    })(),
-                    agencyInfo: agencyInfo
-                });
 
                 return ecartSolde;
             });
 
-            console.log('DEBUG: Données converties en format EcartSolde:', ecartSoldeData.length, 'enregistrements');
 
             // Validation des données avant sauvegarde
-            console.log('DEBUG: Validation des données - Nombre total d\'enregistrements:', ecartSoldeData.length);
             
             // Log détaillé de chaque enregistrement pour le débogage
             ecartSoldeData.forEach((record, index) => {
-                console.log(`DEBUG: Enregistrement ${index + 1} - Validation:`, {
-                    idTransaction: record.idTransaction,
-                    idTransactionValid: record.idTransaction && record.idTransaction.trim() !== '',
-                    agence: record.agence,
-                    agenceValid: record.agence && record.agence.trim() !== '',
-                    isValid: (record.idTransaction && record.idTransaction.trim() !== '') && (record.agence && record.agence.trim() !== '')
-                });
             });
 
             const validRecords = ecartSoldeData.filter(record => 
@@ -3242,22 +3212,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 record.agence.trim() !== ''
             );
 
-            console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
 
             if (validRecords.length === 0) {
-                console.error('DEBUG: Aucun enregistrement valide trouvé. Raisons possibles:');
-                console.error('- idTransaction manquant ou vide');
-                console.error('- agence manquante ou vide');
-                console.error('- Colonnes non trouvées dans les données source');
                 this.popupService.showWarning('❌ Aucune donnée valide trouvée pour la sauvegarde.');
                 return;
             }
 
-            console.log('DEBUG: Enregistrements valides pour sauvegarde:', validRecords.length);
 
             // Créer le contenu CSV pour validation
             const csvContent = this.createCsvContent(validRecords);
-            console.log('DEBUG: Contenu CSV généré pour validation');
 
             // Afficher un message de confirmation avec les détails
             const selectionSummary = this.selectedBoOnlyKeys.length > 0
@@ -3274,20 +3237,13 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
             const confirmed = await this.popupService.showConfirm(message, 'Confirmation de sauvegarde');
             if (!confirmed) {
-                console.log('❌ Sauvegarde annulée par l\'utilisateur');
                 return;
             }
 
-            console.log('✅ Confirmation utilisateur reçue, début de la sauvegarde...');
             
             // Sauvegarder les données via le service
             const result = await this.ecartSoldeService.createMultipleEcartSoldes(validRecords);
             
-            console.log('=== RÉSULTATS DE LA SAUVEGARDE ===');
-            console.log('DEBUG: Enregistrements reçus:', result.totalReceived);
-            console.log('DEBUG: Enregistrements créés:', result.count);
-            console.log('DEBUG: Doublons ignorés:', result.duplicates);
-            console.log('DEBUG: Message:', result.message);
             
             // Afficher un message de succès détaillé
             let successMessage = `✅ SAUVEGARDE TERMINÉE AVEC SUCCÈS!\n\n`;
@@ -3300,7 +3256,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             this.popupService.showSuccess(successMessage);
             
         } catch (error: any) {
-            console.error('❌ Erreur lors de la sauvegarde des ECART BO:', error);
             
             let errorMessage = '❌ Erreur lors de la sauvegarde des ECART BO.\n\n';
             if (error.error?.error) {
@@ -3333,9 +3288,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.isSavingEcartBoToTrxSf = true;
 
         try {
-            console.log('🔄 Début de la sauvegarde des ECART BO dans TRX SF...');
-            console.log('DEBUG: Nombre d\'enregistrements ECART BO (disponibles):', availableRecords.length);
-            console.log('DEBUG: Nombre d\'enregistrements ECART BO (à sauvegarder):', sourceRecords.length);
 
             // Convertir les données ECART BO en format TrxSfData avec récupération des frais
             const trxSfDataPromises = sourceRecords.map(async (record, index) => {
@@ -3374,7 +3326,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         const excelEpoch = new Date(1900, 0, 1).getTime();
                         const millisecondsPerDay = 86400000;
                         const jsDate = new Date(excelEpoch + (numValue - 2) * millisecondsPerDay);
-                        console.log(`📅 Conversion Excel → JS: ${dateStr} → ${jsDate.toISOString()}`);
                         return jsDate.toISOString();
                     }
                     
@@ -3393,26 +3344,17 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         if (fraisConfig.typeFrais === 'NOMINAL' || fraisConfig.typeFrais === 'FIXE') {
                             // Frais fixe : on prend le montant configuré
                             frais = fraisConfig.montant || 0;
-                            console.log(`💰 Frais fixe configuré pour ${agencyInfo.service}: ${frais}`);
                         } else if (fraisConfig.typeFrais === 'POURCENTAGE') {
                             // Frais en pourcentage : on applique le pourcentage sur le montant
                             const pourcentage = fraisConfig.pourcentage || 0;
                             frais = (agencyInfo.volume * pourcentage) / 100;
-                            console.log(`📊 Frais pourcentage configuré pour ${agencyInfo.service}: ${pourcentage}% sur ${agencyInfo.volume} = ${frais}`);
                         }
                     } else {
                         // Pas de configuration, frais à 0 par défaut
                         frais = 0;
-                        console.log(`⚠️ Pas de configuration de frais pour ${agencyInfo.service}, frais à 0`);
                     }
                     
-                    console.log(`✅ Frais calculés pour ${agencyInfo.agency}:`);
-                    console.log(`   - Service: ${agencyInfo.service}`);
-                    console.log(`   - Montant transaction: ${agencyInfo.volume}`);
-                    console.log(`   - Frais calculés: ${frais}`);
-                    console.log(`   - Configuration:`, fraisConfig);
                 } catch (configError) {
-                    console.warn(`⚠️ Erreur lors de la récupération de la config des frais pour ${agencyInfo.service}:`, configError);
                     frais = 0; // Frais par défaut en cas d'erreur
                 }
 
@@ -3432,14 +3374,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     dateImport: new Date().toISOString()
                 };
 
-                console.log(`DEBUG: Enregistrement ${index + 1} préparé pour TRX SF:`, {
-                    idTransaction: trxSf.idTransaction,
-                    agence: trxSf.agence,
-                    service: trxSf.service,
-                    montant: trxSf.montant,
-                    frais: trxSf.frais,
-                    agencyInfo: agencyInfo
-                });
 
                 return trxSf;
             });
@@ -3447,7 +3381,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             // Attendre que toutes les promesses soient résolues
             const trxSfData = await Promise.all(trxSfDataPromises);
 
-            console.log('DEBUG: Données converties en format TrxSfData avec frais:', trxSfData.length, 'enregistrements');
 
             // Validation des données avant sauvegarde
             const validRecords = trxSfData.filter(record => 
@@ -3457,7 +3390,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 record.agence.trim() !== ''
             );
 
-            console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
 
             if (validRecords.length === 0) {
                 this.popupService.showWarning('❌ Aucun enregistrement valide trouvé pour la sauvegarde dans TRX SF.');
@@ -3465,18 +3397,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             }
 
             // Sauvegarder les données dans TRX SF
-            console.log('🔄 Sauvegarde des données dans TRX SF avec frais TSOP...');
             
             // Appeler le service pour sauvegarder les données
             const result = await this.trxSfService.createMultipleTrxSf(validRecords).toPromise();
             
-            console.log('✅ Sauvegarde dans TRX SF terminée avec succès:', result);
             
             // Afficher un message de succès
             this.popupService.showSuccess(`✅ ${validRecords.length} enregistrements ECART BO ont été sauvegardés dans TRX SF avec frais TSOP !`);
 
         } catch (error) {
-            console.error('❌ Erreur lors de la sauvegarde dans TRX SF:', error);
             
             let errorMessage = 'Erreur lors de la sauvegarde dans TRX SF';
             if (error && typeof error === 'object') {
@@ -3503,8 +3432,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.isSavingEcartPartnerToTrxSf = true;
 
         try {
-            console.log('🔄 Début de la sauvegarde des ECART Partenaire dans TRX SF...');
-            console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire:', this.response.partnerOnly.length);
 
             // Convertir les données ECART Partenaire en format TrxSfData avec récupération des frais
             const trxSfDataPromises = this.response.partnerOnly.map(async (record, index) => {
@@ -3543,7 +3470,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         const excelEpoch = new Date(1900, 0, 1).getTime();
                         const millisecondsPerDay = 86400000;
                         const jsDate = new Date(excelEpoch + (numValue - 2) * millisecondsPerDay);
-                        console.log(`📅 Conversion Excel → JS: ${dateStr} → ${jsDate.toISOString()}`);
                         return jsDate.toISOString();
                     }
                     
@@ -3562,26 +3488,17 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         if (fraisConfig.typeFrais === 'NOMINAL' || fraisConfig.typeFrais === 'FIXE') {
                             // Frais fixe : on prend le montant configuré
                             frais = fraisConfig.montant || 0;
-                            console.log(`💰 Frais fixe configuré pour ${agencyInfo.service}: ${frais}`);
                         } else if (fraisConfig.typeFrais === 'POURCENTAGE') {
                             // Frais en pourcentage : on applique le pourcentage sur le montant
                             const pourcentage = fraisConfig.pourcentage || 0;
                             frais = (agencyInfo.volume * pourcentage) / 100;
-                            console.log(`📊 Frais pourcentage configuré pour ${agencyInfo.service}: ${pourcentage}% sur ${agencyInfo.volume} = ${frais}`);
                         }
                     } else {
                         // Pas de configuration, frais à 0 par défaut
                         frais = 0;
-                        console.log(`⚠️ Pas de configuration de frais pour ${agencyInfo.service}, frais à 0`);
                     }
                     
-                    console.log(`✅ Frais calculés pour ${agencyInfo.agency}:`);
-                    console.log(`   - Service: ${agencyInfo.service}`);
-                    console.log(`   - Montant transaction: ${agencyInfo.volume}`);
-                    console.log(`   - Frais calculés: ${frais}`);
-                    console.log(`   - Configuration:`, fraisConfig);
                 } catch (configError) {
-                    console.warn(`⚠️ Erreur lors de la récupération de la config des frais pour ${agencyInfo.service}:`, configError);
                     frais = 0; // Frais par défaut en cas d'erreur
                 }
 
@@ -3601,14 +3518,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     dateImport: new Date().toISOString()
                 };
 
-                console.log(`DEBUG: Enregistrement ${index + 1} préparé pour TRX SF:`, {
-                    idTransaction: trxSf.idTransaction,
-                    agence: trxSf.agence,
-                    service: trxSf.service,
-                    montant: trxSf.montant,
-                    frais: trxSf.frais,
-                    agencyInfo: agencyInfo
-                });
 
                 return trxSf;
             });
@@ -3616,7 +3525,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             // Attendre que toutes les promesses soient résolues
             const trxSfData = await Promise.all(trxSfDataPromises);
 
-            console.log('DEBUG: Données converties en format TrxSfData avec frais:', trxSfData.length, 'enregistrements');
 
             // Validation des données avant sauvegarde
             const validRecords = trxSfData.filter(record => 
@@ -3626,7 +3534,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 record.agence.trim() !== ''
             );
 
-            console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
 
             if (validRecords.length === 0) {
                 this.popupService.showWarning('❌ Aucun enregistrement valide trouvé pour la sauvegarde dans TRX SF.');
@@ -3634,18 +3541,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             }
 
             // Sauvegarder les données dans TRX SF
-            console.log('🔄 Sauvegarde des données dans TRX SF avec frais TSOP...');
             
             // Appeler le service pour sauvegarder les données
             const result = await this.trxSfService.createMultipleTrxSf(validRecords).toPromise();
             
-            console.log('✅ Sauvegarde dans TRX SF terminée avec succès:', result);
             
             // Afficher un message de succès
             this.popupService.showSuccess(`✅ ${validRecords.length} enregistrements ECART Partenaire ont été sauvegardés dans TRX SF avec frais TSOP !`);
 
         } catch (error) {
-            console.error('❌ Erreur lors de la sauvegarde dans TRX SF:', error);
             
             let errorMessage = 'Erreur lors de la sauvegarde dans TRX SF';
             if (error && typeof error === 'object') {
@@ -3734,7 +3638,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             return 'Ligne partenaire sans transaction';
         } else if (!hasFrais && hasMontant) {
             // Cas général avec une seule correspondance -> SANS FRAIS
-            console.log(`DEBUG: Cas général sans frais détecté - Commentaire: "SANS FRAIS" - Type opération: ${typeOperationValue}`);
             return 'SANS FRAIS';
         } else if (!hasMontant) {
             return 'Ligne partenaire sans montant';
@@ -3752,13 +3655,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.isSavingEcartPartner = true;
 
         try {
-            console.log('🔄 Début de la sauvegarde des ECART Partenaire...');
-            console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire:', this.response.partnerOnly.length);
 
             // Debug: Afficher les colonnes disponibles dans le premier enregistrement
             if (this.response.partnerOnly.length > 0) {
-                console.log('DEBUG: Colonnes disponibles dans ECART Partenaire:', Object.keys(this.response.partnerOnly[0]));
-                console.log('DEBUG: Premier enregistrement ECART Partenaire:', this.response.partnerOnly[0]);
             }
 
             // Convertir les données ECART Partenaire en format EcartSolde
@@ -3773,8 +3672,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 };
 
                 // Debug: Afficher les colonnes disponibles pour cet enregistrement
-                console.log(`DEBUG: Enregistrement ${index + 1} - Colonnes disponibles:`, Object.keys(record));
-                console.log(`DEBUG: Enregistrement ${index + 1} - Données brutes:`, record);
 
                 // Extraire les informations d'agence et de service
                 const agencyInfo = this.getPartnerOnlyAgencyAndService(record);
@@ -3805,7 +3702,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         const excelEpoch = new Date(1900, 0, 1).getTime();
                         const millisecondsPerDay = 86400000;
                         const jsDate = new Date(excelEpoch + (numValue - 2) * millisecondsPerDay);
-                        console.log(`📅 Conversion Excel → JS: ${dateStr} → ${jsDate.toISOString()}`);
                         return jsDate.toISOString();
                     }
                     
@@ -3829,36 +3725,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     dateImport: new Date().toISOString()
                 };
 
-                console.log(`DEBUG: Enregistrement ${index + 1} préparé:`, {
-                    idTransaction: ecartSolde.idTransaction,
-                    agence: ecartSolde.agence,
-                    service: ecartSolde.service,
-                    // Forcer montant négatif si service contient CASHIN
-                    montant: (() => {
-                        const s = (ecartSolde.service || '').toLowerCase();
-                        const m = Number(ecartSolde.montant) || 0;
-                        return s.includes('cashin') ? -Math.abs(m) : m;
-                    })(),
-                    agencyInfo: agencyInfo
-                });
 
                 return ecartSolde;
             });
 
-            console.log('DEBUG: Données converties en format EcartSolde:', ecartSoldeData.length, 'enregistrements');
 
             // Validation des données avant sauvegarde
-            console.log('DEBUG: Validation des données - Nombre total d\'enregistrements:', ecartSoldeData.length);
             
             // Log détaillé de chaque enregistrement pour le débogage
             ecartSoldeData.forEach((record, index) => {
-                console.log(`DEBUG: Enregistrement ${index + 1} - Validation:`, {
-                    idTransaction: record.idTransaction,
-                    idTransactionValid: record.idTransaction && record.idTransaction.trim() !== '',
-                    agence: record.agence,
-                    agenceValid: record.agence && record.agence.trim() !== '',
-                    isValid: (record.idTransaction && record.idTransaction.trim() !== '') && (record.agence && record.agence.trim() !== '')
-                });
             });
 
             const validRecords = ecartSoldeData.filter(record => 
@@ -3868,18 +3743,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 record.agence.trim() !== ''
             );
 
-            console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
 
             if (validRecords.length === 0) {
-                console.error('DEBUG: Aucun enregistrement valide trouvé. Raisons possibles:');
-                console.error('- idTransaction manquant ou vide');
-                console.error('- agence manquante ou vide');
-                console.error('- Colonnes non trouvées dans les données source');
                 this.popupService.showWarning('❌ Aucune donnée valide trouvée pour la sauvegarde.');
                 return;
             }
 
-            console.log('DEBUG: Enregistrements valides pour sauvegarde:', validRecords.length);
 
             // Analyser les types d'écarts
             const ecartTypes = new Map<string, number>();
@@ -3890,7 +3759,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
             // Créer le contenu CSV pour validation
             const csvContent = this.createCsvContent(validRecords);
-            console.log('DEBUG: Contenu CSV généré pour validation');
 
             // Afficher un message de confirmation avec les détails
             let message = `📋 RÉSUMÉ DES DONNÉES À SAUVEGARDER:\n\n` +
@@ -3909,20 +3777,13 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
             const confirmed = await this.popupService.showConfirm(message, 'Confirmation de sauvegarde');
             if (!confirmed) {
-                console.log('❌ Sauvegarde annulée par l\'utilisateur');
                 return;
             }
 
-            console.log('✅ Confirmation utilisateur reçue, début de la sauvegarde...');
             
             // Sauvegarder les données via le service
             const result = await this.ecartSoldeService.createMultipleEcartSoldes(validRecords);
             
-            console.log('=== RÉSULTATS DE LA SAUVEGARDE ===');
-            console.log('DEBUG: Enregistrements reçus:', result.totalReceived);
-            console.log('DEBUG: Enregistrements créés:', result.count);
-            console.log('DEBUG: Doublons ignorés:', result.duplicates);
-            console.log('DEBUG: Message:', result.message);
             
             // Afficher un message de succès détaillé
             let successMessage = `✅ SAUVEGARDE TERMINÉE AVEC SUCCÈS!\n\n`;
@@ -3935,7 +3796,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             this.popupService.showSuccess(successMessage);
             
         } catch (error: any) {
-            console.error('❌ Erreur lors de la sauvegarde des ECART Partenaire:', error);
             
             let errorMessage = '❌ Erreur lors de la sauvegarde des ECART Partenaire.\n\n';
             if (error.error?.error) {
@@ -3961,8 +3821,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.isSavingEcartPartnerToImpactOP = true;
 
         try {
-            console.log('🔄 Début de la sauvegarde des ECART Partenaire dans Import OP...');
-            console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire (total):', this.response.partnerOnly.length);
 
             // Déterminer la source: lignes sélectionnées ou tout le jeu de données
             const sourceRecords: Record<string, string>[] =
@@ -3975,7 +3833,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 return;
             }
 
-            console.log('DEBUG: Nombre d\'enregistrements à sauvegarder (sélection):', sourceRecords.length);
 
             const defaultDateCandidate = this.selectedPartnerImportOpDate
                 || this.extractIsoDay(this.getFromRecord(sourceRecords[0], ['Date opération', 'Date', 'dateOperation', 'date_operation']))
@@ -4035,7 +3892,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     if (dateValue.includes('-') || dateValue.includes('T') || dateValue.includes('/') || /\d{4}/.test(dateValue)) {
                         const parsedDate = new Date(dateValue);
                         if (!isNaN(parsedDate.getTime())) {
-                            console.log(`📅 Date texte parsée: ${dateValue} → ${parsedDate.toISOString()}`);
                             return parsedDate;
                         }
                     }
@@ -4049,12 +3905,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         const millisecondsPerDay = 86400000;
                         // Soustraire 2 pour corriger le bug Excel (29/02/1900) et l'index qui commence à 1
                         const jsDate = new Date(excelEpoch + (numValue - 2) * millisecondsPerDay);
-                        console.log(`📅 Conversion Excel → JS: ${dateValue} → ${jsDate.toISOString()}`);
                         return jsDate;
                     }
                     
                     // Si tout échoue, retourner la date actuelle
-                    console.warn(`⚠️ Date non reconnue: "${dateValue}", utilisation de la date actuelle`);
                     return new Date();
                 };
                 
@@ -4094,7 +3948,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 } as ImpactOP;
             });
 
-            console.log('DEBUG: Données converties pour Import OP:', impactOPData.slice(0, 2));
 
             // Sauvegarder via le service Impact OP
             let successCount = 0;
@@ -4102,20 +3955,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
             for (const [index, impactOP] of impactOPData.entries()) {
                 try {
-                    console.log(`🔄 [${index + 1}/${impactOPData.length}] Tentative de création Impact OP:`, impactOP);
                     const result = await firstValueFrom(this.impactOPService.createImpactOP(impactOP));
                     successCount++;
-                    console.log(`✅ [${index + 1}/${impactOPData.length}] Import OP créé avec succès:`, result);
                 } catch (error: any) {
                     errorCount++;
-                    console.error(`❌ [${index + 1}/${impactOPData.length}] Erreur détaillée lors de la création de l'Import OP:`, {
-                        error,
-                        status: error?.status,
-                        statusText: error?.statusText,
-                        message: error?.message,
-                        errorDetails: error?.error,
-                        impactOPData: impactOP
-                    });
                 }
             }
 
@@ -4126,7 +3969,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             }
 
         } catch (error) {
-            console.error('❌ Erreur lors de la sauvegarde ECART Partenaire vers Import OP:', error);
             
             let errorMessage = '❌ Erreur lors de la sauvegarde dans Import OP.\n\n';
             
@@ -4172,19 +4014,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     ngOnInit() {
         const initStartTime = performance.now();
         (window as any).pageLoadTime = initStartTime;
-        console.log('🔴 [NGONINIT] ============================================');
-        console.log('🔴 [NGONINIT] ReconciliationResultsComponent - ngOnInit appelé', `[${new Date().toISOString()}]`);
-        console.log('🔴 [NGONINIT] Timestamp absolu:', initStartTime);
-        console.log('🔴 [NGONINIT] État actuel:', {
-            'matchesLoaded': this.matchesLoaded,
-            'boOnlyLoaded': this.boOnlyLoaded,
-            'partnerOnlyLoaded': this.partnerOnlyLoaded,
-            'filteredMatchesCount': this.filteredMatches.length,
-            'filteredBoOnlyCount': this.filteredBoOnly.length,
-            'filteredPartnerOnlyCount': this.filteredPartnerOnly.length,
-            'hasResponse': !!this.response,
-            'activeTab': this.activeTab
-        });
 
         this.magicServiceSummaries = this.appStateService.getMagicServiceSummaries();
         this.magicPartnerFileNames = this.appStateService.getMagicPartnerFileNames();
@@ -4201,10 +4030,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         );
         
         if (hasExistingData && this.matchesLoaded && this.boOnlyLoaded && this.partnerOnlyLoaded) {
-            console.log('✅ [NGONINIT] Données déjà chargées, rafraîchissement du cloisonnement magique');
             this.refreshMagicServicePartitioning();
             const skipInitDuration = performance.now() - initStartTime;
-            console.log('⏱️ [NGONINIT] Rafraîchissement cloisonnement:', `${skipInitDuration.toFixed(2)}ms`);
             return;
         }
         
@@ -4214,11 +4041,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 const jobIdStartTime = performance.now();
                 if (params['jobId']) {
                     this.currentJobId = params['jobId'];
-                    console.log('📋 JobId récupéré depuis queryParams:', this.currentJobId, `[${(performance.now() - jobIdStartTime).toFixed(2)}ms]`);
                 } else {
                     // Essayer de récupérer depuis le service
                     this.currentJobId = this.reconciliationService.getCurrentJobId();
-                    console.log('📋 JobId récupéré depuis le service:', this.currentJobId, `[${(performance.now() - jobIdStartTime).toFixed(2)}ms]`);
                 }
             })
         );
@@ -4226,14 +4051,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.subscription.add(
             this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
                 const dataReceiveStartTime = performance.now();
-                console.log('📋 [NGONINIT] Données reçues dans ReconciliationResultsComponent:', {
-                    hasResponse: !!response,
-                    matchesCount: response?.matches?.length || 0,
-                    boOnlyCount: response?.boOnly?.length || 0,
-                    partnerOnlyCount: response?.partnerOnly?.length || 0,
-                    mismatchesCount: response?.mismatches?.length || 0,
-                    timestamp: new Date().toISOString()
-                });
                 
                 // Nouvelle réconciliation : purger les anciens résultats pour afficher les nouveaux
                 if (response) {
@@ -4241,7 +4058,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     this.reconciliationTabsService.clearAllData();
                     this.invalidateCache();
                     const initDataStartTime = performance.now();
-                    console.log('✅ [NGONINIT] Données valides reçues, initialisation...', `[${(performance.now() - dataReceiveStartTime).toFixed(2)}ms depuis réception]`);
                     
                     this.response = this.normalizeReconciliationResponseDates(response);
                     this.magicServiceSummaries = this.appStateService.getMagicServiceSummaries();
@@ -4254,27 +4070,21 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     // S'assurer que l'onglet actif est bien défini pour afficher les résultats
                     if (!this.activeTab || this.activeTab === 'matches') {
                         this.activeTab = 'matches'; // Onglet par défaut pour afficher les correspondances
-                        console.log('🟢 [NGONINIT] Onglet actif défini à:', this.activeTab);
                     }
                     
                     // La liste des correspondances est masquée par défaut
                     this.showMatchesList = false;
-                    console.log('🟢 [NGONINIT] showMatchesList masqué par défaut');
                     
                     const filterStartTime = performance.now();
                     this.initializeFilteredData();
                     const filterDuration = performance.now() - filterStartTime;
-                    console.log('⏱️ initializeFilteredData terminé:', `${filterDuration.toFixed(2)}ms`);
                     
                     // Vider le cache quand les données changent
                     const cacheStartTime = performance.now();
                     this.agencyServiceCache.clear();
-                    console.log('⏱️ Cache vidé:', `${(performance.now() - cacheStartTime).toFixed(2)}ms`);
                     
                     // Initialiser les informations de progression
                     const progressStartTime = performance.now();
-                    console.log('⏱️ Initialisation des temps d\'exécution...');
-                    console.log('📊 response.executionTimeMs:', response.executionTimeMs);
                     
                     if (response.executionTimeMs) {
                         this.executionTime = response.executionTimeMs;
@@ -4282,7 +4092,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         this.executionTime = 306; // Valeur par défaut
                     }
                     
-                    console.log('⏱️ executionTime final:', this.executionTime, `[${(performance.now() - progressStartTime).toFixed(2)}ms]`);
                     
                     if (response.processedRecords) {
                         this.processedRecords = response.processedRecords;
@@ -4301,76 +4110,36 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         const partnerCount = this.response.partnerOnly ? this.response.partnerOnly.length : 0;
                         const matchesCount = this.response.matches ? this.response.matches.length : 0;
                         this.totalRecords = boCount + partnerCount + matchesCount;
-                        console.log('📊 Calcul automatique du totalRecords:', this.totalRecords);
                     }
-                    console.log('⏱️ Calcul totalRecords:', `${(performance.now() - totalStartTime).toFixed(2)}ms`);
                     
                     // Calculer et mettre en cache les statistiques immédiatement
                     const statsStartTime = performance.now();
                     this.getTotalTransactions(); // Calcule et met en cache
                     this.getMatchRate(); // Calcule et met en cache
-                    console.log('⏱️ Calcul statistiques:', `${(performance.now() - statsStartTime).toFixed(2)}ms`);
                     
                     // NE PAS précharger automatiquement - Lazy Loading uniquement à l'activation de l'onglet
                     // Cela évite de charger des données inutiles si l'utilisateur ne visite pas tous les onglets
-                    console.log('📦 Lazy Loading activé - Les données seront chargées uniquement à l\'activation des onglets');
                     
                     // Forcer l'affichage immédiat des résultats après l'initialisation
-                    console.log('🟢 [NGONINIT] ============================================');
-                    console.log('🟢 [NGONINIT] Forçage de l\'affichage des résultats...');
                     const detectChangesStartTime = performance.now();
                     
                     // Vérifier que les données paginées sont bien initialisées
-                    console.log('🟢 [NGONINIT] Vérification des données avant rendu:', {
-                        filteredMatchesCount: this.filteredMatchesCount,
-                        filteredBoOnlyCount: this.filteredBoOnlyCount,
-                        filteredPartnerOnlyCount: this.filteredPartnerOnlyCount,
-                        pagedMatches: this.pagedMatches?.length || 0,
-                        pagedBoOnly: this.pagedBoOnly?.length || 0,
-                        pagedPartnerOnly: this.pagedPartnerOnly?.length || 0,
-                        activeTab: this.activeTab,
-                        showMatchesList: this.showMatchesList,
-                        matchesLoaded: this.matchesLoaded
-                    });
                     
                     // Forcer le rendu immédiatement (sans attendre requestAnimationFrame)
                     // Avec OnPush, on doit forcer detectChanges() pour garantir le rendu
-                    console.log('🟢 [NGONINIT] Appel markForCheck()...');
                     this.cdr.markForCheck();
-                    console.log('🟢 [NGONINIT] Appel detectChanges()...');
                     this.cdr.detectChanges();
-                    console.log('🟢 [NGONINIT] Rendu immédiat effectué');
                     
                     // Utiliser requestAnimationFrame pour un rendu supplémentaire après le cycle actuel
                     requestAnimationFrame(() => {
-                        console.log('🟢 [NGONINIT] Rendu supplémentaire dans RAF...');
                         this.cdr.markForCheck();
                         this.cdr.detectChanges();
                         const detectChangesDuration = performance.now() - detectChangesStartTime;
-                        console.log(`🟢 [NGONINIT] Rendu forcé terminé: ${detectChangesDuration.toFixed(2)}ms`);
-                        console.log('🟢 [NGONINIT] État final pour affichage:', {
-                            filteredMatchesCount: this.filteredMatchesCount,
-                            filteredBoOnlyCount: this.filteredBoOnlyCount,
-                            filteredPartnerOnlyCount: this.filteredPartnerOnlyCount,
-                            pagedMatches: this.pagedMatches?.length || 0,
-                            activeTab: this.activeTab,
-                            showMatchesList: this.showMatchesList
-                        });
-                        console.log('🟢 [NGONINIT] ============================================');
                     });
                     
                     const totalInitDuration = performance.now() - initDataStartTime;
-                    console.log('⏱️ ⏱️ ⏱️ TEMPS TOTAL D\'INITIALISATION:', `${totalInitDuration.toFixed(2)}ms`, `(${(totalInitDuration / 1000).toFixed(2)}s)`);
-                    console.log('📊 Détail des temps:', {
-                        'Réception données': `${(dataReceiveStartTime - initStartTime).toFixed(2)}ms`,
-                        'Filtrage': `${filterDuration.toFixed(2)}ms`,
-                        'Vidage cache': `${(performance.now() - cacheStartTime).toFixed(2)}ms`,
-                        'Progression': `${(performance.now() - progressStartTime).toFixed(2)}ms`,
-                        'Total records': `${(performance.now() - totalStartTime).toFixed(2)}ms`
-                    });
                 } else {
                     // Pas de résultats : purger l'affichage des anciens résultats
-                    console.log('🗑️ [NGONINIT] Pas de résultats - purge des anciennes données');
                     this.response = null;
                     this.filteredMatches = [];
                     this.filteredBoOnly = [];
@@ -4409,19 +4178,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     private initializeFilteredData() {
         const startTime = performance.now();
-        console.log('🔧 [INITFILTERED] Initialisation des données filtrées...', `[${new Date().toISOString()}]`);
-        console.log('📊 [INITFILTERED] Response:', {
-            hasResponse: !!this.response,
-            matchesCount: this.response?.matches?.length || 0,
-            boOnlyCount: this.response?.boOnly?.length || 0,
-            partnerOnlyCount: this.response?.partnerOnly?.length || 0,
-            mismatchesCount: this.response?.mismatches?.length || 0
-        });
         
         // Récupérer le jobId depuis le service
         const jobIdStartTime = performance.now();
         this.currentJobId = this.reconciliationService.getCurrentJobId();
-        console.log('⏱️ Récupération jobId:', `${(performance.now() - jobIdStartTime).toFixed(2)}ms`);
         
         // Pour les fichiers volumineux, initialiser les tableaux vides
         // Les données détaillées seront chargées à la demande
@@ -4434,48 +4194,38 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.matchesLoaded = false;
         this.boOnlyLoaded = false;
         this.partnerOnlyLoaded = false;
-        console.log('⏱️ Initialisation tableaux:', `${(performance.now() - initArraysStartTime).toFixed(2)}ms`);
         
         // Si les données sont déjà présentes dans la réponse (petits fichiers), les utiliser et mettre en cache
         const filterMatchesStartTime = performance.now();
         if (this.response?.matches && this.response.matches.length > 0) {
-            console.log('🔄 Filtrage des matches...', `(${this.response.matches.length} matches à traiter)`);
             this.filteredMatches = this.getFilteredMatches();
             this.matchesLoaded = true;
             this.setCache('matches', this.filteredMatches);
             this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
-            console.log('⏱️ Filtrage matches terminé:', `${(performance.now() - filterMatchesStartTime).toFixed(2)}ms`, `(${this.filteredMatchesCount} matches filtrés)`);
         } else {
             this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
-            console.log('⏱️ Pas de matches à filtrer:', `${(performance.now() - filterMatchesStartTime).toFixed(2)}ms`);
         }
         
         const filterBoOnlyStartTime = performance.now();
         if ((this.response?.mismatches && this.response.mismatches.length > 0) || 
             (this.response?.boOnly && this.response.boOnly.length > 0)) {
             const totalBoOnly = (this.response?.mismatches?.length || 0) + (this.response?.boOnly?.length || 0);
-            console.log('🔄 Filtrage des boOnly...', `(${totalBoOnly} éléments à traiter)`);
             this.filteredBoOnly = this.getFilteredBoOnly();
             this.boOnlyLoaded = true;
             this.setCache('boOnly', this.filteredBoOnly);
             this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
-            console.log('⏱️ Filtrage boOnly terminé:', `${(performance.now() - filterBoOnlyStartTime).toFixed(2)}ms`, `(${this.filteredBoOnlyCount} éléments filtrés)`);
         } else {
             this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
-            console.log('⏱️ Pas de boOnly à filtrer:', `${(performance.now() - filterBoOnlyStartTime).toFixed(2)}ms`);
         }
         
         const filterPartnerOnlyStartTime = performance.now();
         if (this.response?.partnerOnly && this.response.partnerOnly.length > 0) {
-            console.log('🔄 Filtrage des partnerOnly...', `(${this.response.partnerOnly.length} éléments à traiter)`);
             this.filteredPartnerOnly = this.getFilteredPartnerOnly();
             this.partnerOnlyLoaded = true;
             this.setCache('partnerOnly', this.filteredPartnerOnly);
             this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
-            console.log('⏱️ Filtrage partnerOnly terminé:', `${(performance.now() - filterPartnerOnlyStartTime).toFixed(2)}ms`, `(${this.filteredPartnerOnlyCount} éléments filtrés)`);
         } else {
             this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
-            console.log('⏱️ Pas de partnerOnly à filtrer:', `${(performance.now() - filterPartnerOnlyStartTime).toFixed(2)}ms`);
         }
         
         // Partager les données filtrées avec le service pour le rapport
@@ -4489,24 +4239,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             this.reconciliationTabsService.setMagicViewContext('', '');
             this.appStateService.setSelectedMagicService('');
         }
-        console.log('⏱️ Partage données avec service:', `${(performance.now() - shareDataStartTime).toFixed(2)}ms`);
         
         const totalDuration = performance.now() - startTime;
-        console.log('✅ Données filtrées initialisées:', `${totalDuration.toFixed(2)}ms au total`);
-        console.log('📊 Résultats:', {
-            FilteredMatches: this.filteredMatches.length,
-            FilteredBoOnly: this.filteredBoOnly.length,
-            FilteredPartnerOnly: this.filteredPartnerOnly.length,
-            JobId: this.currentJobId
-        });
-        console.log('📊 Détail des temps de filtrage:', {
-            'Récupération jobId': `${(jobIdStartTime - startTime).toFixed(2)}ms`,
-            'Init tableaux': `${(initArraysStartTime - jobIdStartTime).toFixed(2)}ms`,
-            'Filtrage matches': `${(filterMatchesStartTime - initArraysStartTime).toFixed(2)}ms`,
-            'Filtrage boOnly': `${(filterBoOnlyStartTime - filterMatchesStartTime).toFixed(2)}ms`,
-            'Filtrage partnerOnly': `${(filterPartnerOnlyStartTime - filterBoOnlyStartTime).toFixed(2)}ms`,
-            'Partage données': `${(shareDataStartTime - filterPartnerOnlyStartTime).toFixed(2)}ms`
-        });
         
         // Désactiver le flag d'initialisation
         this.isInitializing = false;
@@ -4523,36 +4257,17 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Mettre à jour les données paginées une seule fois à la fin de l'initialisation
         // Pour tous les volumes, différer le calcul du cache des clés pour un affichage instantané
         const updatePagedStartTime = performance.now();
-        console.log('🟢 [INITFILTERED] ============================================');
-        console.log('🟢 [INITFILTERED] Mise à jour des données paginées pour affichage immédiat...');
-        console.log('🟢 [INITFILTERED] État avant updatePagedData:', {
-            filteredMatches: this.filteredMatches.length,
-            filteredBoOnly: this.filteredBoOnly.length,
-            filteredPartnerOnly: this.filteredPartnerOnly.length,
-            matchesPage: this.matchesPage,
-            activeTab: this.activeTab
-        });
         
         this.updatePagedData(true); // Skip keys cache (sera calculé de manière asynchrone en arrière-plan)
         const updatePagedDuration = performance.now() - updatePagedStartTime;
-        console.log(`🟢 [INITFILTERED] updatePagedData terminé: ${updatePagedDuration.toFixed(2)}ms`);
-        console.log('🟢 [INITFILTERED] Données paginées initialisées:', {
-            pagedMatches: this.pagedMatches?.length || 0,
-            pagedBoOnly: this.pagedBoOnly?.length || 0,
-            pagedPartnerOnly: this.pagedPartnerOnly?.length || 0,
-            activeTab: this.activeTab,
-            showMatchesList: this.showMatchesList
-        });
         
         // Forcer l'affichage immédiat des résultats (sans attendre les calculs de volumes)
         const forceRenderStartTime = performance.now();
-        console.log('🟢 [INITFILTERED] Forçage du rendu IMMÉDIAT pour affichage (volumes calculés en arrière-plan)...');
         // Forcer le rendu immédiatement (sans attendre requestAnimationFrame)
         this.cdr.markForCheck();
         this.cdr.detectChanges();
         
         // Démarrer le calcul asynchrone des volumes en arrière-plan
-        console.log('🟢 [INITFILTERED] Démarrage du calcul asynchrone des volumes...');
         this.calculateVolumesAsync();
         
         // Utiliser requestAnimationFrame pour un rendu supplémentaire après le cycle actuel
@@ -4560,12 +4275,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             this.cdr.markForCheck();
             this.cdr.detectChanges();
             const forceRenderDuration = performance.now() - forceRenderStartTime;
-            console.log(`🟢 [INITFILTERED] Rendu forcé terminé: ${forceRenderDuration.toFixed(2)}ms`);
-            console.log('🟢 [INITFILTERED] ============================================');
         });
         
         const totalInitDuration = performance.now() - startTime;
-        console.log('✅ [INITFILTERED] initializeFilteredData terminé:', `${totalInitDuration.toFixed(2)}ms`);
     }
     
     /**
@@ -4670,7 +4382,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.updateCalculatedProperties();
         
         const searchDuration = performance.now() - searchStartTime;
-        console.log('⏱️ Recherche terminée:', `${searchDuration.toFixed(2)}ms`);
         this.cdr.markForCheck();
     }
 
@@ -4688,43 +4399,21 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private updateCalculatedProperties(skipPagedDataUpdate: boolean = false): void {
         const updateStartTime = performance.now();
-        console.log('🟣 [UPDATE_CALCULATED] ============================================');
-        console.log('🟣 [UPDATE_CALCULATED] Début updateCalculatedProperties()', `[${new Date().toISOString()}]`);
-        console.log('🟣 [UPDATE_CALCULATED] Paramètres:', {
-            skipPagedDataUpdate,
-            isInitializing: this.isInitializing
-        });
         
         const step1Start = performance.now();
-        console.log('🟣 [UPDATE_CALCULATED] Étape 1: Calcul des compteurs...');
         this.filteredMatchesCount = this.filteredMatches.length;
         this.filteredBoOnlyCount = this.filteredBoOnly.length;
         this.filteredPartnerOnlyCount = this.filteredPartnerOnly.length;
         const step1Duration = performance.now() - step1Start;
-        console.log(`🟣 [UPDATE_CALCULATED] Étape 1 terminée: ${step1Duration.toFixed(2)}ms`);
-        console.log('🟣 [UPDATE_CALCULATED] Compteurs:', {
-            filteredMatchesCount: this.filteredMatchesCount,
-            filteredBoOnlyCount: this.filteredBoOnlyCount,
-            filteredPartnerOnlyCount: this.filteredPartnerOnlyCount
-        });
         
         const step2Start = performance.now();
-        console.log('🟣 [UPDATE_CALCULATED] Étape 2: Calcul des pages totales...');
         this.totalMatchesPages = Math.max(1, Math.ceil(this.filteredMatchesCount / this.pageSize));
         this.totalBoOnlyPages = Math.max(1, Math.ceil(this.filteredBoOnlyCount / this.pageSize));
         this.totalPartnerOnlyPages = Math.max(1, Math.ceil(this.filteredPartnerOnlyCount / this.pageSize));
         const step2Duration = performance.now() - step2Start;
-        console.log(`🟣 [UPDATE_CALCULATED] Étape 2 terminée: ${step2Duration.toFixed(2)}ms`);
-        console.log('🟣 [UPDATE_CALCULATED] Pages totales:', {
-            totalMatchesPages: this.totalMatchesPages,
-            totalBoOnlyPages: this.totalBoOnlyPages,
-            totalPartnerOnlyPages: this.totalPartnerOnlyPages,
-            pageSize: this.pageSize
-        });
         
         // Étape 2.5: Mettre à jour matchRate et totalTransactions
         const step2_5Start = performance.now();
-        console.log('🟣 [UPDATE_CALCULATED] Étape 2.5: Mise à jour matchRate et totalTransactions...');
         // Invalider le cache pour forcer le recalcul
         this.cachedMatchRate = null;
         this.cachedTotalTransactions = null;
@@ -4732,27 +4421,16 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.getTotalTransactions();
         this.getMatchRate();
         const step2_5Duration = performance.now() - step2_5Start;
-        console.log(`🟣 [UPDATE_CALCULATED] Étape 2.5 terminée: ${step2_5Duration.toFixed(2)}ms`);
-        console.log('🟣 [UPDATE_CALCULATED] Statistiques:', {
-            totalTransactions: this.totalTransactions,
-            matchRate: this.matchRate.toFixed(2) + '%',
-            filteredMatchesCount: this.filteredMatchesCount
-        });
         
         // Mettre à jour les pages paginées uniquement si demandé (évite les recalculs multiples pendant l'initialisation)
         if (!skipPagedDataUpdate && !this.isInitializing) {
             const step3Start = performance.now();
-            console.log('🟣 [UPDATE_CALCULATED] Étape 3: Appel updatePagedData()...');
             this.updatePagedData();
             const step3Duration = performance.now() - step3Start;
-            console.log(`🟣 [UPDATE_CALCULATED] Étape 3 terminée: ${step3Duration.toFixed(2)}ms`);
         } else {
-            console.log('🟣 [UPDATE_CALCULATED] Étape 3: updatePagedData() ignoré (skipPagedDataUpdate ou isInitializing)');
         }
         
         const updateDuration = performance.now() - updateStartTime;
-        console.log(`🟣 [UPDATE_CALCULATED] Durée totale: ${updateDuration.toFixed(2)}ms`, skipPagedDataUpdate ? '(sans updatePagedData)' : '');
-        console.log('🟣 [UPDATE_CALCULATED] ============================================');
     }
     
     /**
@@ -4761,27 +4439,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private updatePagedData(skipKeysCache: boolean = false): void {
         const updateStartTime = performance.now();
-        console.log('🔵 [UPDATE_PAGED_DATA] ============================================');
-        console.log('🔵 [UPDATE_PAGED_DATA] Début updatePagedData()', `[${new Date().toISOString()}]`);
-        console.log('🔵 [UPDATE_PAGED_DATA] Paramètres:', {
-            skipKeysCache,
-            activeTab: this.activeTab,
-            matchesPage: this.matchesPage,
-            boOnlyPage: this.boOnlyPage,
-            partnerOnlyPage: this.partnerOnlyPage,
-            filteredMatchesLength: this.filteredMatches?.length || 0,
-            filteredBoOnlyLength: this.filteredBoOnly?.length || 0,
-            filteredPartnerOnlyLength: this.filteredPartnerOnly?.length || 0
-        });
         
         // Mettre à jour les pages paginées
         const step1Start = performance.now();
-        console.log('🔵 [UPDATE_PAGED_DATA] Étape 1: Mise à jour des données paginées...');
-        console.log('🔵 [UPDATE_PAGED_DATA] Avant getPagedMatches:', {
-            filteredMatches: this.filteredMatches?.length || 0,
-            matchesPage: this.matchesPage,
-            pageSize: this.pageSize
-        });
         
         // Initialiser directement les données paginées pour un affichage immédiat
         const matchesStart = (this.matchesPage - 1) * this.pageSize;
@@ -4803,17 +4463,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.cachedPartnerOnlyPage = this.partnerOnlyPage;
         
         const step1Duration = performance.now() - step1Start;
-        console.log(`🔵 [UPDATE_PAGED_DATA] Étape 1 terminée: ${step1Duration.toFixed(2)}ms`);
-        console.log('🔵 [UPDATE_PAGED_DATA] Données paginées mises à jour DIRECTEMENT:', {
-            pagedMatches: this.pagedMatches?.length || 0,
-            pagedBoOnly: this.pagedBoOnly?.length || 0,
-            pagedPartnerOnly: this.pagedPartnerOnly?.length || 0,
-            showMatchesList: this.showMatchesList,
-            activeTab: this.activeTab,
-            'Slice matches': `${matchesStart}-${matchesEnd}`,
-            'Slice boOnly': `${boOnlyStart}-${boOnlyEnd}`,
-            'Slice partnerOnly': `${partnerOnlyStart}-${partnerOnlyEnd}`
-        });
         
         // Précalculer les clés pour chaque match de la page actuelle (évite les recalculs dans *ngFor)
         // Pour les gros volumes, différer ce calcul pour ne pas bloquer l'UI
@@ -4833,11 +4482,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
         
         const totalDuration = performance.now() - updateStartTime;
-        console.log(`🔵 [UPDATE_PAGED_DATA] Durée totale: ${totalDuration.toFixed(2)}ms`);
-        console.log('🔵 [UPDATE_PAGED_DATA] ============================================');
         
         // Forcer le rendu IMMÉDIAT après la mise à jour des données paginées (sans attendre requestAnimationFrame)
-        console.log('🔵 [UPDATE_PAGED_DATA] Forçage du rendu IMMÉDIAT...');
         this.cdr.markForCheck();
         this.cdr.detectChanges(); // Forcer immédiatement le rendu
         
@@ -4845,7 +4491,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         requestAnimationFrame(() => {
             this.cdr.markForCheck();
             this.cdr.detectChanges();
-            console.log('🔵 [UPDATE_PAGED_DATA] Rendu supplémentaire effectué (dans RAF)');
         });
     }
     
@@ -4909,10 +4554,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         
         const cacheDuration = performance.now() - cacheStartTime;
         if (cacheDuration > 1) {
-            console.log('⏱️ [KEYS_CACHE] updateKeysCache terminé:', {
-                'Durée': `${cacheDuration.toFixed(2)}ms`,
-                'Matches paginés': matchesToCache.length
-            });
         }
         
         // Marquer pour détection de changement uniquement si nécessaire
@@ -4964,7 +4605,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         
         // Log pour debug
         if (this.cachedPagedMatches.length > 0) {
-            console.log(`🔵 [GET_PAGED_MATCHES] Page ${this.matchesPage}: ${this.cachedPagedMatches.length} matches (de ${start} à ${end})`);
         }
         
         return this.cachedPagedMatches;
@@ -5024,145 +4664,114 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     setActiveTab(tab: 'matches' | 'boOnly' | 'partnerOnly' | 'agencySummary') {
         const tabSwitchStartTime = performance.now();
-        console.log('🔄 [SETACTIVETAB] setActiveTab appelé avec:', tab, `[${new Date().toISOString()}]`);
         
         const setActiveTabStartTime = performance.now();
         this.activeTab = tab;
         this.agencyPage = 1;
         const setActiveTabDuration = performance.now() - setActiveTabStartTime;
-        console.log('⏱️ [SETACTIVETAB] Initialisation activeTab et agencyPage:', `${setActiveTabDuration.toFixed(2)}ms`);
         
         // Lazy Loading : Charger les données uniquement à l'activation de l'onglet
         // Prévention des doublons : vérifier qu'un chargement n'est pas déjà en cours
         if (tab === 'matches' && !this.matchesLoaded && !this.isLoadingMatches) {
             const lazyLoadStartTime = performance.now();
             const cacheKey = 'matches';
-            console.log('🔍 [SETACTIVETAB] Vérification cache pour matches...');
             
             const cacheCheckStartTime = performance.now();
             const cachedData = this.getFromCache('matches');
             const cacheCheckDuration = performance.now() - cacheCheckStartTime;
-            console.log('⏱️ [SETACTIVETAB] Vérification cache matches:', `${cacheCheckDuration.toFixed(2)}ms`, cachedData ? '(données trouvées)' : '(cache vide)');
             
             if (cachedData) {
                 const cacheLoadStartTime = performance.now();
-                console.log('✅ [SETACTIVETAB] Données matches récupérées depuis le cache');
                 this.filteredMatches = cachedData;
                 this.matchesLoaded = true;
                 
                 const updatePropsStartTime = performance.now();
                 this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
                 const updatePropsDuration = performance.now() - updatePropsStartTime;
-                console.log('⏱️ [SETACTIVETAB] updateCalculatedProperties pour matches:', `${updatePropsDuration.toFixed(2)}ms`);
                 
                 const shareDataStartTime = performance.now();
                 this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
                 const shareDataDuration = performance.now() - shareDataStartTime;
-                console.log('⏱️ [SETACTIVETAB] Partage données matches avec service:', `${shareDataDuration.toFixed(2)}ms`);
                 
                 const cacheLoadDuration = performance.now() - cacheLoadStartTime;
-                console.log('⏱️ [SETACTIVETAB] Chargement depuis cache matches terminé:', `${cacheLoadDuration.toFixed(2)}ms`);
             } else if (!this.loadingPromises.has(cacheKey)) {
                 const asyncLoadStartTime = performance.now();
-                console.log('🔄 [SETACTIVETAB] Démarrage chargement asynchrone matches...');
                 // Créer une promesse de chargement pour éviter les doublons
                 const loadPromise = this.loadMatchesDataLazy();
                 this.loadingPromises.set(cacheKey, loadPromise);
                 loadPromise.finally(() => {
                     this.loadingPromises.delete(cacheKey);
                     const asyncLoadDuration = performance.now() - asyncLoadStartTime;
-                    console.log('✅ [SETACTIVETAB] Chargement asynchrone matches terminé:', `${asyncLoadDuration.toFixed(2)}ms`);
                 });
             } else {
-                console.log('⏳ [SETACTIVETAB] Chargement matches déjà en cours, attente...');
                 this.loadingPromises.get(cacheKey)?.then(() => {
-                    console.log('✅ [SETACTIVETAB] Chargement matches terminé');
                 });
             }
             const lazyLoadDuration = performance.now() - lazyLoadStartTime;
-            console.log('⏱️ [SETACTIVETAB] Lazy loading matches total:', `${lazyLoadDuration.toFixed(2)}ms`);
         } else if (tab === 'boOnly' && !this.boOnlyLoaded && !this.isLoadingBoOnly) {
             const lazyLoadStartTime = performance.now();
             const cacheKey = 'boOnly';
-            console.log('🔍 [SETACTIVETAB] Vérification cache pour boOnly...');
             
             const cacheCheckStartTime = performance.now();
             const cachedData = this.getFromCache('boOnly');
             const cacheCheckDuration = performance.now() - cacheCheckStartTime;
-            console.log('⏱️ [SETACTIVETAB] Vérification cache boOnly:', `${cacheCheckDuration.toFixed(2)}ms`, cachedData ? '(données trouvées)' : '(cache vide)');
             
             if (cachedData) {
                 const cacheLoadStartTime = performance.now();
-                console.log('✅ [SETACTIVETAB] Données boOnly récupérées depuis le cache');
                 this.filteredBoOnly = cachedData;
                 this.boOnlyLoaded = true;
                 
                 const updatePropsStartTime = performance.now();
                 this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
                 const updatePropsDuration = performance.now() - updatePropsStartTime;
-                console.log('⏱️ [SETACTIVETAB] updateCalculatedProperties pour boOnly:', `${updatePropsDuration.toFixed(2)}ms`);
                 
                 const shareDataStartTime = performance.now();
                 this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
                 const shareDataDuration = performance.now() - shareDataStartTime;
-                console.log('⏱️ [SETACTIVETAB] Partage données boOnly avec service:', `${shareDataDuration.toFixed(2)}ms`);
                 
                 const cacheLoadDuration = performance.now() - cacheLoadStartTime;
-                console.log('⏱️ [SETACTIVETAB] Chargement depuis cache boOnly terminé:', `${cacheLoadDuration.toFixed(2)}ms`);
             } else if (!this.loadingPromises.has(cacheKey)) {
                 const asyncLoadStartTime = performance.now();
-                console.log('🔄 [SETACTIVETAB] Démarrage chargement asynchrone boOnly...');
                 const loadPromise = this.loadBoOnlyDataLazy();
                 this.loadingPromises.set(cacheKey, loadPromise);
                 loadPromise.finally(() => {
                     this.loadingPromises.delete(cacheKey);
                     const asyncLoadDuration = performance.now() - asyncLoadStartTime;
-                    console.log('✅ [SETACTIVETAB] Chargement asynchrone boOnly terminé:', `${asyncLoadDuration.toFixed(2)}ms`);
                 });
             }
             const lazyLoadDuration = performance.now() - lazyLoadStartTime;
-            console.log('⏱️ [SETACTIVETAB] Lazy loading boOnly total:', `${lazyLoadDuration.toFixed(2)}ms`);
         } else if (tab === 'partnerOnly' && !this.partnerOnlyLoaded && !this.isLoadingPartnerOnly) {
             const lazyLoadStartTime = performance.now();
             const cacheKey = 'partnerOnly';
-            console.log('🔍 [SETACTIVETAB] Vérification cache pour partnerOnly...');
             
             const cacheCheckStartTime = performance.now();
             const cachedData = this.getFromCache('partnerOnly');
             const cacheCheckDuration = performance.now() - cacheCheckStartTime;
-            console.log('⏱️ [SETACTIVETAB] Vérification cache partnerOnly:', `${cacheCheckDuration.toFixed(2)}ms`, cachedData ? '(données trouvées)' : '(cache vide)');
             
             if (cachedData) {
                 const cacheLoadStartTime = performance.now();
-                console.log('✅ [SETACTIVETAB] Données partnerOnly récupérées depuis le cache');
                 this.filteredPartnerOnly = cachedData;
                 this.partnerOnlyLoaded = true;
                 
                 const updatePropsStartTime = performance.now();
                 this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
                 const updatePropsDuration = performance.now() - updatePropsStartTime;
-                console.log('⏱️ [SETACTIVETAB] updateCalculatedProperties pour partnerOnly:', `${updatePropsDuration.toFixed(2)}ms`);
                 
                 const shareDataStartTime = performance.now();
                 this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
                 const shareDataDuration = performance.now() - shareDataStartTime;
-                console.log('⏱️ [SETACTIVETAB] Partage données partnerOnly avec service:', `${shareDataDuration.toFixed(2)}ms`);
                 
                 const cacheLoadDuration = performance.now() - cacheLoadStartTime;
-                console.log('⏱️ [SETACTIVETAB] Chargement depuis cache partnerOnly terminé:', `${cacheLoadDuration.toFixed(2)}ms`);
             } else if (!this.loadingPromises.has(cacheKey)) {
                 const asyncLoadStartTime = performance.now();
-                console.log('🔄 [SETACTIVETAB] Démarrage chargement asynchrone partnerOnly...');
                 const loadPromise = this.loadPartnerOnlyDataLazy();
                 this.loadingPromises.set(cacheKey, loadPromise);
                 loadPromise.finally(() => {
                     this.loadingPromises.delete(cacheKey);
                     const asyncLoadDuration = performance.now() - asyncLoadStartTime;
-                    console.log('✅ [SETACTIVETAB] Chargement asynchrone partnerOnly terminé:', `${asyncLoadDuration.toFixed(2)}ms`);
                 });
             }
             const lazyLoadDuration = performance.now() - lazyLoadStartTime;
-            console.log('⏱️ [SETACTIVETAB] Lazy loading partnerOnly total:', `${lazyLoadDuration.toFixed(2)}ms`);
         }
         
         const markForCheckStartTime = performance.now();
@@ -5170,10 +4779,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Avec OnPush, markForCheck() est suffisant et plus rapide
         this.cdr.markForCheck();
         const markForCheckDuration = performance.now() - markForCheckStartTime;
-        console.log('⏱️ [SETACTIVETAB] markForCheck:', `${markForCheckDuration.toFixed(2)}ms`);
         
         const tabSwitchDuration = performance.now() - tabSwitchStartTime;
-        console.log('✅ [SETACTIVETAB] setActiveTab terminé pour:', tab, `[${tabSwitchDuration.toFixed(2)}ms]`);
     }
     
     /**
@@ -5181,12 +4788,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private async loadMatchesDataLazy(): Promise<void> {
         const loadStartTime = performance.now();
-        console.log('🔄 loadMatchesDataLazy démarré (Lazy Loading)', `[${new Date().toISOString()}]`);
         
         // Vérifier le cache d'abord
         const cachedData = this.getFromCache('matches');
         if (cachedData) {
-            console.log('✅ Données matches récupérées depuis le cache');
             this.filteredMatches = cachedData;
             this.matchesLoaded = true;
             this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
@@ -5195,7 +4800,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         
         // Si les données sont déjà dans la réponse (petits fichiers), les utiliser
         if (this.response?.matches && this.response.matches.length > 0) {
-            console.log('✅ Données matches déjà présentes dans la réponse');
             this.filteredMatches = this.getFilteredMatches();
             this.matchesLoaded = true;
             this.setCache('matches', this.filteredMatches);
@@ -5208,7 +4812,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
         
         if (!this.currentJobId) {
-            console.warn('⚠️ Aucun jobId disponible pour charger les matches');
             return;
         }
         
@@ -5220,7 +4823,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             // Charger toutes les pages avec traitement par chunks
             await this.loadAllMatchesChunked(0, [], loadStartTime);
         } catch (error) {
-            console.error('❌ Erreur lors du chargement lazy des matches:', error);
             this.isLoadingMatches = false;
             this.cdr.detectChanges();
         }
@@ -5231,7 +4833,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private async loadAllMatchesChunked(page: number, accumulatedMatches: Match[], overallStartTime: number): Promise<void> {
         const pageStartTime = performance.now();
-        console.log(`📥 Chargement page ${page + 1} des matches (chunk ${this.CHUNK_SIZE})...`);
         
         return new Promise((resolve, reject) => {
             this.reconciliationService.getMatches(this.currentJobId!, page, this.CHUNK_SIZE).subscribe({
@@ -5249,13 +4850,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     await this.processChunked(response.matches, accumulatedMatches, 'matches');
                     const processDuration = performance.now() - processStartTime;
                     
-                    console.log(`⏱️ Page ${page + 1}/${response.totalPages} chargée:`, {
-                        'Durée réseau': `${networkDuration.toFixed(2)}ms`,
-                        'Durée traitement': `${processDuration.toFixed(2)}ms`,
-                        'Matches reçus': response.matches.length,
-                        'Total accumulé': accumulatedMatches.length,
-                        'Progression': `${this.loadingProgress.matches.percentage}%`
-                    });
                     
                     // Mettre à jour l'UI périodiquement
                     if (page % 5 === 0 || page + 1 >= response.totalPages) {
@@ -5295,11 +4889,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         const shareDuration = performance.now() - shareStartTime;
                         
                         const totalDuration = performance.now() - overallStartTime;
-                        console.log(`✅ ${accumulatedMatches.length} matches chargés en ${totalDuration.toFixed(2)}ms (${(totalDuration / 1000).toFixed(2)}s)`);
-                        console.log('📊 Détail finalisation:', {
-                            'Filtrage': `${filterDuration.toFixed(2)}ms`,
-                            'Partage données': `${shareDuration.toFixed(2)}ms`
-                        });
                         
                         // Dernière mise à jour UI
                         requestAnimationFrame(() => {
@@ -5312,7 +4901,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 },
                 error: (error) => {
                     const errorDuration = performance.now() - pageStartTime;
-                    console.error(`❌ Erreur lors du chargement de la page ${page + 1} des matches (après ${errorDuration.toFixed(2)}ms):`, error);
                     this.isLoadingMatches = false;
                     this.cdr.detectChanges();
                     reject(error);
@@ -5349,7 +4937,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private loadAllMatches(page: number, accumulatedMatches: Match[], overallStartTime: number): void {
         const pageStartTime = performance.now();
-        console.log(`📥 Chargement page ${page + 1} des matches...`);
         
         this.reconciliationService.getMatches(this.currentJobId!, page, 1000).subscribe({
             next: (response) => {
@@ -5360,12 +4947,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 accumulatedMatches.push(...response.matches);
                 const pushDuration = performance.now() - pushStartTime;
                 
-                console.log(`⏱️ Page ${page + 1}/${response.totalPages} chargée:`, {
-                    'Durée réseau': `${networkDuration.toFixed(2)}ms`,
-                    'Durée push': `${pushDuration.toFixed(2)}ms`,
-                    'Matches reçus': response.matches.length,
-                    'Total accumulé': accumulatedMatches.length
-                });
                 
                 if (page + 1 < response.totalPages) {
                     // Charger la page suivante
@@ -5395,18 +4976,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     const detectChangesDuration = performance.now() - detectChangesStartTime;
                     
                     const totalDuration = performance.now() - overallStartTime;
-                    console.log(`✅ ${accumulatedMatches.length} matches chargés en ${totalDuration.toFixed(2)}ms (${(totalDuration / 1000).toFixed(2)}s)`);
-                    console.log('📊 Détail finalisation:', {
-                        'Mise à jour response': `${(filterStartTime - finalizeStartTime).toFixed(2)}ms`,
-                        'Filtrage': `${filterDuration.toFixed(2)}ms`,
-                        'Partage données': `${shareDuration.toFixed(2)}ms`,
-                        'DetectChanges': `${detectChangesDuration.toFixed(2)}ms`
-                    });
                 }
             },
             error: (error) => {
                 const errorDuration = performance.now() - pageStartTime;
-                console.error(`❌ Erreur lors du chargement de la page ${page + 1} des matches (après ${errorDuration.toFixed(2)}ms):`, error);
                 this.isLoadingMatches = false;
                 this.cdr.detectChanges();
             }
@@ -5418,12 +4991,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private async loadBoOnlyDataLazy(): Promise<void> {
         const loadStartTime = performance.now();
-        console.log('🔄 loadBoOnlyDataLazy démarré (Lazy Loading)', `[${new Date().toISOString()}]`);
         
         // Vérifier le cache d'abord
         const cachedData = this.getFromCache('boOnly');
         if (cachedData) {
-            console.log('✅ Données boOnly récupérées depuis le cache');
             this.filteredBoOnly = cachedData;
             this.boOnlyLoaded = true;
             this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
@@ -5433,7 +5004,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Si les données sont déjà dans la réponse, les utiliser
         if ((this.response?.mismatches && this.response.mismatches.length > 0) || 
             (this.response?.boOnly && this.response.boOnly.length > 0)) {
-            console.log('✅ Données boOnly déjà présentes dans la réponse');
             this.filteredBoOnly = this.getFilteredBoOnly();
             this.boOnlyLoaded = true;
             this.setCache('boOnly', this.filteredBoOnly);
@@ -5446,7 +5016,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
         
         if (!this.currentJobId) {
-            console.warn('⚠️ Aucun jobId disponible pour charger les boOnly');
             return;
         }
         
@@ -5463,7 +5032,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 this.loadAllMismatchesChunked(0, [], loadStartTime)
             ]);
         } catch (error) {
-            console.error('❌ Erreur lors du chargement lazy des boOnly:', error);
             this.isLoadingBoOnly = false;
             this.cdr.detectChanges();
         }
@@ -5474,7 +5042,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private async loadAllBoOnlyChunked(page: number, accumulatedBoOnly: Record<string, string>[], overallStartTime: number): Promise<void> {
         const pageStartTime = performance.now();
-        console.log(`📥 Chargement page ${page + 1} des boOnly (chunk ${this.CHUNK_SIZE})...`);
         
         return new Promise((resolve, reject) => {
             this.reconciliationService.getBoOnly(this.currentJobId!, page, this.CHUNK_SIZE).subscribe({
@@ -5492,13 +5059,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     await this.processChunked(response.boOnly, accumulatedBoOnly, 'boOnly');
                     const processDuration = performance.now() - processStartTime;
                     
-                    console.log(`⏱️ Page ${page + 1}/${response.totalPages} boOnly chargée:`, {
-                        'Durée réseau': `${networkDuration.toFixed(2)}ms`,
-                        'Durée traitement': `${processDuration.toFixed(2)}ms`,
-                        'BoOnly reçus': response.boOnly.length,
-                        'Total accumulé': accumulatedBoOnly.length,
-                        'Progression': `${this.loadingProgress.boOnly.percentage}%`
-                    });
                     
                     if (page + 1 < response.totalPages) {
                         await this.yieldToBrowser();
@@ -5513,7 +5073,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 },
                 error: (error) => {
                     const errorDuration = performance.now() - pageStartTime;
-                    console.error(`❌ Erreur lors du chargement de la page ${page + 1} des boOnly (après ${errorDuration.toFixed(2)}ms):`, error);
                     reject(error);
                 }
             });
@@ -5533,7 +5092,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.isLoadingBoOnly = false;
         this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
         const totalDuration = performance.now() - overallStartTime;
-        console.log(`✅ Écarts BO chargés en ${totalDuration.toFixed(2)}ms (filtrage: ${filterDuration.toFixed(2)}ms)`);
         requestAnimationFrame(() => {
             this.cdr.markForCheck();
             this.cdr.detectChanges();
@@ -5545,7 +5103,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private async loadAllMismatchesChunked(page: number, accumulatedMismatches: Record<string, string>[], overallStartTime: number): Promise<void> {
         const pageStartTime = performance.now();
-        console.log(`📥 Chargement page ${page + 1} des mismatches (chunk ${this.CHUNK_SIZE})...`);
         
         return new Promise((resolve, reject) => {
             this.reconciliationService.getMismatches(this.currentJobId!, page, this.CHUNK_SIZE).subscribe({
@@ -5558,12 +5115,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     await this.processChunked(response.mismatches, accumulatedMismatches, 'boOnly');
                     const processDuration = performance.now() - processStartTime;
                     
-                    console.log(`⏱️ Page ${page + 1}/${response.totalPages} mismatches chargée:`, {
-                        'Durée réseau': `${networkDuration.toFixed(2)}ms`,
-                        'Durée traitement': `${processDuration.toFixed(2)}ms`,
-                        'Mismatches reçus': response.mismatches.length,
-                        'Total accumulé': accumulatedMismatches.length
-                    });
                     
                     if (page + 1 < response.totalPages) {
                         await this.yieldToBrowser();
@@ -5578,7 +5129,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 },
                 error: (error) => {
                     const errorDuration = performance.now() - pageStartTime;
-                    console.error(`❌ Erreur lors du chargement de la page ${page + 1} des mismatches (après ${errorDuration.toFixed(2)}ms):`, error);
                     this.mismatchesChunkedDone = true;
                     this.tryFinalizeBoOnlyLoading(performance.now(), 0, 'mismatches');
                     resolve();
@@ -5592,7 +5142,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private loadAllBoOnly(page: number, accumulatedBoOnly: Record<string, string>[], overallStartTime: number): void {
         const pageStartTime = performance.now();
-        console.log(`📥 Chargement page ${page + 1} des boOnly...`);
         
         this.reconciliationService.getBoOnly(this.currentJobId!, page, 1000).subscribe({
             next: (response) => {
@@ -5603,12 +5152,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 accumulatedBoOnly.push(...response.boOnly);
                 const pushDuration = performance.now() - pushStartTime;
                 
-                console.log(`⏱️ Page ${page + 1}/${response.totalPages} boOnly chargée:`, {
-                    'Durée réseau': `${networkDuration.toFixed(2)}ms`,
-                    'Durée push': `${pushDuration.toFixed(2)}ms`,
-                    'BoOnly reçus': response.boOnly.length,
-                    'Total accumulé': accumulatedBoOnly.length
-                });
                 
                 if (page + 1 < response.totalPages) {
                     this.loadAllBoOnly(page + 1, accumulatedBoOnly, overallStartTime);
@@ -5634,11 +5177,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         const shareDuration = performance.now() - shareStartTime;
                         
                         const totalDuration = performance.now() - overallStartTime;
-                        console.log(`✅ ${accumulatedBoOnly.length} boOnly chargés en ${totalDuration.toFixed(2)}ms`);
-                        console.log('📊 Détail finalisation boOnly:', {
-                            'Filtrage': `${filterDuration.toFixed(2)}ms`,
-                            'Partage données': `${shareDuration.toFixed(2)}ms`
-                        });
                         
                         // Différer detectChanges pour éviter de bloquer l'UI
                         setTimeout(() => {
@@ -5647,7 +5185,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                                 this.cdr.markForCheck();
                                 this.cdr.detectChanges();
                                 const detectChangesDuration = performance.now() - detectChangesStartTime;
-                                console.log('⏱️ detectChanges (après chargement boOnly):', `${detectChangesDuration.toFixed(2)}ms`);
                             });
                         }, 0);
                     }
@@ -5655,7 +5192,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             },
             error: (error) => {
                 const errorDuration = performance.now() - pageStartTime;
-                console.error(`❌ Erreur lors du chargement de la page ${page + 1} des boOnly (après ${errorDuration.toFixed(2)}ms):`, error);
                 this.isLoadingBoOnly = false;
                 this.cdr.detectChanges();
             }
@@ -5667,7 +5203,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private loadAllMismatches(page: number, accumulatedMismatches: Record<string, string>[], overallStartTime: number): void {
         const pageStartTime = performance.now();
-        console.log(`📥 Chargement page ${page + 1} des mismatches...`);
         
         this.reconciliationService.getMismatches(this.currentJobId!, page, 1000).subscribe({
             next: (response) => {
@@ -5678,12 +5213,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 accumulatedMismatches.push(...response.mismatches);
                 const pushDuration = performance.now() - pushStartTime;
                 
-                console.log(`⏱️ Page ${page + 1}/${response.totalPages} mismatches chargée:`, {
-                    'Durée réseau': `${networkDuration.toFixed(2)}ms`,
-                    'Durée push': `${pushDuration.toFixed(2)}ms`,
-                    'Mismatches reçus': response.mismatches.length,
-                    'Total accumulé': accumulatedMismatches.length
-                });
                 
                 if (page + 1 < response.totalPages) {
                     this.loadAllMismatches(page + 1, accumulatedMismatches, overallStartTime);
@@ -5709,11 +5238,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         const shareDuration = performance.now() - shareStartTime;
                         
                         const totalDuration = performance.now() - overallStartTime;
-                        console.log(`✅ ${accumulatedMismatches.length} mismatches chargés en ${totalDuration.toFixed(2)}ms`);
-                        console.log('📊 Détail finalisation mismatches:', {
-                            'Filtrage': `${filterDuration.toFixed(2)}ms`,
-                            'Partage données': `${shareDuration.toFixed(2)}ms`
-                        });
                         
                         // Différer detectChanges pour éviter de bloquer l'UI
                         setTimeout(() => {
@@ -5722,7 +5246,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                                 this.cdr.markForCheck();
                                 this.cdr.detectChanges();
                                 const detectChangesDuration = performance.now() - detectChangesStartTime;
-                                console.log('⏱️ detectChanges (après chargement mismatches):', `${detectChangesDuration.toFixed(2)}ms`);
                             });
                         }, 0);
                     }
@@ -5730,7 +5253,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             },
             error: (error) => {
                 const errorDuration = performance.now() - pageStartTime;
-                console.error(`❌ Erreur lors du chargement de la page ${page + 1} des mismatches (après ${errorDuration.toFixed(2)}ms):`, error);
                 // Continuer même si les mismatches échouent
                 if (this.response?.boOnly && this.response.boOnly.length > 0) {
                     this.filteredBoOnly = this.getFilteredBoOnly();
@@ -5747,12 +5269,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private async loadPartnerOnlyDataLazy(): Promise<void> {
         const loadStartTime = performance.now();
-        console.log('🔄 loadPartnerOnlyDataLazy démarré (Lazy Loading)', `[${new Date().toISOString()}]`);
         
         // Vérifier le cache d'abord
         const cachedData = this.getFromCache('partnerOnly');
         if (cachedData) {
-            console.log('✅ Données partnerOnly récupérées depuis le cache');
             this.filteredPartnerOnly = cachedData;
             this.partnerOnlyLoaded = true;
             this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
@@ -5761,7 +5281,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         
         // Si les données sont déjà dans la réponse, les utiliser
         if (this.response?.partnerOnly && this.response.partnerOnly.length > 0) {
-            console.log('✅ Données partnerOnly déjà présentes dans la réponse');
             this.filteredPartnerOnly = this.getFilteredPartnerOnly();
             this.partnerOnlyLoaded = true;
             this.setCache('partnerOnly', this.filteredPartnerOnly);
@@ -5774,7 +5293,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
         
         if (!this.currentJobId) {
-            console.warn('⚠️ Aucun jobId disponible pour charger les partnerOnly');
             return;
         }
         
@@ -5785,7 +5303,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         try {
             await this.loadAllPartnerOnlyChunked(0, [], loadStartTime);
         } catch (error) {
-            console.error('❌ Erreur lors du chargement lazy des partnerOnly:', error);
             this.isLoadingPartnerOnly = false;
             this.cdr.detectChanges();
         }
@@ -5796,7 +5313,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private async loadAllPartnerOnlyChunked(page: number, accumulatedPartnerOnly: Record<string, string>[], overallStartTime: number): Promise<void> {
         const pageStartTime = performance.now();
-        console.log(`📥 Chargement page ${page + 1} des partnerOnly (chunk ${this.CHUNK_SIZE})...`);
         
         return new Promise((resolve, reject) => {
             this.reconciliationService.getPartnerOnly(this.currentJobId!, page, this.CHUNK_SIZE).subscribe({
@@ -5814,13 +5330,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     await this.processChunked(response.partnerOnly, accumulatedPartnerOnly, 'partnerOnly');
                     const processDuration = performance.now() - processStartTime;
                     
-                    console.log(`⏱️ Page ${page + 1}/${response.totalPages} partnerOnly chargée:`, {
-                        'Durée réseau': `${networkDuration.toFixed(2)}ms`,
-                        'Durée traitement': `${processDuration.toFixed(2)}ms`,
-                        'PartnerOnly reçus': response.partnerOnly.length,
-                        'Total accumulé': accumulatedPartnerOnly.length,
-                        'Progression': `${this.loadingProgress.partnerOnly.percentage}%`
-                    });
                     
                     // Mettre à jour l'UI périodiquement
                     if (page % 5 === 0 || page + 1 >= response.totalPages) {
@@ -5858,11 +5367,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         const shareDuration = performance.now() - shareStartTime;
                         
                         const totalDuration = performance.now() - overallStartTime;
-                        console.log(`✅ ${accumulatedPartnerOnly.length} partnerOnly chargés en ${totalDuration.toFixed(2)}ms (${(totalDuration / 1000).toFixed(2)}s)`);
-                        console.log('📊 Détail finalisation partnerOnly:', {
-                            'Filtrage': `${filterDuration.toFixed(2)}ms`,
-                            'Partage données': `${shareDuration.toFixed(2)}ms`
-                        });
                         
                         // Dernière mise à jour UI
                         requestAnimationFrame(() => {
@@ -5875,7 +5379,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 },
                 error: (error) => {
                     const errorDuration = performance.now() - pageStartTime;
-                    console.error(`❌ Erreur lors du chargement de la page ${page + 1} des partnerOnly (après ${errorDuration.toFixed(2)}ms):`, error);
                     this.isLoadingPartnerOnly = false;
                     this.cdr.detectChanges();
                     reject(error);
@@ -5889,7 +5392,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private loadAllPartnerOnly(page: number, accumulatedPartnerOnly: Record<string, string>[], overallStartTime: number): void {
         const pageStartTime = performance.now();
-        console.log(`📥 Chargement page ${page + 1} des partnerOnly...`);
         
         this.reconciliationService.getPartnerOnly(this.currentJobId!, page, 1000).subscribe({
             next: (response) => {
@@ -5900,12 +5402,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 accumulatedPartnerOnly.push(...response.partnerOnly);
                 const pushDuration = performance.now() - pushStartTime;
                 
-                console.log(`⏱️ Page ${page + 1}/${response.totalPages} partnerOnly chargée:`, {
-                    'Durée réseau': `${networkDuration.toFixed(2)}ms`,
-                    'Durée push': `${pushDuration.toFixed(2)}ms`,
-                    'PartnerOnly reçus': response.partnerOnly.length,
-                    'Total accumulé': accumulatedPartnerOnly.length
-                });
                 
                 if (page + 1 < response.totalPages) {
                     this.loadAllPartnerOnly(page + 1, accumulatedPartnerOnly, overallStartTime);
@@ -5930,12 +5426,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     const shareDuration = performance.now() - shareStartTime;
                     
                     const totalDuration = performance.now() - overallStartTime;
-                    console.log(`✅ ${accumulatedPartnerOnly.length} partnerOnly chargés en ${totalDuration.toFixed(2)}ms (${(totalDuration / 1000).toFixed(2)}s)`);
-                    console.log('📊 Détail finalisation partnerOnly:', {
-                        'Mise à jour response': `${(filterStartTime - finalizeStartTime).toFixed(2)}ms`,
-                        'Filtrage': `${filterDuration.toFixed(2)}ms`,
-                        'Partage données': `${shareDuration.toFixed(2)}ms`
-                    });
                     
                     // Différer detectChanges pour éviter de bloquer l'UI
                     setTimeout(() => {
@@ -5944,14 +5434,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                             this.cdr.markForCheck();
                             this.cdr.detectChanges();
                             const detectChangesDuration = performance.now() - detectChangesStartTime;
-                            console.log('⏱️ detectChanges (après chargement partnerOnly):', `${detectChangesDuration.toFixed(2)}ms`);
                         });
                     }, 0);
                 }
             },
             error: (error) => {
                 const errorDuration = performance.now() - pageStartTime;
-                console.error(`❌ Erreur lors du chargement de la page ${page + 1} des partnerOnly (après ${errorDuration.toFixed(2)}ms):`, error);
                 this.isLoadingPartnerOnly = false;
                 this.cdr.detectChanges();
             }
@@ -5959,81 +5447,48 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     openReconciliationReport() {
-        console.log('📈 Ouverture du rapport de réconciliation...');
 
         // Toujours reconstruire le résumé depuis les données actuelles afin que le rapport
         // reflète systématiquement la réconciliation en cours (et non un cache périmé).
         if (this.response && (this.filteredMatches.length > 0 || this.filteredBoOnly.length > 0 || this.filteredPartnerOnly.length > 0)) {
-            console.log('📊 Données disponibles, reconstruction du résumé depuis les données actuelles...');
             // Vider l'ancien cache avant de reconstruire
             this.reconciliationSummaryService.clearAgencySummary();
             const summary = this.getAgencySummary();
-            console.log('✅ Résumé reconstruit:', summary.length, 'éléments');
             this.router.navigate(['/reconciliation-report']);
             return;
         }
 
         // Sinon, naviguer immédiatement (les données seront chargées en arrière-plan)
-        console.log('⏳ Pas de données disponibles, navigation immédiate (chargement en arrière-plan)');
         this.router.navigate(['/reconciliation-report']);
     }
 
     nextPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
         const pageStartTime = performance.now();
-        console.log(`🟢 [NEXT_PAGE] ============================================`);
-        console.log(`🟢 [NEXT_PAGE] nextPage(${type}) appelé`, `[${new Date().toISOString()}]`);
-        console.log(`🟢 [NEXT_PAGE] Page actuelle:`, {
-            matches: this.matchesPage,
-            boOnly: this.boOnlyPage,
-            partnerOnly: this.partnerOnlyPage
-        });
-        console.log(`🟢 [NEXT_PAGE] Total pages:`, {
-            matches: this.getTotalPages('matches'),
-            boOnly: this.getTotalPages('boOnly'),
-            partnerOnly: this.getTotalPages('partnerOnly')
-        });
-        console.log(`🟢 [NEXT_PAGE] Données disponibles:`, {
-            filteredMatches: this.filteredMatches?.length || 0,
-            filteredBoOnly: this.filteredBoOnly?.length || 0,
-            filteredPartnerOnly: this.filteredPartnerOnly?.length || 0
-        });
         
         if (type === 'matches' && this.matchesPage < this.getTotalPages('matches')) {
             const step1Start = performance.now();
-            console.log(`🟢 [NEXT_PAGE] Étape 1: Incrémentation page matches...`);
             this.matchesPage++;
             this.cachedPagedMatches = null; // Invalider le cache
             const step1Duration = performance.now() - step1Start;
-            console.log(`🟢 [NEXT_PAGE] Étape 1 terminée: ${step1Duration.toFixed(2)}ms (page: ${this.matchesPage})`);
             
             const step2Start = performance.now();
-            console.log(`🟢 [NEXT_PAGE] Étape 2: Calcul slice sur filteredMatches...`);
-            console.log(`🟢 [NEXT_PAGE] filteredMatches.length: ${this.filteredMatches?.length || 0}`);
-            console.log(`🟢 [NEXT_PAGE] pageSize: ${this.pageSize}`);
             const start = (this.matchesPage - 1) * this.pageSize;
             const end = start + this.pageSize;
-            console.log(`🟢 [NEXT_PAGE] Slice de ${start} à ${end}`);
             this.pagedMatches = (this.filteredMatches || []).slice(start, end);
             this.cachedPagedMatches = this.pagedMatches;
             this.cachedMatchesPage = this.matchesPage;
             const step2Duration = performance.now() - step2Start;
-            console.log(`🟢 [NEXT_PAGE] Étape 2 terminée: ${step2Duration.toFixed(2)}ms (${this.pagedMatches.length} éléments)`);
             
             const step3Start = performance.now();
-            console.log(`🟢 [NEXT_PAGE] Étape 3: Planification updateKeysCache...`);
             requestAnimationFrame(() => {
                 const cacheStart = performance.now();
-                console.log(`🟢 [NEXT_PAGE] updateKeysCache démarré (dans RAF)`);
                 this.updateKeysCache();
                 const cacheDuration = performance.now() - cacheStart;
-                console.log(`🟢 [NEXT_PAGE] updateKeysCache terminé: ${cacheDuration.toFixed(2)}ms`);
             });
             const step3Duration = performance.now() - step3Start;
-            console.log(`🟢 [NEXT_PAGE] Étape 3 terminée: ${step3Duration.toFixed(2)}ms (planifié)`);
         }
         if (type === 'boOnly' && this.boOnlyPage < this.getTotalPages('boOnly')) {
             const step1Start = performance.now();
-            console.log(`🟢 [NEXT_PAGE] Étape 1: Incrémentation page boOnly...`);
             this.boOnlyPage++;
             this.cachedPagedBoOnly = null;
             const start = (this.boOnlyPage - 1) * this.pageSize;
@@ -6041,11 +5496,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             this.cachedPagedBoOnly = this.pagedBoOnly;
             this.cachedBoOnlyPage = this.boOnlyPage;
             const step1Duration = performance.now() - step1Start;
-            console.log(`🟢 [NEXT_PAGE] boOnly terminé: ${step1Duration.toFixed(2)}ms`);
         }
         if (type === 'partnerOnly' && this.partnerOnlyPage < this.getTotalPages('partnerOnly')) {
             const step1Start = performance.now();
-            console.log(`🟢 [NEXT_PAGE] Étape 1: Incrémentation page partnerOnly...`);
             this.partnerOnlyPage++;
             this.cachedPagedPartnerOnly = null;
             const start = (this.partnerOnlyPage - 1) * this.pageSize;
@@ -6053,23 +5506,16 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             this.cachedPagedPartnerOnly = this.pagedPartnerOnly;
             this.cachedPartnerOnlyPage = this.partnerOnlyPage;
             const step1Duration = performance.now() - step1Start;
-            console.log(`🟢 [NEXT_PAGE] partnerOnly terminé: ${step1Duration.toFixed(2)}ms`);
         }
         const pageDuration = performance.now() - pageStartTime;
-        console.log(`🟢 [NEXT_PAGE] Durée totale nextPage(${type}): ${pageDuration.toFixed(2)}ms`);
         
         const step4Start = performance.now();
-        console.log(`🟢 [NEXT_PAGE] Étape 4: Planification markForCheck...`);
         requestAnimationFrame(() => {
             const markStart = performance.now();
-            console.log(`🟢 [NEXT_PAGE] markForCheck appelé (dans RAF)`);
             this.cdr.markForCheck();
             const markDuration = performance.now() - markStart;
-            console.log(`🟢 [NEXT_PAGE] markForCheck terminé: ${markDuration.toFixed(2)}ms`);
         });
         const step4Duration = performance.now() - step4Start;
-        console.log(`🟢 [NEXT_PAGE] Étape 4 terminée: ${step4Duration.toFixed(2)}ms (planifié)`);
-        console.log(`🟢 [NEXT_PAGE] ============================================`);
     }
 
     prevPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
@@ -6108,7 +5554,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
         const pageDuration = performance.now() - pageStartTime;
         if (pageDuration > 1) {
-            console.log(`⏱️ prevPage(${type}):`, `${pageDuration.toFixed(2)}ms`);
         }
         // Utiliser requestAnimationFrame pour un rendu plus fluide
         requestAnimationFrame(() => {
@@ -6547,8 +5992,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     if (forceTab !== undefined) {
         this.activeTab = forceTab;
     }
-    console.log('Début de l\'export...');
-    console.log('Onglet actif:', this.activeTab);
 
     try {
         this.isExporting = true;
@@ -6558,22 +6001,16 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Demander le nom du fichier à l'utilisateur
         const fileName = await this.promptFileName();
         if (!fileName) {
-            console.log('Export annulé par l\'utilisateur');
             return;
         }
 
         // Première étape : Génération des fichiers
-        console.log('Début de la génération des fichiers...');
         const workbooks = await this.generateExcelFile();
-        console.log('Fichiers Excel générés avec succès');
 
         // Deuxième étape : Téléchargement
-        console.log('Début du téléchargement...');
         await this.downloadExcelFile(workbooks, fileName);
-        console.log('Téléchargement terminé avec succès');
 
     } catch (error) {
-        console.error('Erreur lors de l\'export:', error);
     } finally {
         this.isExporting = false;
         this.exportProgress = 0;
@@ -6622,9 +6059,7 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
     // const MAX_ROWS_PER_FILE = 50000;
 
     if (this.activeTab === 'matches') {
-        console.log('Export des correspondances...');
         const filteredMatches = this.getFilteredMatches();
-        console.log('Nombre de correspondances à exporter:', filteredMatches.length);
         
         if (filteredMatches.length > 0) {
             // Récupérer toutes les clés des données BO et Partenaire
@@ -6647,8 +6082,6 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             const boKeysArray = Array.from(allBoKeys);
             const partnerKeysArray = Array.from(allPartnerKeys);
             
-            console.log('Colonnes BO:', boKeysArray);
-            console.log('Colonnes Partenaire:', partnerKeysArray);
 
             // Styles Excel
             const headerStyle = {
@@ -6743,12 +6176,9 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 await new Promise(resolve => setTimeout(resolve, 10));
             }
             workbooks.push(workbook);
-            console.log(`Fichier unique terminé avec ${currentRow - 1} lignes`);
         }
     } else if (this.activeTab === 'boOnly') {
-        console.log('Export des données BO uniquement...');
         const filteredBoOnly = this.getFilteredBoOnly();
-        console.log('Nombre d\'enregistrements BO à exporter:', filteredBoOnly.length);
         
         if (filteredBoOnly.length > 0) {
             const workbook = new ExcelJS.Workbook();
@@ -6756,7 +6186,6 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             
             // Détecter les doublons TSOP
             const duplicatesMap = this.detectTSOPDuplicates(filteredBoOnly);
-            console.log('🔍 Doublons TSOP détectés pour ECART BO:', duplicatesMap.size);
             
             // Récupérer toutes les clés
             const allKeys = new Set<string>();
@@ -6864,13 +6293,11 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                     row.eachCell(cell => {
                         cell.style = tsorDuplicateStyle;
                     });
-                    console.log(`🟥 Ligne ECART BO ${index + 2} colorée en rouge (TSOP)`);
                 } else if (boOnlyType === 'TRXSF') {
                     // Style vert pour TRXSF (écarts BO avec une seule correspondance)
                     row.eachCell(cell => {
                         cell.style = trxsfStyle;
                     });
-                    console.log(`🟩 Ligne ECART BO ${index + 2} colorée en vert (TRXSF)`);
                 } else {
                     // Style normal
                     row.eachCell(cell => {
@@ -6887,9 +6314,7 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             workbooks.push(workbook);
         }
     } else if (this.activeTab === 'partnerOnly') {
-        console.log('Export des données Partenaire uniquement...');
         const filteredPartnerOnly = this.getFilteredPartnerOnly();
-        console.log('Nombre d\'enregistrements Partenaire à exporter:', filteredPartnerOnly.length);
         
         if (filteredPartnerOnly.length > 0) {
             const workbook = new ExcelJS.Workbook();
@@ -6897,7 +6322,6 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             
             // Détecter les doublons TSOP
             const duplicatesMap = this.detectTSOPDuplicates(filteredPartnerOnly);
-            console.log('🔍 Doublons TSOP détectés:', duplicatesMap.size);
             
             // Récupérer toutes les clés
             const allKeys = new Set<string>();
@@ -6997,25 +6421,21 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                     row.eachCell(cell => {
                         cell.style = regularisationFraisStyle;
                     });
-                    console.log(`🟠 Ligne ${index + 2} colorée en orange (Écart)`);
                 } else if (commentaire === 'TRXSF') {
                     // Style vert pour TRXSF
                     row.eachCell(cell => {
                         cell.style = trxsfStyle;
                     });
-                    console.log(`🟩 Ligne ${index + 2} colorée en vert (TRXSF)`);
                 } else if (tsopType === 'TSF') {
                     // Style jaune pour TSF (IMPACT sans FRAIS)
                     row.eachCell(cell => {
                         cell.style = tsorSansFraisStyle;
                     });
-                    console.log(`🟡 Ligne ${index + 2} colorée en jaune (TSF)`);
                 } else if (tsopType === 'C_FRAIS') {
                     // Style orange pour C FRAIS (FRAIS_TRANSACTION)
                     row.eachCell(cell => {
                         cell.style = regularisationFraisStyle;
                     });
-                    console.log(`🟠 Ligne ${index + 2} colorée en orange (C FRAIS)`);
                 } else {
                     // Style normal
                     row.eachCell(cell => {
@@ -7036,9 +6456,7 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             workbooks.push(workbook);
         }
     } else if (this.activeTab === 'agencySummary') {
-        console.log('Export du résumé par agence...');
         const agencySummary = this.getAgencySummary();
-        console.log('Nombre d\'éléments du résumé à exporter:', agencySummary.length);
         
         if (agencySummary.length > 0) {
             const workbook = new ExcelJS.Workbook();
@@ -7083,7 +6501,6 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
 
     // Si aucun workbook n'a été créé, créer un fichier par défaut
     if (workbooks.length === 0) {
-        console.log('Aucune donnée à exporter, création d\'un fichier vide');
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Aucune Donnée');
         worksheet.addRow(['Aucune donnée disponible pour l\'export']);
@@ -7098,7 +6515,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     if (workbooks.length === 0) return;
     const workbook = workbooks[0];
     try {
-        console.log('Début du téléchargement du fichier unique...');
         const buffer = await workbook.xlsx.writeBuffer({
             useStyles: true,
             useSharedStrings: false
@@ -7123,9 +6539,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         await new Promise(resolve => setTimeout(resolve, 1000));
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
-        console.log(`Fichier téléchargé avec succès : ${fileName}`);
     } catch (error) {
-        console.error(`Erreur lors du téléchargement du fichier :`, error);
         throw error;
     }
 }
@@ -7139,7 +6553,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         if (forceTab !== undefined) {
             this.activeTab = forceTab;
         }
-        console.log('🚀 Début de l\'export optimisé...', 'onglet:', this.activeTab);
 
         try {
             this.isExporting = true;
@@ -7155,7 +6568,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             // Demander le nom du fichier à l'utilisateur
             const fileName = await this.promptFileName();
             if (!fileName) {
-                console.log('Export annulé par l\'utilisateur');
                 this.isExporting = false;
                 return;
             }
@@ -7164,7 +6576,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             const { rows, columns } = this.prepareDataForExport();
             
             if (rows.length === 0) {
-                console.log('Aucune donnée à exporter');
                 this.popupService.showWarning('Aucune donnée à exporter avec les filtres actuels.');
                 this.isExporting = false;
                 return;
@@ -7217,7 +6628,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                     this.exportOptimizationService.exportQuick(rows, columns, fileName, format);
                     this.popupService.showSuccess('Export réussi !');
                 } catch (e: any) {
-                    console.error('❌ Erreur exportQuick:', e);
                     this.popupService.showError(e?.message || 'Erreur lors de l\'export');
                 } finally {
                     this.isExporting = false;
@@ -7225,7 +6635,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 }
             }
         } catch (error) {
-            console.error('❌ Erreur lors de l\'export optimisé:', error);
             this.popupService.showError((error as any)?.message || 'Erreur lors de l\'export optimisé');
             this.isExporting = false;
             this.cdr.detectChanges();
@@ -7318,7 +6727,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         }
 
         this.router.navigate([entryPath], { queryParams }).catch(error => {
-            console.error('Erreur lors de la navigation vers une nouvelle réconciliation:', error);
         });
     }
 
@@ -7327,14 +6735,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.calculateTotalVolumeCallCount++;
         const startTime = performance.now();
         if (this.calculateTotalVolumeCallCount <= 5) {
-            console.log(`🔴 [TEMPLATE] calculateTotalVolume(${type}) appelé (${this.calculateTotalVolumeCallCount} fois)`, `[${new Date().toISOString()}]`);
         }
         
         // Utiliser le cache si disponible pour éviter les recalculs coûteux
         if (type === 'bo' && this.cachedTotalVolumeBo !== null) {
             const duration = performance.now() - startTime;
             if (this.calculateTotalVolumeCallCount <= 5) {
-                console.log(`🔴 [TEMPLATE] calculateTotalVolume(${type}) depuis cache: ${duration.toFixed(2)}ms (résultat: ${this.cachedTotalVolumeBo})`);
             }
             return this.cachedTotalVolumeBo;
         }
@@ -7342,14 +6748,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         if (type === 'partner' && this.cachedTotalVolumePartner !== null) {
             const duration = performance.now() - startTime;
             if (this.calculateTotalVolumeCallCount <= 5) {
-                console.log(`🔴 [TEMPLATE] calculateTotalVolume(${type}) depuis cache: ${duration.toFixed(2)}ms (résultat: ${this.cachedTotalVolumePartner})`);
             }
             return this.cachedTotalVolumePartner;
         }
         
         // Si pas de cache, retourner 0 temporairement et calculer en arrière-plan
         if (type === 'partner' && !this.isCalculatingVolumes) {
-            console.log(`🔴 [TEMPLATE] calculateTotalVolume(${type}) - Calcul différé en arrière-plan pour ne pas bloquer l'affichage`);
             this.calculateVolumesAsync();
             return 0; // Retourner 0 temporairement pendant le calcul
         }
@@ -7381,7 +6785,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         const duration = performance.now() - startTime;
         if (duration > 1 || this.calculateTotalVolumeCallCount <= 5) {
-            console.log(`🔴 [TEMPLATE] calculateTotalVolume(${type}) terminé: ${duration.toFixed(2)}ms (résultat: ${result})`);
         }
         return result;
     }
@@ -7395,7 +6798,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         }
         
         this.isCalculatingVolumes = true;
-        console.log('🟡 [VOLUMES] Début calcul asynchrone des volumes en arrière-plan...');
         
         // Calculer en arrière-plan avec yield au navigateur
         setTimeout(async () => {
@@ -7417,7 +6819,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 }
             }
             const boDuration = performance.now() - boStart;
-            console.log(`🟡 [VOLUMES] Volume BO calculé: ${boDuration.toFixed(2)}ms (${this.cachedTotalVolumeBo})`);
             
             // Calculer le volume Partner (lent - par chunks)
             const partnerStart = performance.now();
@@ -7425,7 +6826,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             const partnerOnlyVolume = this.calculateTotalVolumePartnerOnly();
             this.cachedTotalVolumePartner = matchesVolume + partnerOnlyVolume;
             const partnerDuration = performance.now() - partnerStart;
-            console.log(`🟡 [VOLUMES] Volume Partner calculé: ${partnerDuration.toFixed(2)}ms (${this.cachedTotalVolumePartner})`);
             
             // Calculer la différence
             this.cachedVolumeDifference = (this.cachedTotalVolumeBo || 0) - (this.cachedTotalVolumePartner || 0);
@@ -7436,12 +6836,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             this.volumeDifference = this.cachedVolumeDifference;
             
             const totalDuration = performance.now() - startTime;
-            console.log(`🟡 [VOLUMES] Calcul des volumes terminé: ${totalDuration.toFixed(2)}ms`);
-            console.log('🟡 [VOLUMES] Résultats:', {
-                bo: this.cachedTotalVolumeBo,
-                partner: this.cachedTotalVolumePartner,
-                difference: this.cachedVolumeDifference
-            });
             
             this.isCalculatingVolumes = false;
             
@@ -7625,14 +7019,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.calculateVolumeDifferenceCallCount++;
         const startTime = performance.now();
         if (this.calculateVolumeDifferenceCallCount <= 5) {
-            console.log(`🔴 [TEMPLATE] calculateVolumeDifference() appelé (${this.calculateVolumeDifferenceCallCount} fois)`, `[${new Date().toISOString()}]`);
         }
         
         // Utiliser le cache si disponible
         if (this.cachedVolumeDifference !== null) {
             const duration = performance.now() - startTime;
             if (this.calculateVolumeDifferenceCallCount <= 5) {
-                console.log(`🔴 [TEMPLATE] calculateVolumeDifference() depuis cache: ${duration.toFixed(2)}ms (résultat: ${this.cachedVolumeDifference})`);
             }
             return this.cachedVolumeDifference;
         }
@@ -7649,7 +7041,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         const duration = performance.now() - startTime;
         if (duration > 1 || this.calculateVolumeDifferenceCallCount <= 5) {
-            console.log(`🔴 [TEMPLATE] calculateVolumeDifference() terminé: ${duration.toFixed(2)}ms (résultat: ${result})`);
         }
         return result;
     }
@@ -7783,7 +7174,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         // Debug: log si volume est 0 mais qu'on a des données
         if (volume === 0 && Object.keys(boData).length > 0) {
-            console.warn(`⚠️ [getBoAgencyAndService] Volume=0. Colonnes disponibles:`, Object.keys(boData));
         }
         
         const date = getValueWithFallback(['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'created', 'Created', 'CREATED']) || '';
@@ -7870,7 +7260,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         // Debug: log si volume est 0 mais qu'on a des données
         if (volume === 0 && Object.keys(record).length > 0) {
-            console.warn(`⚠️ [getBoOnlyAgencyAndService] Volume=0. Colonnes disponibles:`, Object.keys(record));
         }
         
         // Recherche de date avec plusieurs noms possibles
@@ -7956,7 +7345,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         // Debug: log si volume est 0 mais qu'on a des données
         if (volume === 0 && Object.keys(record).length > 0) {
-            console.warn(`⚠️ [getPartnerOnlyAgencyAndService] Volume=0. Colonnes disponibles:`, Object.keys(record));
         }
         
         // Recherche de date avec plusieurs noms possibles
@@ -8028,12 +7416,10 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         );
         
         if (isGrxFile) {
-            console.log('🔍 DEBUG determineCountryFromContext - Fichier GRX détecté');
             
             // 2. Vérifier la colonne GRX pour déterminer le pays
             const grxValue = data['GRX'];
             if (grxValue && grxValue.trim() !== '') {
-                console.log('🔍 DEBUG determineCountryFromContext - Valeur GRX trouvée:', grxValue);
                 // Pour les fichiers GRX, le pays est généralement déterminé par la valeur GRX
                 // ou par défaut, on peut utiliser le pays de l'agence
                 return 'GRX'; // ou déterminer le pays réel à partir de la valeur GRX
@@ -8042,7 +7428,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             // 3. Vérifier l'agence pour déterminer le pays
             const agency = data['Agence'];
             if (agency && agency.trim() !== '') {
-                console.log('🔍 DEBUG determineCountryFromContext - Agence trouvée:', agency);
                 // Déterminer le pays à partir du code de l'agence
                 if (agency.includes('CM')) {
                     return 'CM'; // Cameroun
@@ -8056,7 +7441,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             }
             
             // 4. Par défaut pour les fichiers GRX, utiliser le pays de l'agence ou un pays par défaut
-            console.log('🔍 DEBUG determineCountryFromContext - Utilisation du pays par défaut pour GRX');
             return 'GRX'; // ou 'CM' selon votre logique métier
         }
         
@@ -8115,7 +7499,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             
             // Debug: log pour voir les volumes extraits
             if (boInfo.volume > 0) {
-                console.log(`🔍 [AGENCY_SUMMARY] Match - Agence: ${boInfo.agency}, Service: ${boInfo.service}, Volume: ${boInfo.volume}`, match.boData);
             }
             
             if (!summaryMap.has(key)) {
@@ -8141,7 +7524,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             
             // Debug: log pour voir les volumes extraits
             if (boInfo.volume > 0) {
-                console.log(`🔍 [AGENCY_SUMMARY] BO Only - Agence: ${boInfo.agency}, Service: ${boInfo.service}, Volume: ${boInfo.volume}`, record);
             }
             
             if (!summaryMap.has(key)) {
@@ -8186,7 +7568,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.getPagedAgencySummaryCallCount++;
         const startTime = performance.now();
         if (this.getPagedAgencySummaryCallCount <= 5) {
-            console.log(`🔴 [TEMPLATE] getPagedAgencySummary() appelé (${this.getPagedAgencySummaryCallCount} fois)`, `[${new Date().toISOString()}]`);
         }
         
         const currentHash = this.getAgencySummaryHash();
@@ -8194,7 +7575,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         if (this.cachedPagedAgencySummary && this.lastAgencySummaryHash === currentHash) {
             const duration = performance.now() - startTime;
             if (this.getPagedAgencySummaryCallCount <= 5) {
-                console.log(`🔴 [TEMPLATE] getPagedAgencySummary() (cache): ${duration.toFixed(2)}ms`);
             }
             return this.cachedPagedAgencySummary;
         }
@@ -8206,7 +7586,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         const duration = performance.now() - startTime;
         if (duration > 1 || this.getPagedAgencySummaryCallCount <= 5) {
-            console.log(`🔴 [TEMPLATE] getPagedAgencySummary() terminé: ${duration.toFixed(2)}ms (${this.cachedPagedAgencySummary.length} éléments)`);
         }
         return this.cachedPagedAgencySummary;
     }
@@ -8245,7 +7624,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.getTotalTransactionsCallCount++;
         const startTime = performance.now();
         if (this.getTotalTransactionsCallCount <= 5) {
-            console.log(`🔴 [TEMPLATE] getTotalTransactions() appelé (${this.getTotalTransactionsCallCount} fois)`, `[${new Date().toISOString()}]`);
         }
         
         // Nombre de transactions = correspondances + écarts BO
@@ -8272,7 +7650,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         const duration = performance.now() - startTime;
         if (duration > 0.1 || this.getTotalTransactionsCallCount <= 5) {
-            console.log(`🔴 [TEMPLATE] getTotalTransactions() terminé: ${duration.toFixed(2)}ms (résultat: ${result}, matches: ${matches}, boOnly: ${boMismatches})`);
         }
         return result;
     }
@@ -8287,14 +7664,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.getMatchRateCallCount++;
         const startTime = performance.now();
         if (this.getMatchRateCallCount <= 5) {
-            console.log(`🔴 [TEMPLATE] getMatchRate() appelé (${this.getMatchRateCallCount} fois)`, `[${new Date().toISOString()}]`);
         }
         
         const total = this.getTotalTransactions();
         if (total === 0) {
             const duration = performance.now() - startTime;
             if (this.getMatchRateCallCount <= 5) {
-                console.log(`🔴 [TEMPLATE] getMatchRate() terminé: ${duration.toFixed(2)}ms (résultat: 0)`);
             }
             // Mettre en cache et mettre à jour la propriété publique
             this.cachedMatchRate = 0;
@@ -8310,7 +7685,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         const duration = performance.now() - startTime;
         if (duration > 0.1 || this.getMatchRateCallCount <= 5) {
-            console.log(`🔴 [TEMPLATE] getMatchRate() terminé: ${duration.toFixed(2)}ms (résultat: ${result.toFixed(2)}%)`);
         }
         return result;
     }
@@ -8369,40 +7743,23 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     // Filtre utilitaire pour ignorer les lignes où PAYS = 'CM'
     private getFilteredMatches(): Match[] {
         const startTime = performance.now();
-        console.log('🟡 [GET_FILTERED_MATCHES] ============================================');
-        console.log('🟡 [GET_FILTERED_MATCHES] Début getFilteredMatches()', `[${new Date().toISOString()}]`);
         
         const step1Start = performance.now();
         const matches = this.response?.matches || [];
         const totalMatches = matches.length;
         const step1Duration = performance.now() - step1Start;
-        console.log(`🟡 [GET_FILTERED_MATCHES] Étape 1: Récupération matches: ${step1Duration.toFixed(2)}ms (${totalMatches} matches)`);
 
         if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
             const totalDuration = performance.now() - startTime;
-            console.log(`🟡 [GET_FILTERED_MATCHES] Pas de filtre service, retour direct: ${totalDuration.toFixed(2)}ms`);
-            console.log('🟡 [GET_FILTERED_MATCHES] ============================================');
             return matches;
         }
 
         const serviceFilter = this.getActiveServiceFilter();
         const step2Start = performance.now();
-        console.log(`🟡 [GET_FILTERED_MATCHES] Étape 2: Filtrage par service "${serviceFilter}"...`);
-        console.log(`🟡 [GET_FILTERED_MATCHES] Filtrage de ${totalMatches} matches...`);
         const filtered = matches.filter(match => this.recordMatchesMagicFilter(match.boData));
         const step2Duration = performance.now() - step2Start;
         const totalDuration = performance.now() - startTime;
 
-        console.log(`🟡 [GET_FILTERED_MATCHES] Étape 2 terminée: ${step2Duration.toFixed(2)}ms`);
-        console.log('🟡 [GET_FILTERED_MATCHES] Résultats:', {
-            'Durée totale': `${totalDuration.toFixed(2)}ms`,
-            'Durée filtrage': `${step2Duration.toFixed(2)}ms`,
-            'Total matches': totalMatches,
-            'Matches filtrés': filtered.length,
-            'Service sélectionné': serviceFilter,
-            'Taux de filtrage': totalMatches > 0 ? `${((filtered.length / totalMatches) * 100).toFixed(2)}%` : '0%'
-        });
-        console.log('🟡 [GET_FILTERED_MATCHES] ============================================');
 
         return filtered;
     }
@@ -8411,7 +7768,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     private getFilteredBoOnly(): Record<string, string>[] {
         this.getFilteredBoOnlyCallCount++;
         const startTime = performance.now();
-        console.log(`🟠 [TEMPLATE] getFilteredBoOnly() appelé (${this.getFilteredBoOnlyCallCount} fois)`, `[${new Date().toISOString()}]`);
         console.trace('🟠 [TEMPLATE] Stack trace getFilteredBoOnly()'); // Pour voir d'où vient l'appel
         
         // Pour TRXBO/OPPART, utiliser mismatches au lieu de boOnly
@@ -8425,7 +7781,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
         if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
             const totalDuration = performance.now() - startTime;
-            console.log(`🟠 [TEMPLATE] getFilteredBoOnly (pas de filtre): ${totalDuration.toFixed(2)}ms (${allMismatches.length} éléments)`);
             return allMismatches;
         }
 
@@ -8435,15 +7790,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const filterDuration = performance.now() - filterStartTime;
         const totalDuration = performance.now() - startTime;
         
-        console.log(`🟠 [TEMPLATE] getFilteredBoOnly (avec filtre): ${totalDuration.toFixed(2)}ms`, {
-            'Durée combinaison': `${combineDuration.toFixed(2)}ms`,
-            'Durée filtrage': `${filterDuration.toFixed(2)}ms`,
-            'Total mismatches': mismatches.length,
-            'Total boOnly': boOnly.length,
-            'Total combiné': allMismatches.length,
-            'Éléments filtrés': filtered.length,
-            'Service sélectionné': serviceFilter
-        });
 
         return filtered;
     }
@@ -8454,7 +7800,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const totalPartnerOnly = partnerOnly.length;
         
         if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
-            console.log('⏱️ getFilteredPartnerOnly (pas de filtre):', `${(performance.now() - startTime).toFixed(2)}ms`, `(${totalPartnerOnly} éléments)`);
             return partnerOnly;
         }
         
@@ -8464,13 +7809,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const filterDuration = performance.now() - filterStartTime;
         const totalDuration = performance.now() - startTime;
         
-        console.log('⏱️ getFilteredPartnerOnly:', {
-            'Durée totale': `${totalDuration.toFixed(2)}ms`,
-            'Durée filtrage': `${filterDuration.toFixed(2)}ms`,
-            'Total partnerOnly': totalPartnerOnly,
-            'Éléments filtrés': filtered.length,
-            'Service sélectionné': serviceFilter
-        });
         
         return filtered;
     }
@@ -8624,41 +7962,28 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     goToMatches() {
         const buttonClickStartTime = performance.now();
-        console.log('🔵 [BOUTON] goToMatches() - Clic détecté', `[${new Date().toISOString()}]`);
         
         const setActiveTabStartTime = performance.now();
         // Utiliser setActiveTab pour avoir le même comportement que les autres boutons
         // Cela garantit un comportement cohérent et une navigation immédiate
         this.setActiveTab('matches');
         const setActiveTabDuration = performance.now() - setActiveTabStartTime;
-        console.log('⏱️ [BOUTON] goToMatches - setActiveTab terminé:', `${setActiveTabDuration.toFixed(2)}ms`);
         
         const navigateStartTime = performance.now();
         // Navigation immédiate - les données se chargeront en arrière-plan si nécessaire
         this.router.navigate(['/matches']).then(() => {
             const navigateDuration = performance.now() - navigateStartTime;
             const totalDuration = performance.now() - buttonClickStartTime;
-            console.log('✅ [BOUTON] goToMatches - Navigation vers /matches réussie:', {
-                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
-                'Durée totale': `${totalDuration.toFixed(2)}ms`
-            });
         }).catch(err => {
             const navigateDuration = performance.now() - navigateStartTime;
             const totalDuration = performance.now() - buttonClickStartTime;
-            console.error('❌ [BOUTON] goToMatches - Erreur lors de la navigation vers /matches:', {
-                'Erreur': err,
-                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
-                'Durée totale': `${totalDuration.toFixed(2)}ms`
-            });
         });
         
         const beforeReturnDuration = performance.now() - buttonClickStartTime;
-        console.log('⏱️ [BOUTON] goToMatches - Retour de la fonction:', `${beforeReturnDuration.toFixed(2)}ms`);
     }
 
     goToEcartBo() {
         const buttonClickStartTime = performance.now();
-        console.log('🟡 [BOUTON] goToEcartBo() - Clic détecté', `[${new Date().toISOString()}]`);
         
         const setActiveTabStartTime = performance.now();
         // Utiliser setActiveTab pour avoir le même comportement que les autres boutons
@@ -8672,34 +7997,22 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             this.reconciliationTabsService.setFilteredBoOnly(this.getFilteredBoOnly());
         }
         const setActiveTabDuration = performance.now() - setActiveTabStartTime;
-        console.log('⏱️ [BOUTON] goToEcartBo - setActiveTab terminé:', `${setActiveTabDuration.toFixed(2)}ms`);
         
         const navigateStartTime = performance.now();
         // Navigation immédiate - les données se chargeront en arrière-plan si nécessaire
         this.router.navigate(['/ecart-bo']).then(() => {
             const navigateDuration = performance.now() - navigateStartTime;
             const totalDuration = performance.now() - buttonClickStartTime;
-            console.log('✅ [BOUTON] goToEcartBo - Navigation vers /ecart-bo réussie:', {
-                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
-                'Durée totale': `${totalDuration.toFixed(2)}ms`
-            });
         }).catch(err => {
             const navigateDuration = performance.now() - navigateStartTime;
             const totalDuration = performance.now() - buttonClickStartTime;
-            console.error('❌ [BOUTON] goToEcartBo - Erreur lors de la navigation vers /ecart-bo:', {
-                'Erreur': err,
-                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
-                'Durée totale': `${totalDuration.toFixed(2)}ms`
-            });
         });
         
         const beforeReturnDuration = performance.now() - buttonClickStartTime;
-        console.log('⏱️ [BOUTON] goToEcartBo - Retour de la fonction:', `${beforeReturnDuration.toFixed(2)}ms`);
     }
 
     goToEcartPartner() {
         const buttonClickStartTime = performance.now();
-        console.log('🟢 [BOUTON] goToEcartPartner() - Clic détecté', `[${new Date().toISOString()}]`);
         
         const setActiveTabStartTime = performance.now();
         // Utiliser setActiveTab pour avoir le même comportement que les autres boutons
@@ -8710,37 +8023,23 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             this.reconciliationTabsService.setFilteredPartnerOnly(this.getFilteredPartnerOnly());
         }
         const setActiveTabDuration = performance.now() - setActiveTabStartTime;
-        console.log('⏱️ [BOUTON] goToEcartPartner - setActiveTab terminé:', `${setActiveTabDuration.toFixed(2)}ms`);
         
         const navigateStartTime = performance.now();
         // Navigation immédiate - les données se chargeront en arrière-plan si nécessaire
         this.router.navigate(['/ecart-partner']).then(() => {
             const navigateDuration = performance.now() - navigateStartTime;
             const totalDuration = performance.now() - buttonClickStartTime;
-            console.log('✅ [BOUTON] goToEcartPartner - Navigation vers /ecart-partner réussie:', {
-                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
-                'Durée totale': `${totalDuration.toFixed(2)}ms`
-            });
         }).catch(err => {
             const navigateDuration = performance.now() - navigateStartTime;
             const totalDuration = performance.now() - buttonClickStartTime;
-            console.error('❌ [BOUTON] goToEcartPartner - Erreur lors de la navigation vers /ecart-partner:', {
-                'Erreur': err,
-                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
-                'Durée totale': `${totalDuration.toFixed(2)}ms`
-            });
         });
         
         const beforeReturnDuration = performance.now() - buttonClickStartTime;
-        console.log('⏱️ [BOUTON] goToEcartPartner - Retour de la fonction:', `${beforeReturnDuration.toFixed(2)}ms`);
     }
 
     goToStats() {
-        console.log('Navigation vers les statistiques');
         this.router.navigate(['/stats']).then(() => {
-            console.log('Navigation vers /stats réussie');
         }).catch(error => {
-            console.error('Erreur lors de la navigation vers /stats:', error);
         });
     }
 
@@ -8793,11 +8092,9 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     private listenToRealProgress() {
-        console.log('🎯 Écoute de la progression réelle de la réconciliation...');
         
         this.subscription.add(
             this.reconciliationService.getProgress().subscribe((progress) => {
-                console.log(`📈 Progression reçue du service: ${progress.percentage}% - ${progress.step}`);
                 this.progressPercentage = progress.percentage;
                 this.processedRecords = progress.processed;
                 this.totalRecords = progress.total;
@@ -8910,10 +8207,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
             // Debug pour les données Partenaire
             if (source === 'PARTENAIRE') {
-                console.log('🔍 Debug extractCommonData PARTENAIRE:');
-                console.log('- Record original:', record);
-                console.log('- BaseData généré:', baseData);
-                console.log('- Colonnes disponibles dans record:', Object.keys(record));
             }
 
             // Pour les écarts BO, ajouter les colonnes supplémentaires
@@ -8931,7 +8224,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 };
                 
                 if (source === 'PARTENAIRE') {
-                    console.log('🔍 Résultat final PARTENAIRE:', result);
                 }
                 
                 return result;
@@ -8949,11 +8241,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         );
 
         // Debug pour vérifier les données générées
-        console.log('🔍 Debug generateEcartReport:');
-        console.log('- Données originales partnerOnly:', this.response.partnerOnly?.length || 0);
-        console.log('- Premier enregistrement partnerOnly:', this.response.partnerOnly?.[0]);
-        console.log('- Écarts Partenaire générés:', ecartPartenaire.length);
-        console.log('- Premier écart Partenaire généré:', ecartPartenaire[0]);
 
         return {
             ecartBo,
@@ -9261,12 +8548,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             }
             
             // Debug pour vérifier les données
-            console.log('🔍 Debug Export Rapport:');
-            console.log('- Écarts BO disponibles:', report.ecartBo.length);
-            console.log('- Écarts Partenaire disponibles:', report.ecartPartenaire.length);
-            console.log('- Colonnes disponibles:', this.availableColumns);
-            console.log('- Colonnes sélectionnées:', selectedPartnerColumns);
-            console.log('- Sélection actuelle:', this.selectedColumns);
             
             // En-têtes côte à côte
             const boHeader = 'Service;téléphone client;montant;Agence;Date;Numéro Trans GU;IDTransaction;SOURCE';
@@ -9314,7 +8595,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 if (i < report.ecartPartenaire.length && selectedPartnerColumns.length > 0) {
                     // Utiliser directement les données originales au lieu des données transformées
                     const originalPartnerRecord = this.response?.partnerOnly?.[i];
-                    console.log(`🔍 Ligne ${i} - Données Partenaire Originales:`, originalPartnerRecord);
                     
                     const row = selectedPartnerColumns.map(col => {
                         let value = '';
@@ -9337,15 +8617,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                             }
                         }
                         
-                        console.log(`  - Colonne "${col}": "${value}"`);
                         return value;
                     });
                     partnerRow = row.join(';');
-                    console.log(`  - Ligne finale Partenaire: "${partnerRow}"`);
                 } else {
                     // Remplir avec des valeurs vides si pas de données ou pas de colonnes sélectionnées
                     partnerRow = partnerColumnsCount > 0 ? ';'.repeat(partnerColumnsCount - 1) : '';
-                    console.log(`🔍 Ligne ${i} - Pas de données Partenaire, ligne vide: "${partnerRow}"`);
                 }
                 
                 // Ajouter la ligne au CSV (avec ou sans colonnes partenaire)
@@ -9378,7 +8655,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             this.closeColumnSelector();
 
         } catch (error) {
-            console.error('❌ Erreur lors de l\'export du rapport:', error);
             this.popupService.showError('❌ Erreur lors de l\'export du rapport des écarts.');
         }
     }
@@ -9522,7 +8798,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 if (i < report.ecartPartenaire.length && selectedPartnerColumns.length > 0) {
                     // Utiliser directement les données originales au lieu des données transformées
                     const originalPartnerRecord = this.response?.partnerOnly?.[i];
-                    console.log(`🔍 Excel - Ligne ${i} - Données Partenaire Originales:`, originalPartnerRecord);
                     
                     selectedPartnerColumns.forEach((col, colIndex) => {
                         let value: any = '';
@@ -9570,7 +8845,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             document.body.removeChild(link);
 
         } catch (error) {
-            console.error('❌ Erreur lors de la création du fichier Excel:', error);
             // Fallback vers CSV si Excel échoue
             // S'assurer que SOURCE est en dernière position aussi pour le fallback CSV
             let csvCols = [...selectedPartnerColumns];
@@ -9784,7 +9058,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             }
 
             // Demander le type de référence (Standard/Cross Border/Nivellement)
-            console.log('🔧 Affichage du popup de sélection du type de référence...');
             const referenceTypeInput = await this.popupService.showSelectInput(
                 'Type de référence :', 
                 'Sélectionner le type', 
@@ -9792,13 +9065,11 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 'STANDARD'
             );
             const referenceType = referenceTypeInput || 'STANDARD';
-            console.log('✅ Type de référence sélectionné:', referenceType);
 
             // Si NIVELLEMENT est sélectionné, forcer le type d'opération à "nivellement"
             let finalTypeOperation = typeOperation;
             if (referenceType === 'NIVELLEMENT') {
                 finalTypeOperation = 'nivellement';
-                console.log('🔄 Type d\'opération changé vers "nivellement" pour utiliser la logique de nivellement');
             }
 
             const comptes = await this.compteService.getComptesByCodeProprietaire(codeProprietaire).toPromise();
@@ -9821,7 +9092,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                     return;
                 }
             } catch (e) {
-                console.warn('Vérification de doublon échouée, poursuite prudente', e);
             }
             */
 
@@ -9842,7 +9112,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 });
             });
         } catch (e) {
-            console.error(e);
             await this.popupService.showError('Erreur lors de la création de l\'opération');
         }
     }

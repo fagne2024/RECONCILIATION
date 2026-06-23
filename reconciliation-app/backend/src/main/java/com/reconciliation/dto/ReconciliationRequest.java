@@ -23,6 +23,9 @@ public class ReconciliationRequest {
     
     // Type de réconciliation (1-1, 1-2, 1-3, 1-4, 1-5)
     private String reconciliationType = "1-1";
+
+    /** Identifiant de session pour le suivi de progression en temps réel (polling frontend). */
+    private String progressSessionId;
     
     @Data
     public static class AdditionalKey {

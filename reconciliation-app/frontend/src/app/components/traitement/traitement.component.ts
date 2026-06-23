@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef, AfterViewInit, ViewChild } from '@angular/core';
+﻿import { Component, OnInit, ChangeDetectorRef, AfterViewInit, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, FormControl } from '@angular/forms';
 import { MatSelect, MatSelectChange } from '@angular/material/select';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
@@ -402,7 +402,6 @@ End Sub`;
         
         // Détection automatique du séparateur
         this.detectedDelimiter = this.detectCsvDelimiter(csv);
-        console.log('Séparateur CSV détecté:', this.detectedDelimiter);
         
         // Prévisualiser les données
         const preview = await this.previewCsvData(csv, this.detectedDelimiter);
@@ -410,15 +409,9 @@ End Sub`;
         this.csvPreviewData = preview.data;
         this.showCsvPreview = true;
         
-        console.log('Prévisualisation CSV:', {
-          columns: preview.columns,
-          dataLength: preview.data.length,
-          hasHeader: preview.hasHeader
-        });
         
         this.cd.detectChanges();
       } catch (error) {
-        console.error('Erreur lors de la prévisualisation CSV:', error);
         this.showError('upload', 'Erreur lors de la prévisualisation du fichier CSV');
       }
     };
@@ -442,7 +435,6 @@ End Sub`;
   async processFiles() {
     // Si une prévisualisation CSV est en cours, ne pas traiter automatiquement
     if (this.showCsvPreview) {
-      console.log('Prévisualisation CSV en cours, traitement différé');
       return;
     }
     
@@ -451,7 +443,6 @@ End Sub`;
     const totalSizeMB = totalSize / (1024 * 1024);
     const isLargeUpload = totalSizeMB > 100; // Plus de 100MB
     
-    console.log(`📊 Upload détecté: ${totalSizeMB.toFixed(2)} MB (${isLargeUpload ? 'gros upload' : 'upload normal'})`);
 
     this.isProcessing = true;
     this.processingProgress = 0;
@@ -482,13 +473,11 @@ End Sub`;
         
         const fileName = file.name.toLowerCase();
         const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
-        console.log(`🚀 Traitement ${isLargeUpload ? 'optimisé' : 'ultra-rapide'}: ${file.name} (${fileSizeMB} MB)`);
         
         let beforeRows = this.allRows.length;
         try {
           // Gestion mémoire pour gros fichiers
           if (isLargeUpload && this.allRows.length > 500000) {
-            console.log('⚠️ Mémoire élevée détectée, optimisation en cours...');
             this.processingMessage = 'Optimisation mémoire en cours...';
             await this.optimizeMemoryUsage();
           }
@@ -500,9 +489,7 @@ End Sub`;
             const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
             
             if (fileSizeMB > 100) {
-              console.log(`🔄 Fichier Excel très volumineux détecté (${fileSizeMB.toFixed(1)} MB), utilisation de la méthode alternative`);
               if (isOrangeMoneyFile) {
-                console.log('🎯 Fichier Orange Money très volumineux détecté');
                 this.processingMessage = `Fichier Orange Money volumineux détecté (${fileSizeMB.toFixed(1)} MB). 
                 Traitement des 100,000 premières lignes pour optimiser les performances.`;
                 await this.readOrangeMoneyLargeFile(file);
@@ -523,9 +510,7 @@ End Sub`;
           totalRows += fileRows;
           this.fileProcessStats.push({ name: file.name, rows: fileRows, status: 'succès' });
           
-          console.log(`✅ Fichier traité en ${fileRows} lignes`);
         } catch (fileError) {
-          console.error('Erreur lors du traitement du fichier:', file.name, fileError);
           this.fileProcessStats.push({ name: file.name, rows: 0, status: 'erreur', errorMsg: (fileError as any)?.message || 'Erreur inconnue' });
         }
         
@@ -564,12 +549,10 @@ End Sub`;
       
       const totalProcessed = this.allRows.length;
       const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
-      console.log(`🚀 Traitement ${isLargeUpload ? 'optimisé' : 'ultra-rapide'} terminé: ${totalProcessed.toLocaleString()} lignes en ${processingTime}s`);
       
       this.showSuccess('upload', `Traitement ${isLargeUpload ? 'optimisé' : 'ultra-rapide'} terminé ! ${totalProcessed.toLocaleString()} lignes traitées en ${processingTime}s`);
       
     } catch (error) {
-      console.error('Erreur lors du traitement:', error);
       this.isProcessing = false;
       this.showError('upload', 'Erreur lors du traitement ultra-rapide des fichiers');
     }
@@ -594,7 +577,6 @@ End Sub`;
       this.allRows.push(parsed.rows[i]);
     }
 
-    console.log(`✅ Traitement CSV terminé: ${parsed.rows.length.toLocaleString()} lignes`);
   }
   
   // Méthode optimisée pour détecter le délimiteur
@@ -615,7 +597,6 @@ End Sub`;
     
     // Validation supplémentaire pour les gros fichiers
     if (line.length > 1000) {
-      console.log(`🔍 Délimiteur détecté: "${bestDelimiter}" (${scores[bestDelimiter]} colonnes) sur échantillon de ${sampleLine.length} caractères`);
     }
     
     return bestDelimiter;
@@ -623,7 +604,6 @@ End Sub`;
 
   // Nouvelle méthode pour détecter les en-têtes dans les fichiers Excel
   private detectExcelHeaders(jsonData: any[][]): { headerRowIndex: number; headerRow: string[] } {
-    console.log('🔄 VERSION AMÉLIORÉE - Détection des en-têtes Excel avec analyse étendue');
     
     // Mots-clés pour identifier les en-têtes
     const headerKeywords = [
@@ -639,19 +619,16 @@ End Sub`;
     // Analyser plus de lignes pour trouver le meilleur candidat (optimisé pour gros fichiers)
     const maxRowsToCheck = Math.min(jsonData.length > 100000 ? 50 : 200, jsonData.length);
     
-    console.log(`🔍 Analyse de ${maxRowsToCheck} lignes sur ${jsonData.length} lignes totales`);
     
     let emptyRowCount = 0;
     let consecutiveEmptyRows = 0;
     
     for (let i = 0; i < maxRowsToCheck; i++) {
       try {
-        console.log(`🔍 === DÉBUT ANALYSE LIGNE ${i} ===`);
         const row = jsonData[i] as any[];
         if (!row || row.length === 0) {
           emptyRowCount++;
           consecutiveEmptyRows++;
-          console.log(`🔍 Ligne ${i}: ligne vide ou null, ignorée (total vide: ${emptyRowCount}, consécutives: ${consecutiveEmptyRows})`);
           continue;
         }
       
@@ -664,7 +641,6 @@ End Sub`;
         return fixGarbledCharacters(String(cell).trim());
       });
       
-      console.log(`🔍 Ligne ${i} - Nombre de cellules: ${rowStrings.length}, Cellules non vides: ${rowStrings.filter(cell => cell !== '').length}`);
       
       // Ignorer les lignes qui sont clairement des en-têtes de document
       const documentHeaders = [
@@ -677,7 +653,6 @@ End Sub`;
       );
       
       if (isDocumentHeader) {
-        console.log(`🔍 Ligne ${i} ignorée (en-tête de document):`, rowStrings.filter(cell => cell !== ''));
         continue;
       }
       
@@ -688,12 +663,10 @@ End Sub`;
       });
       
       if (numericCells.length > rowStrings.filter(cell => cell !== '').length * 0.7) {
-        console.log(`🔍 Ligne ${i} ignorée (données numériques):`, rowStrings.filter(cell => cell !== ''));
         continue;
       }
       
       // Log pour voir toutes les lignes analysées
-      console.log(`🔍 Analyse ligne ${i}:`, rowStrings.filter(cell => cell !== ''));
       
       // Afficher aussi les lignes suivantes pour voir la structure
       if (i < maxRowsToCheck - 1) {
@@ -703,7 +676,6 @@ End Sub`;
             if (cell === null || cell === undefined) return '';
             return String(cell).trim();
           });
-          console.log(`🔍 Ligne suivante ${i + 1}:`, nextRowStrings.filter(cell => cell !== ''));
         }
       }
       
@@ -779,38 +751,29 @@ End Sub`;
         score -= 3; // Réduit encore plus
       }
       
-              console.log(`🔍 Ligne ${i}: score=${score}, colonnes=${nonEmptyColumns}, hasNumberColumn=${hasNumberColumn}, hasHeaderKeywords=${hasHeaderKeywords}, keywordMatches=${keywordMatches}`);
         
         // Log spécial pour les lignes avec beaucoup de colonnes non vides
         if (nonEmptyColumns >= 5) {
-          console.log(`🔍 LIGNE INTÉRESSANTE ${i}: ${nonEmptyColumns} colonnes non vides:`, rowStrings.filter(cell => cell !== ''));
         }
         
         if (score > bestScore) {
           bestScore = score;
           bestHeaderRowIndex = i;
           bestHeaderRow = [...rowStrings];
-          console.log(`🔍 ⭐ Nouveau meilleur en-tête trouvé à la ligne ${i} avec score ${score}`);
         }
         
                 // Continuer l'analyse même après avoir trouvé un en-tête valide
         if (score > 0) {
-          console.log(`🔍 En-tête potentiel à la ligne ${i} avec score ${score}`);
         }
         
-        console.log(`🔍 === FIN ANALYSE LIGNE ${i} ===`);
       } catch (error) {
-        console.error(`❌ Erreur lors de l'analyse de la ligne ${i}:`, error);
         continue;
       }
     }
     
-    console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
-    console.log(`🔍 En-tête détecté:`, bestHeaderRow);
     
     // Fallback : si aucun en-tête valide n'est trouvé, utiliser la première ligne non vide
     if (bestScore <= 0) {
-      console.log('⚠️ Aucun en-tête valide détecté, utilisation de la première ligne non vide');
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i] as any[];
         if (row && row.length > 0) {
@@ -821,7 +784,6 @@ End Sub`;
           
           const nonEmptyCount = rowStrings.filter(cell => cell !== '').length;
           if (nonEmptyCount >= 2) {
-            console.log(`🔍 Fallback: utilisation de la ligne ${i} avec ${nonEmptyCount} colonnes non vides`);
             return {
               headerRowIndex: i,
               headerRow: rowStrings
@@ -879,10 +841,8 @@ End Sub`;
       // Afficher un indicateur de progression pour les fichiers volumineux
       const fileSizeMB = file.size / (1024 * 1024);
       if (fileSizeMB > 5) {
-        console.log(`📁 Fichier volumineux détecté (${fileSizeMB.toFixed(1)} MB). Traitement optimisé en cours...`);
       }
 
-      console.log('🔄 VERSION AMÉLIORÉE - Début lecture fichier Excel avec détection d\'en-têtes étendue');
       
       // Options optimisées pour les fichiers volumineux jusqu'à 700k lignes
       const options: XLSX.ParsingOptions = {
@@ -903,7 +863,6 @@ End Sub`;
       
       // Vérifier si la feuille est vide avant de continuer
       if (!worksheet || !worksheet['!ref']) {
-        console.log('❌ Feuille Excel vide ou corrompue');
         return;
       }
       
@@ -915,22 +874,18 @@ End Sub`;
       }) as any[][];
       
       if (!jsonData || jsonData.length === 0) {
-        console.log('❌ Fichier Excel vide ou aucune donnée trouvée');
         return;
       }
       
-      console.log(`📊 Données Excel brutes: ${jsonData.length} lignes`);
       
       // Détecter les en-têtes avec une méthode optimisée
       const headerDetection = this.detectExcelHeaders(jsonData);
       const headers = headerDetection.headerRow;
       const headerRowIndex = headerDetection.headerRowIndex;
       
-      console.log(`✅ En-têtes détectés à la ligne ${headerRowIndex}:`, headers);
       
       // Vérifier si des en-têtes valides ont été trouvés
       if (!headers || headers.length === 0 || headers.every(h => !h || h.trim() === '')) {
-        console.log('⚠️ Aucun en-tête valide détecté, tentative de fallback');
         // Essayer de trouver la première ligne avec des données (limité pour performance)
         const maxSearchRows = Math.min(200, jsonData.length);
         for (let i = 0; i < maxSearchRows; i++) {
@@ -943,7 +898,6 @@ End Sub`;
             
             const nonEmptyCount = rowStrings.filter(cell => cell !== '').length;
             if (nonEmptyCount >= 2) {
-              console.log(`🔍 Fallback: utilisation de la ligne ${i} avec ${nonEmptyCount} colonnes non vides`);
               const fallbackHeaders = rowStrings.map((h, idx) => h || `Col${idx + 1}`);
               const correctedHeaders = this.fixExcelColumnNames(fallbackHeaders);
               
@@ -972,25 +926,21 @@ End Sub`;
                 // Log de progression pour gros fichiers
                 if (fileSizeMB > 5 && j % (chunkSize * 10) === i + 1) {
                   const progress = ((j - i - 1) / (jsonData.length - i - 1) * 100).toFixed(1);
-                  console.log(`📈 Progression: ${progress}% (${j - i}/${jsonData.length - i - 1} lignes traitées)`);
                 }
               }
               
-              console.log(`📊 Lignes de données créées (fallback): ${rows.length}`);
               
               // Mettre à jour les propriétés du composant
               this.allRows.push(...rows);
               this.allColumns = [...correctedHeaders];
               this.columns = [...correctedHeaders];
               
-              console.log(`✅ Fichier Excel traité (fallback): ${rows.length} lignes, ${correctedHeaders.length} colonnes`);
               
               // Vérifier si c'est un fichier Orange Money et appliquer le filtre automatique
               const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
               const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
               
               if (isOrangeMoneyFile) {
-                console.log('🎯 Fichier Orange Money détecté dans le traitement Excel (fallback)');
                 // Appliquer le filtre automatique après un délai pour s'assurer que les données sont bien chargées
                 setTimeout(() => {
                   this.applyAutomaticOrangeMoneyFilter();
@@ -1002,13 +952,11 @@ End Sub`;
           }
         }
         
-        console.log('❌ Impossible de trouver des en-têtes valides dans le fichier Excel');
         return;
       }
       
       // Corriger les caractères spéciaux dans les en-têtes
       const correctedHeaders = this.fixExcelColumnNames(headers);
-      console.log(`🔧 En-têtes Excel corrigés:`, correctedHeaders);
       
       // Créer les lignes de données en commençant après la ligne d'en-tête
       const totalDataRows = jsonData.length - headerRowIndex - 1;
@@ -1016,7 +964,6 @@ End Sub`;
       const isVeryLargeFile = totalDataRows > 500000; // Plus de 500k lignes
       const chunkSize = isVeryLargeFile ? 15000 : isLargeFile ? 10000 : 5000; // Chunks optimisés pour 700k
       
-      console.log(`📊 Traitement Excel optimisé: ${totalDataRows} lignes, chunks de ${chunkSize} (${isVeryLargeFile ? 'très gros fichier' : isLargeFile ? 'gros fichier' : 'fichier normal'})`);
       
       // Mise à jour de la progression pour gros fichiers
       let processedRows = 0;
@@ -1060,21 +1007,17 @@ End Sub`;
         }
       }
       
-      console.log(`📊 Lignes de données Excel créées: ${this.allRows.length.toLocaleString()}`);
       
       // Mettre à jour les propriétés du composant
       this.allColumns = [...correctedHeaders];
       this.columns = [...correctedHeaders];
       
-      console.log(`✅ Fichier Excel traité: ${this.allRows.length.toLocaleString()} lignes, ${correctedHeaders.length} colonnes`);
-      console.log(`📋 Colonnes détectées:`, this.allColumns);
       
       // Vérifier si c'est un fichier Orange Money et appliquer le filtre automatique
       const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
       const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
       
       if (isOrangeMoneyFile) {
-        console.log('🎯 Fichier Orange Money détecté dans le traitement Excel');
         // Appliquer le filtre automatique après un délai pour s'assurer que les données sont bien chargées
         setTimeout(() => {
           this.applyAutomaticOrangeMoneyFilter();
@@ -1085,7 +1028,6 @@ End Sub`;
       this.performFieldTypeAnalysis();
       
     } catch (error) {
-      console.error('❌ Erreur lors de la lecture du fichier Excel:', error);
       throw error;
     }
   }
@@ -1131,7 +1073,6 @@ End Sub`;
   // Méthode d'optimisation mémoire pour gros fichiers
   private async optimizeMemoryUsage(): Promise<void> {
     try {
-      console.log('🧹 Optimisation mémoire en cours...');
       
       // Forcer le garbage collection si disponible
       if ('gc' in window && typeof (window as any).gc === 'function') {
@@ -1143,7 +1084,6 @@ End Sub`;
       
       // Compacter les données si nécessaire
       if (this.allRows.length > 1000000) {
-        console.log('📦 Compaction des données pour optimiser la mémoire...');
         // Créer une copie compacte des données
         const compactRows = this.allRows.map(row => {
           const compactRow: any = {};
@@ -1160,9 +1100,7 @@ End Sub`;
       // Pause pour permettre au navigateur de libérer la mémoire
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      console.log('✅ Optimisation mémoire terminée');
     } catch (error) {
-      console.warn('⚠️ Erreur lors de l\'optimisation mémoire:', error);
     }
   }
 
@@ -1209,13 +1147,11 @@ End Sub`;
    */
   private async readExcelFileAlternative(file: File): Promise<void> {
     const fileSizeMB = file.size / (1024 * 1024);
-    console.log(`🔄 Lecture alternative pour fichier Excel très volumineux (${fileSizeMB.toFixed(1)} MB)`);
     
     this.processingMessage = `Traitement fichier très volumineux (${fileSizeMB.toFixed(1)} MB)...`;
     
     // Pour les fichiers > 200MB, utiliser une approche de streaming
     if (fileSizeMB > 200) {
-      console.log('⚠️ Fichier extrêmement volumineux, utilisation de l\'approche de streaming');
       await this.readExcelFileStreaming(file);
       return;
     }
@@ -1244,7 +1180,6 @@ End Sub`;
       };
 
       const workbook = XLSX.read(data, options);
-      console.log('📋 Feuilles disponibles (alternative):', workbook.SheetNames);
       
       if (!workbook.Sheets || workbook.SheetNames.length === 0) {
         throw new Error('Aucune feuille accessible dans le fichier');
@@ -1258,7 +1193,6 @@ End Sub`;
         throw new Error('Impossible de lire la première feuille');
       }
 
-      console.log(`📄 Traitement de la feuille: ${firstSheetName}`);
 
       // Lecture sans limitation de plage
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
@@ -1271,7 +1205,6 @@ End Sub`;
         throw new Error('Aucune donnée trouvée dans la première feuille');
       }
 
-      console.log(`📊 Données Excel (alternative): ${jsonData.length} lignes`);
 
       // Détecter les en-têtes
       const headerDetection = this.detectExcelHeaders(jsonData);
@@ -1323,21 +1256,18 @@ End Sub`;
       const newColumns = await this.mergeColumnsOptimized();
       this.allColumns = newColumns;
       
-      console.log(`✅ Fichier Excel traité (alternative): ${rows.length} lignes, ${newColumns.length} colonnes`);
       
       // Vérifier si c'est un fichier Orange Money et appliquer le filtre automatique
       const fileName = file.name;
       const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
       
       if (isOrangeMoneyFile) {
-        console.log('🎯 Fichier Orange Money détecté dans le traitement Excel alternatif');
         setTimeout(() => {
           this.applyAutomaticOrangeMoneyFilter();
         }, 500);
       }
       
     } catch (error) {
-      console.error('❌ Erreur lors de la lecture alternative du fichier Excel:', error);
       
       // En cas d'erreur avec un très gros fichier, suggérer des solutions
       this.showError('upload', 
@@ -1363,7 +1293,6 @@ End Sub`;
    */
   private async readExcelFileStreaming(file: File): Promise<void> {
     const fileSizeMB = file.size / (1024 * 1024);
-    console.log(`🔄 Streaming pour fichier Excel extrêmement volumineux (${fileSizeMB.toFixed(1)} MB)`);
     
     this.processingMessage = `Fichier extrêmement volumineux détecté (${fileSizeMB.toFixed(1)} MB). 
     Traitement par streaming des 100,000 premières lignes.`;
@@ -1401,10 +1330,8 @@ End Sub`;
       const exampleColumns = ['Date', 'Transaction', 'Montant', 'Service', 'Statut'];
       this.allColumns = exampleColumns;
       
-      console.log(`✅ Données d'exemple créées: ${exampleRows.length} lignes`);
       
     } catch (error) {
-      console.error('❌ Erreur lors du streaming du fichier Excel:', error);
       throw error;
     }
   }
@@ -1415,7 +1342,6 @@ End Sub`;
    */
   private async readOrangeMoneyLargeFile(file: File): Promise<void> {
     const fileSizeMB = file.size / (1024 * 1024);
-    console.log(`🔄 Lecture Orange Money très volumineux (${fileSizeMB.toFixed(1)} MB)`);
     
     this.processingMessage = `Traitement fichier Orange Money volumineux (${fileSizeMB.toFixed(1)} MB)...`;
     
@@ -1442,7 +1368,6 @@ End Sub`;
       };
 
       const workbook = XLSX.read(data, options);
-      console.log('📋 Feuilles Orange Money disponibles:', workbook.SheetNames);
       
       if (!workbook.Sheets || workbook.SheetNames.length === 0) {
         throw new Error('Aucune feuille accessible dans le fichier Orange Money');
@@ -1456,7 +1381,6 @@ End Sub`;
         throw new Error('Impossible de lire la première feuille Orange Money');
       }
 
-      console.log(`📄 Traitement feuille Orange Money: ${firstSheetName}`);
 
       // Lecture très limitée pour Orange Money
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
@@ -1470,7 +1394,6 @@ End Sub`;
         throw new Error('Aucune donnée trouvée dans la feuille Orange Money');
       }
 
-      console.log(`📊 Données Orange Money: ${jsonData.length} lignes`);
 
       // Pour Orange Money, utiliser la première ligne comme en-têtes
       const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
@@ -1498,16 +1421,13 @@ End Sub`;
       const newColumns = await this.mergeColumnsOptimized();
       this.allColumns = newColumns;
       
-      console.log(`✅ Fichier Orange Money traité: ${rows.length} lignes, ${newColumns.length} colonnes`);
       
       // Appliquer automatiquement le filtre Orange Money
-      console.log('🎯 Application du filtre Orange Money automatique');
       setTimeout(() => {
         this.applyAutomaticOrangeMoneyFilter();
       }, 500);
       
     } catch (error) {
-      console.error('❌ Erreur lors de la lecture du fichier Orange Money volumineux:', error);
       
       // En cas d'erreur, suggérer des solutions spécifiques pour Orange Money
       this.showError('upload', 
@@ -1557,12 +1477,10 @@ End Sub`;
             rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
             if (rows.length > 0) {
               header = Object.keys(rows[0]);
-              console.log('En-tête extrait:', header);
             }
           } else {
             // Autres feuilles : lire sans en-tête et mapper avec l'en-tête de la première feuille
             const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '', header: 1 });
-            console.log('Raw rows pour feuille', sheetName, ':', rawRows.length);
             
             if (header && rawRows.length > 0) {
               rows = rawRows.map((row: any) => {
@@ -1577,12 +1495,9 @@ End Sub`;
             }
           }
           
-          console.log('Feuille lue :', sheetName, 'Nombre de lignes :', rows.length, 'Header:', header ? 'présent' : 'absent');
           
           if (rows.length > 0) {
-            console.log('Ajout de', rows.length, 'lignes à allRows');
             try {
-              console.log('Début du try-catch pour l\'ajout');
               
               // Traitement en arrière-plan avec chunks très petits
               await this.processDataInBackground(
@@ -1597,7 +1512,6 @@ End Sub`;
                 }
               );
               
-              console.log('Immédiatement après ajout - allRows.length:', this.allRows.length);
               const rowCols = header ? header : Object.keys(rows[0]);
               
               for (const col of rowCols) {
@@ -1609,20 +1523,16 @@ End Sub`;
                 }
               }
               
-              console.log('Après ajout - allRows.length:', this.allRows.length, 'columns.length:', this.columns.length);
             } catch (addError) {
-              console.error('Erreur lors de l\'ajout des lignes:', addError);
               this.showError('upload', `Erreur lors du traitement de la feuille ${sheetName}: ${addError}`);
             }
           }
         } catch (sheetError) {
-          console.error('Erreur lors du traitement de la feuille', workbook.SheetNames[i], ':', sheetError);
           this.showError('upload', `Erreur lors du traitement de la feuille ${workbook.SheetNames[i]}: ${sheetError}`);
           // Continuer avec les autres feuilles
         }
       }
     } catch (e) {
-      console.error('Erreur lors de la lecture du fichier Excel:', e);
       this.showError('upload', 'Erreur lors de la lecture du fichier Excel.');
       throw e;
     }
@@ -1670,8 +1580,6 @@ End Sub`;
       }
     });
     
-    console.log('Scores des séparateurs:', delimiterScores);
-    console.log('Séparateur détecté:', bestDelimiter);
     
     return bestDelimiter;
   }
@@ -1685,7 +1593,6 @@ End Sub`;
       this.orangeMoneyHeaderRowIndex = orangeMoneyDetection.headerRowIndex;
       
       if (orangeMoneyDetection.isOrangeMoney) {
-        console.log(`🟠 Fichier Orange Money détecté - Utilisation des colonnes détectées`);
         
         // Parser sans header pour avoir toutes les lignes
         Papa.parse(csvContent, {
@@ -1694,7 +1601,6 @@ End Sub`;
           skipEmptyLines: true,
           complete: (results) => {
             const rawRows = results.data as any[];
-            console.log(`📊 Lignes brutes parsées: ${rawRows.length}`);
             
             if (rawRows.length > orangeMoneyDetection.headerRowIndex) {
               // Utiliser les colonnes détectées
@@ -1711,9 +1617,6 @@ End Sub`;
                 return obj;
               });
               
-              console.log(`📊 Prévisualisation Orange Money: ${columns.length} colonnes, ${data.length} lignes`);
-              console.log(`📊 En-tête détecté:`, columns);
-              console.log(`📊 Données d'exemple:`, data.slice(0, 2));
               
               // Mettre à jour l'interface avec les colonnes détectées
               this.updateOrangeMoneyDisplay(columns);
@@ -1792,52 +1695,34 @@ End Sub`;
           
           // Détection automatique du séparateur
           this.detectedDelimiter = this.detectCsvDelimiter(csv);
-          console.log('Séparateur CSV détecté:', this.detectedDelimiter);
           
           // Détecter si c'est un fichier Orange Money AVANT la prévisualisation
           const orangeMoneyDetection = this.detectOrangeMoneyFile(csv, this.detectedDelimiter);
           this.isOrangeMoneyFile = orangeMoneyDetection.isOrangeMoney;
           this.orangeMoneyHeaderRowIndex = orangeMoneyDetection.headerRowIndex;
           
-          console.log(`🟠 Détection Orange Money - isOrangeMoneyFile: ${this.isOrangeMoneyFile}`);
           
           // Prévisualiser les données
           try {
-            console.log('🔄 DÉBUT PRÉVISUALISATION - Vérification du rechargement du code');
             const preview = await this.previewCsvData(csv, this.detectedDelimiter);
             this.csvPreviewColumns = preview.columns;
             this.csvPreviewData = preview.data;
             this.showCsvPreview = true;
             
             // Si c'est un fichier Orange Money, utiliser les colonnes détectées
-            console.log(`🔄 PRÉVISUALISATION - isOrangeMoneyFile: ${this.isOrangeMoneyFile}`);
-            console.log(`🔄 PRÉVISUALISATION - preview.columns:`, preview.columns);
-            console.log(`🔄 PRÉVISUALISATION - orangeMoneyDetection.headerRow:`, orangeMoneyDetection.headerRow);
             
             if (this.isOrangeMoneyFile) {
-              console.log(`🟠 Prévisualisation - isOrangeMoneyFile: ${this.isOrangeMoneyFile}`);
-              console.log(`🟠 Prévisualisation - preview.columns:`, preview.columns);
-              console.log(`🟠 Prévisualisation - orangeMoneyDetection.headerRow:`, orangeMoneyDetection.headerRow);
               
               // Utiliser les colonnes détectées au lieu des colonnes de prévisualisation
               this.updateOrangeMoneyDisplay(orangeMoneyDetection.headerRow);
-              console.log(`🟠 Interface mise à jour avec les colonnes Orange Money:`, orangeMoneyDetection.headerRow);
             } else {
-              console.log(`❌ Prévisualisation - isOrangeMoneyFile: ${this.isOrangeMoneyFile}`);
             }
             
-            console.log('Prévisualisation CSV:', {
-              columns: preview.columns,
-              dataLength: preview.data.length,
-              hasHeader: preview.hasHeader
-            });
           } catch (previewError) {
-            console.warn('Erreur lors de la prévisualisation:', previewError);
           }
           
           if (orangeMoneyDetection.isOrangeMoney) {
             // Traitement spécial pour les fichiers Orange Money
-            console.log('🟠 Traitement fichier Orange Money détecté');
             
             // Mettre à jour l'interface immédiatement avec les colonnes détectées
             this.updateOrangeMoneyDisplay(orangeMoneyDetection.headerRow);
@@ -1849,15 +1734,12 @@ End Sub`;
               complete: async (results) => {
                 try {
                   const rawRows = results.data as any[];
-                  console.log(`CSV Orange Money parsé: ${rawRows.length} lignes brutes`);
                   
                   if (rawRows.length > orangeMoneyDetection.headerRowIndex) {
                     const headerRow = orangeMoneyDetection.headerRow;
                     const dataRows = rawRows.slice(orangeMoneyDetection.headerRowIndex + 1);
                     const colNames = headerRow.map((v: any, i: number) => v ? v.toString() : 'Col' + (i+1));
                     
-                    console.log(`Traitement Orange Money: ${dataRows.length} lignes de données avec ${colNames.length} colonnes`);
-                    console.log(`Colonnes détectées:`, colNames);
                     
                     // Traitement en arrière-plan avec chunks très petits
                     await this.processDataInBackground(
@@ -1885,17 +1767,14 @@ End Sub`;
                       if (!this.allColumns.includes(col)) this.allColumns.push(col);
                     }
                     
-                    console.log(`Orange Money traité avec succès: ${this.allRows.length} lignes ajoutées`);
                   }
                   this.cd.detectChanges();
                   resolve();
                 } catch (error) {
-                  console.error('Erreur lors du traitement Orange Money:', error);
                   reject(error);
                 }
               },
               error: (err) => {
-                console.error('Erreur lors de la lecture du CSV Orange Money:', err);
                 this.showError('upload', 'Erreur lors de la lecture du fichier Orange Money.');
                 reject(err);
               }
@@ -1911,7 +1790,6 @@ End Sub`;
             complete: async (results) => {
               try {
                 let rows = results.data as any[];
-                console.log(`CSV parsé avec header: ${rows.length} lignes détectées`);
                 
                 // Si les colonnes sont nommées field1, field2... ou qu'il n'y a qu'une seule colonne, on relit sans header
                 const firstRow = rows[0] || {};
@@ -1919,7 +1797,6 @@ End Sub`;
                 const looksLikeNoHeader = allKeys.length <= 1 || allKeys.some(k => k.toLowerCase().startsWith('field'));
                 
                 if (looksLikeNoHeader) {
-                  console.log('Détection d\'un fichier sans en-tête, relecture...');
                   Papa.parse(csv, {
                     header: false,
                     delimiter: this.detectedDelimiter, // Utiliser le séparateur détecté
@@ -1927,14 +1804,12 @@ End Sub`;
                     complete: async (res2) => {
                       try {
                         const rawRows = res2.data as any[];
-                        console.log(`CSV parsé sans header: ${rawRows.length} lignes brutes`);
                         
                         if (rawRows.length > 1) {
                           const headerRow = rawRows[0];
                           const dataRows = rawRows.slice(1);
                           const colNames = headerRow.map((v: any, i: number) => v ? v.toString() : 'Col' + (i+1));
                           
-                          console.log(`Traitement de ${dataRows.length} lignes de données avec ${colNames.length} colonnes`);
                           
                           // Traitement en arrière-plan avec chunks très petits
                           await this.processDataInBackground(
@@ -1962,17 +1837,14 @@ End Sub`;
                             if (!this.allColumns.includes(col)) this.allColumns.push(col);
                           }
                           
-                          console.log(`CSV traité avec succès: ${this.allRows.length} lignes ajoutées`);
                         }
                         this.cd.detectChanges();
                         resolve();
                       } catch (error) {
-                        console.error('Erreur lors du traitement CSV sans header:', error);
                         reject(error);
                       }
                     },
                     error: (err) => {
-                      console.error('Erreur lors de la lecture du CSV sans header:', err);
                       this.showError('upload', 'Erreur lors de la lecture du CSV.');
                       reject(err);
                     }
@@ -1982,7 +1854,6 @@ End Sub`;
                 
                 // Cas normal avec header
                 if (rows.length > 0) {
-                  console.log(`Traitement de ${rows.length} lignes avec en-tête`);
                   
                   // Traitement en arrière-plan avec chunks très petits
                   await this.processDataInBackground(
@@ -2007,28 +1878,23 @@ End Sub`;
                     }
                   }
                   
-                  console.log(`CSV traité avec succès: ${this.allRows.length} lignes ajoutées, ${this.columns.length} colonnes`);
                 }
                 this.cd.detectChanges();
                 resolve();
               } catch (error) {
-                console.error('Erreur lors du traitement CSV avec header:', error);
                 reject(error);
               }
             },
             error: (err) => {
-              console.error('Erreur lors de la lecture du CSV avec header:', err);
               this.showError('upload', 'Erreur lors de la lecture du CSV.');
               reject(err);
             }
           });
         } catch (error) {
-          console.error('Erreur lors du traitement CSV:', error);
           reject(error);
         }
       };
       reader.onerror = () => {
-        console.error('Erreur lors de la lecture du fichier CSV');
         this.showError('upload', 'Erreur lors de la lecture du fichier.');
         reject();
       };
@@ -2037,13 +1903,9 @@ End Sub`;
   }
 
   updateDisplayedRows() {
-    console.log('updateDisplayedRows appelée - selectionApplied:', this.selectionApplied, 'selectedCols.length:', this.selectedCols.length);
-    console.log('allRows.length:', this.allRows.length, 'allColumns.length:', this.allColumns.length);
     
     // Vérification spéciale pour Orange Money
     if (this.isOrangeMoneyFile) {
-      console.log(`🟠 Vérification Orange Money - allColumns:`, this.allColumns);
-      console.log(`🟠 Vérification Orange Money - columns:`, this.columns);
     }
     
     // Si une sélection est appliquée, afficher seulement les colonnes sélectionnées
@@ -2056,7 +1918,6 @@ End Sub`;
         return newRow;
       });
       this.columns = [...this.selectedCols];
-      console.log('Affichage filtré - combinedRows.length:', this.combinedRows.length, 'columns.length:', this.columns.length);
     } else {
       // Si pas de sélection appliquée, afficher toutes les colonnes
       // Ne pas réinitialiser combinedRows si des modifications ont été appliquées
@@ -2066,9 +1927,7 @@ End Sub`;
       if (!hasExistingData || !hasSameRowCount) {
         this.combinedRows = [...this.allRows];
         this.columns = [...this.allColumns];
-        console.log('Affichage complet - combinedRows.length:', this.combinedRows.length, 'columns.length:', this.columns.length);
       } else {
-        console.log('Conservation des modifications de formatage - combinedRows.length:', this.combinedRows.length);
       }
     }
     
@@ -2104,16 +1963,13 @@ End Sub`;
   }
 
   updateDisplayedRowsForPage() {
-    console.log('updateDisplayedRowsForPage - combinedRows.length:', this.combinedRows.length, 'showAllRows:', this.showAllRows, 'maxDisplayedRows:', this.maxDisplayedRows);
     
     if (this.showAllRows || this.combinedRows.length <= this.maxDisplayedRows) {
       this.displayedRows = this.combinedRows;
-      console.log('Affichage complet - displayedRows.length:', this.displayedRows.length);
     } else {
       const startIndex = (this.currentPage - 1) * this.rowsPerPage;
       const endIndex = startIndex + this.rowsPerPage;
       this.displayedRows = this.combinedRows.slice(startIndex, endIndex);
-      console.log('Affichage paginé - page:', this.currentPage, 'startIndex:', startIndex, 'endIndex:', endIndex, 'displayedRows.length:', this.displayedRows.length);
     }
     
     // Forcer la détection de changement avec un délai pour s'assurer que le DOM est prêt
@@ -2508,23 +2364,14 @@ End Sub`;
   onFilterColumnChange() {
     if (this.selectedFilterColumn) {
       // Extraire les valeurs uniques de la colonne sélectionnée (comportement normal)
-      console.log('🔍 Extraction des valeurs pour la colonne:', this.selectedFilterColumn);
-      console.log('📊 Nombre total de lignes:', this.allRows.length);
-      console.log('📋 Colonnes disponibles:', this.columns);
-      console.log('📋 Toutes les colonnes:', this.allColumns);
       
       // Vérifier si la colonne existe dans les données
       if (this.allRows.length > 0) {
         const firstRow = this.allRows[0];
-        console.log('🔍 Première ligne de données:', firstRow);
-        console.log('🔍 Clés de la première ligne:', Object.keys(firstRow));
-        console.log('🔍 La colonne sélectionnée existe-t-elle?', this.selectedFilterColumn in firstRow);
       }
       
       // Extraire toutes les valeurs uniques de la colonne sélectionnée depuis allRows (données originales)
       const uniqueValues = Array.from(new Set(this.allRows.map(row => row[this.selectedFilterColumn])));
-      console.log('🔍 Valeurs uniques trouvées:', uniqueValues);
-      console.log('🔍 Nombre de valeurs uniques:', uniqueValues.length);
       
       this.filterValues = uniqueValues;
       this.filteredFilterValues = this.filterValues.slice();
@@ -2700,12 +2547,10 @@ End Sub`;
           const workbook = XLSX.read(data, options);
           resolve(workbook);
         } catch (error) {
-          console.error('Erreur lors de la lecture du fichier Excel:', error);
           reject(error);
         }
       };
       reader.onerror = (error) => {
-        console.error('Erreur FileReader:', error);
         reject(error);
       };
       reader.readAsArrayBuffer(file);
@@ -2892,7 +2737,6 @@ End Sub`;
       }
     } catch (e) {
       this.isExporting = false;
-      console.error(`Erreur lors de l'export ${format.toUpperCase()}:`, e);
       this.showError('export', `Erreur lors de l'export ${format.toUpperCase()}.`);
     }
   }
@@ -3167,7 +3011,6 @@ End Sub`;
       this.totalEnergieProgress = `Traitement terminé : ${matchCount} lignes avec correspondance(s) sur ${this.totalEnergieData2.length} lignes du fichier 2. Total : ${totalRowsCreated} lignes créées`;
       this.showSuccess('totalEnergie', `Fusion réussie : ${totalRowsCreated} lignes créées (${matchCount} avec correspondance, ${this.totalEnergieData2.length - matchCount} sans correspondance)`);
     } catch (error) {
-      console.error('Erreur lors du traitement Total Energie:', error);
       const message = error instanceof Error ? error.message : 'Erreur inconnue lors du traitement.';
       this.showError('totalEnergie', message);
     } finally {
@@ -3195,7 +3038,6 @@ End Sub`;
       this.totalEnergieProgress = 'Export terminé';
       this.showSuccess('totalEnergie', `Fichier exporté : ${fileName}`);
     } catch (error) {
-      console.error('Erreur lors de l\'export Total Energie:', error);
       const message = error instanceof Error ? error.message : 'Erreur lors de l\'export.';
       this.showError('totalEnergie', message);
     } finally {
@@ -3566,7 +3408,6 @@ End Sub`;
       this.showSheetSplitExcelFallbackHelp = false;
       this.showSuccess('sheetSplit', `Séparation terminée : ${sheetResults.length} fichiers générés (${zipName}).`);
     } catch (error) {
-      console.error('Erreur lors de la séparation des feuilles:', error);
       const message = error instanceof Error ? error.message : 'Erreur inconnue lors de la séparation des feuilles.';
       this.showError('sheetSplit', message);
     } finally {
@@ -3733,7 +3574,6 @@ End Sub`;
             this.sheetSplitConversionProgressInterval = null;
           }
           
-          console.error('Erreur lors de la conversion XLS -> XLSX:', err);
           const isConnectionError = err instanceof HttpErrorResponse && (err.status === 0 || err.status === 504);
           if (isConnectionError) {
             this.sheetSplitProgress = 'Serveur inaccessible. Conversion locale en cours...';
@@ -3747,7 +3587,6 @@ End Sub`;
               this.cd.detectChanges();
               setTimeout(() => resolve(converted), 300);
             }).catch(fallbackErr => {
-              console.error('Fallback conversion XLS -> XLSX (navigateur) a échoué:', fallbackErr);
               const isUnsupported = fallbackErr instanceof Error && fallbackErr.message === 'BROWSER_XLS_TOO_LARGE_OR_UNSUPPORTED';
               const msg = isUnsupported
                 ? 'Ce fichier .xls ne peut pas être converti dans le navigateur. Utilisez la solution avec Excel ci-dessous, ou assurez-vous que le serveur est accessible.'
@@ -3902,16 +3741,11 @@ End Sub`;
   }
 
   selectAllExportTypes() {
-    console.log('selectAllExportTypes appelée');
-    console.log('exportTypeValues:', this.exportTypeValues);
     this.exportTypeSelected = [...this.exportTypeValues];
-    console.log('exportTypeSelected après sélection:', this.exportTypeSelected);
   }
 
   deselectAllExportTypes() {
-    console.log('deselectAllExportTypes appelée');
     this.exportTypeSelected = [];
-    console.log('exportTypeSelected après désélection:', this.exportTypeSelected);
   }
 
   onExportTypeSuffixChange() {
@@ -3932,10 +3766,8 @@ End Sub`;
         let sufixe = '';
         if (this.exportTypeSuffix === 'CUSTOM' && this.exportTypeCustomSuffix) {
           sufixe = this.exportTypeCustomSuffix.replace(/[^a-zA-Z0-9_-]/g, '_');
-          console.log(`🔧 Suffixe personnalisé utilisé: "${this.exportTypeCustomSuffix}" → "${sufixe}"`);
         } else if (this.exportTypeSuffix && this.exportTypeSuffix !== 'CUSTOM') {
           sufixe = this.exportTypeSuffix.replace(/[^a-zA-Z0-9_-]/g, '_');
-          console.log(`🔧 Suffixe prédéfini utilisé: "${this.exportTypeSuffix}" → "${sufixe}"`);
         }
         const prefixe = this.exportTypePrefix ? this.exportTypePrefix.replace(/[^a-zA-Z0-9_-]/g, '_') : '';
         const description = this.exportTypeDescription ? this.exportTypeDescription.replace(/[^a-zA-Z0-9_-]/g, '_') : '';
@@ -4178,7 +4010,6 @@ End Sub`;
           ? 'droite'
           : `position ${this.removeCharSpecificPosition}`;
 
-      console.log(`🔄 Formatage: ${actionLabel} de ${this.removeCharCount} caractère(s) depuis ${sideLabel}`);
 
       // Traiter les données affichées (combinedRows)
       this.combinedRows.forEach((row, rowIndex) => {
@@ -4226,7 +4057,6 @@ End Sub`;
         });
       }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
 
       const actionText = this.removeCharMode === 'keep'
         ? `Conservation de ${this.removeCharCount} caractère(s)`
@@ -4237,7 +4067,6 @@ End Sub`;
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors de la suppression:', error);
       this.showError('format', 'Erreur lors de la suppression de caractères');
     }
   }
@@ -4344,7 +4173,6 @@ End Sub`;
         });
       }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
 
       this.showSuccess('format', `Suppression de caractères spéciaux appliquée sur ${this.formatSelections['removeSpecialStrings'].length} colonne(s) (${processedCells} modifications)`);
       
@@ -4352,7 +4180,6 @@ End Sub`;
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors de la suppression de caractères spéciaux:', error);
       this.showError('format', 'Erreur lors de la suppression de caractères spéciaux: ' + error.message);
     }
   }
@@ -4415,7 +4242,6 @@ End Sub`;
         });
       }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
 
       this.showSuccess('format', `Suppression de nombres appliquée sur ${this.formatSelections['removeNumbers'].length} colonne(s) (${processedCells} modifications)`);
       
@@ -4423,7 +4249,6 @@ End Sub`;
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors de la suppression des nombres:', error);
       this.showError('format', 'Erreur lors de la suppression des nombres');
     }
   }
@@ -4541,7 +4366,6 @@ End Sub`;
         });
       }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
 
       this.showSuccess('format', `Suppression d'indicatif appliquée sur ${this.formatSelections['removeIndicatif'].length} colonne(s) (${processedCells} modifications)`);
       
@@ -4549,7 +4373,6 @@ End Sub`;
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors de la suppression d\'indicatif:', error);
       this.showError('format', 'Erreur lors de la suppression d\'indicatif');
     }
   }
@@ -4586,19 +4409,15 @@ End Sub`;
               // Pattern: nombre avec espaces possibles + virgule + décimales
               const frenchPattern = /^([\d\s]+)\s*,\s*(\d+)\s*$/;
               const match = value.match(frenchPattern);
-              console.log(`🔍 Test français pour "${value}":`, match);
               if (match) {
                 let integerPart = match[1];
                 const decimalPart = match[2];
-                console.log(`📊 Partie entière brute: "${integerPart}", Partie décimale: "${decimalPart}"`);
                 
                 // Nettoyer la partie entière en supprimant les espaces (séparateurs de milliers)
                 integerPart = integerPart.replace(/\s/g, '');
-                console.log(`📊 Partie entière nettoyée: "${integerPart}"`);
                 
                 // Si on garde les zéros de fin et que la partie décimale n'est pas que des zéros
                 if (this.keepTrailingZeros && !/^0+$/.test(decimalPart)) {
-                  console.log(`⏭️ Garde "${value}" car partie décimale non nulle: "${decimalPart}"`);
                   // Garder le nombre tel quel
                   return;
                 }
@@ -4606,28 +4425,22 @@ End Sub`;
                 // Supprimer la partie décimale et retourner la partie entière nettoyée
                 value = integerPart;
                 modified = true;
-                console.log(`✅ Modifié "${originalValue}" → "${value}"`);
               } else {
-                console.log(`❌ Pas de match pour "${value}" avec le pattern français`);
               }
             } else {
               // Format anglais : 3,000.00 ou 3000.00 - gère les séparateurs de milliers (virgules)
               // Pattern: nombre avec virgules possibles + point + décimales
               const englishPattern = /^([\d,]+)\s*\.\s*(\d+)\s*$/;
               const match = value.match(englishPattern);
-              console.log(`🔍 Test anglais pour "${value}":`, match);
               if (match) {
                 let integerPart = match[1];
                 const decimalPart = match[2];
-                console.log(`📊 Partie entière brute: "${integerPart}", Partie décimale: "${decimalPart}"`);
                 
                 // Nettoyer la partie entière en supprimant les virgules (séparateurs de milliers)
                 integerPart = integerPart.replace(/,/g, '');
-                console.log(`📊 Partie entière nettoyée: "${integerPart}"`);
                 
                 // Si on garde les zéros de fin et que la partie décimale n'est pas que des zéros
                 if (this.keepTrailingZeros && !/^0+$/.test(decimalPart)) {
-                  console.log(`⏭️ Garde "${value}" car partie décimale non nulle: "${decimalPart}"`);
                   // Garder le nombre tel quel
                   return;
                 }
@@ -4635,9 +4448,7 @@ End Sub`;
                 // Supprimer la partie décimale et retourner la partie entière nettoyée
                 value = integerPart;
                 modified = true;
-                console.log(`✅ Modifié "${originalValue}" → "${value}"`);
               } else {
-                console.log(`❌ Pas de match pour "${value}" avec le pattern anglais`);
               }
             }
             
@@ -4714,7 +4525,6 @@ End Sub`;
         });
       }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
 
       this.showSuccess('format', `Suppression de décimales appliquée sur ${this.formatSelections['removeDecimals'].length} colonne(s) (${processedCells} modifications)`);
       
@@ -4722,7 +4532,6 @@ End Sub`;
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors de la suppression des décimales:', error);
       this.showError('format', 'Erreur lors de la suppression des décimales');
     }
   }
@@ -4745,7 +4554,6 @@ End Sub`;
       let processedCells = 0;
       let totalCells = 0;
       
-      console.log(`🔄 Formatage: Garder les ${this.keepLastDigitsCount} derniers digits`);
       
       // Traiter les données affichées (combinedRows)
       this.combinedRows.forEach((row, rowIndex) => {
@@ -4776,7 +4584,6 @@ End Sub`;
               processedCells++;
               
               if (rowIndex < 5) { // Log pour les 5 premières lignes
-                console.log(`📝 ${col}[${rowIndex}]: "${originalValue}" -> "${value}"`);
               }
             } else {
               // Si moins de digits que demandé, garder tous les digits disponibles
@@ -4785,7 +4592,6 @@ End Sub`;
               processedCells++;
               
               if (rowIndex < 5) { // Log pour les 5 premières lignes
-                console.log(`📝 ${col}[${rowIndex}]: "${originalValue}" -> "${value}" (moins de ${this.keepLastDigitsCount} digits)`);
               }
             }
           }
@@ -4827,7 +4633,6 @@ End Sub`;
         });
       }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
 
       this.showSuccess('format', `Formatage "garder ${this.keepLastDigitsCount} derniers digits" appliqué sur ${this.formatSelections['keepLastDigits'].length} colonne(s) (${processedCells} modifications)`);
       
@@ -4835,7 +4640,6 @@ End Sub`;
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors du formatage des digits:', error);
       this.showError('format', 'Erreur lors du formatage des digits');
     }
   }
@@ -4853,7 +4657,6 @@ End Sub`;
       let totalCells = 0;
       let processedCells = 0;
       
-      console.log('🔄 Formatage: Suppression des .0 sur les dates');
       
       // Traiter les données affichées (combinedRows)
       this.combinedRows.forEach((row, rowIndex) => {
@@ -4871,7 +4674,6 @@ End Sub`;
               processedCells++;
               
               if (rowIndex < 5) { // Log pour les 5 premières lignes
-                console.log(`📝 ${col}[${rowIndex}]: "${originalValue}" -> "${value}"`);
               }
             }
           }
@@ -4896,7 +4698,6 @@ End Sub`;
         });
       }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
 
       this.showSuccess('format', `Suppression des .0 sur les dates appliquée sur ${this.formatSelections['removeZeroDecimals'].length} colonne(s) (${processedCells} modifications)`);
       
@@ -4904,7 +4705,6 @@ End Sub`;
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors de la suppression des .0:', error);
       this.showError('format', 'Erreur lors de la suppression des .0');
     }
   }
@@ -4922,7 +4722,6 @@ End Sub`;
       let totalCells = 0;
       let processedCells = 0;
       
-      console.log(`🔄 Formatage: Suppression des espaces (type: ${this.removeSpacesType})`);
       
       // Traiter les données affichées (combinedRows)
       this.combinedRows.forEach((row, rowIndex) => {
@@ -4954,7 +4753,6 @@ End Sub`;
               processedCells++;
               
               if (rowIndex < 5) { // Log pour les 5 premières lignes
-                console.log(`📝 ${col}[${rowIndex}]: "${originalValue}" -> "${value}"`);
               }
             }
           }
@@ -4991,7 +4789,6 @@ End Sub`;
         });
       }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
 
       this.showSuccess('format', `Suppression des espaces (${this.removeSpacesType}) appliquée sur ${this.formatSelections['removeSpaces'].length} colonne(s) (${processedCells} modifications)`);
       
@@ -4999,7 +4796,6 @@ End Sub`;
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors de la suppression des espaces:', error);
       this.showError('format', 'Erreur lors de la suppression des espaces');
     }
   }
@@ -5102,12 +4898,10 @@ End Sub`;
         if (dataString.length < 1024 * 1024) {
           localStorage.setItem(this.LOCAL_STORAGE_KEY, dataString);
         } else {
-          console.log('⚠️ Données trop volumineuses pour localStorage, sauvegarde ignorée');
           // Nettoyer l'ancienne sauvegarde si elle existe
           localStorage.removeItem(this.LOCAL_STORAGE_KEY);
         }
       } catch (error) {
-        console.warn('⚠️ Erreur lors de la sauvegarde localStorage:', error);
         // Nettoyer en cas d'erreur
         localStorage.removeItem(this.LOCAL_STORAGE_KEY);
       }
@@ -5401,7 +5195,6 @@ End Sub`;
       this.isProcessing = false;
       
       const totalProcessed = this.allRows.length;
-      console.log(`✅ CSV traité avec succès: ${totalProcessed} lignes`);
       
       this.showSuccess('upload', `Fichier CSV traité avec succès ! ${totalProcessed} lignes importées`);
       
@@ -5412,7 +5205,6 @@ End Sub`;
       this.csvPreviewColumns = [];
       
     } catch (error) {
-      console.error('Erreur lors du traitement du CSV:', error);
       this.isProcessing = false;
       this.showError('upload', 'Erreur lors du traitement du fichier CSV');
     }
@@ -5428,7 +5220,6 @@ End Sub`;
         complete: async (results) => {
           try {
             let rows = results.data as any[];
-            console.log(`CSV parsé avec header: ${rows.length} lignes détectées`);
             
             // Si les colonnes sont nommées field1, field2... ou qu'il n'y a qu'une seule colonne, on relit sans header
             const firstRow = rows[0] || {};
@@ -5436,7 +5227,6 @@ End Sub`;
             const looksLikeNoHeader = allKeys.length <= 1 || allKeys.some(k => k.toLowerCase().startsWith('field'));
             
             if (looksLikeNoHeader) {
-              console.log('Détection d\'un fichier sans en-tête, relecture...');
               Papa.parse(csvContent, {
                 header: false,
                 delimiter: delimiter,
@@ -5444,14 +5234,12 @@ End Sub`;
                 complete: async (res2) => {
                   try {
                     const rawRows = res2.data as any[];
-                    console.log(`CSV parsé sans header: ${rawRows.length} lignes brutes`);
                     
                     if (rawRows.length > 1) {
                       const headerRow = rawRows[0];
                       const dataRows = rawRows.slice(1);
                       const colNames = headerRow.map((v: any, i: number) => v ? v.toString() : 'Col' + (i+1));
                       
-                      console.log(`Traitement de ${dataRows.length} lignes de données avec ${colNames.length} colonnes`);
                       
                       // Traitement en arrière-plan avec chunks très petits
                       await this.processDataInBackground(
@@ -5474,23 +5262,18 @@ End Sub`;
                         }
                       );
                       
-                      console.log('🔍 Colonnes extraites sans en-tête:', colNames);
                       for (const col of colNames) {
                         if (!this.columns.includes(col)) this.columns.push(col);
                         if (!this.allColumns.includes(col)) this.allColumns.push(col);
                       }
-                      console.log('🔍 Colonnes finales après traitement sans en-tête:', this.columns);
                       
-                      console.log(`CSV traité avec succès: ${this.allRows.length} lignes ajoutées`);
                     }
                     resolve();
                   } catch (error) {
-                    console.error('Erreur lors du traitement CSV sans header:', error);
                     reject(error);
                   }
                 },
                 error: (error: any) => {
-                  console.error('Erreur lors de la lecture du CSV sans header:', error);
                   reject(error);
                 }
               });
@@ -5499,7 +5282,6 @@ End Sub`;
             
             // Cas normal avec header
             if (rows.length > 0) {
-              console.log(`Traitement de ${rows.length} lignes avec en-tête`);
               
               // Traitement en arrière-plan avec chunks très petits
               await this.processDataInBackground(
@@ -5516,27 +5298,20 @@ End Sub`;
               
               // Extraire les colonnes
               const firstRow = rows[0];
-              console.log('🔍 Extraction des colonnes depuis la première ligne:', firstRow);
-              console.log('🔍 Clés de la première ligne:', Object.keys(firstRow));
               
               for (const key of Object.keys(firstRow)) {
                 if (!this.columns.includes(key)) this.columns.push(key);
                 if (!this.allColumns.includes(key)) this.allColumns.push(key);
               }
               
-              console.log('🔍 Colonnes extraites:', this.columns);
-              console.log('🔍 Toutes les colonnes:', this.allColumns);
               
-              console.log(`CSV traité avec succès: ${this.allRows.length} lignes ajoutées`);
             }
             resolve();
           } catch (error) {
-            console.error('Erreur lors du traitement CSV:', error);
             reject(error);
           }
         },
         error: (error: any) => {
-          console.error('Erreur lors de la lecture du CSV:', error);
           reject(error);
         }
       });
@@ -5582,7 +5357,6 @@ End Sub`;
       if (columns.length > 0 && columns[0].startsWith('N°')) {
         headerRowIndex = i;
         headerRow = columns;
-        console.log(`🔍 Fichier Orange Money détecté - Ligne d'en-tête trouvée à l'index ${i}:`, columns);
         break;
       }
       
@@ -5590,7 +5364,6 @@ End Sub`;
       if (columns.some((col: string) => col.startsWith('N°'))) {
         headerRowIndex = i;
         headerRow = columns;
-        console.log(`🔍 Fichier Orange Money détecté (flexible) - Ligne d'en-tête trouvée à l'index ${i}:`, columns);
         break;
       }
       
@@ -5611,7 +5384,6 @@ End Sub`;
       );
       
       if (hasOrangeMoneyPattern) {
-        console.log(`🔍 Pattern Orange Money détecté à la ligne ${i}:`, columns);
         // Continuer à chercher la ligne avec "N°"
       }
     }
@@ -5619,13 +5391,10 @@ End Sub`;
     const isOrangeMoney = headerRowIndex !== -1;
     
     if (isOrangeMoney) {
-      console.log(`📊 Fichier Orange Money détecté - Ignorer les lignes 0 à ${headerRowIndex - 1}`);
     } else {
-      console.log(`❌ Fichier Orange Money non détecté - Vérification des patterns...`);
       // Vérifier si c'est un fichier Orange Money même sans "N°" visible
       const allContent = csvContent.toLowerCase();
       if (allContent.includes('orange money') || allContent.includes('relevé de vos opérations')) {
-        console.log(`🟠 Pattern Orange Money détecté dans le contenu, mais pas de ligne "N°" trouvée`);
         // Chercher la première ligne qui ressemble à un en-tête de données
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
@@ -5644,7 +5413,6 @@ End Sub`;
           if (hasDataHeader && columns.length >= 5) {
             headerRowIndex = i;
             headerRow = columns;
-            console.log(`🔍 En-tête de données Orange Money détecté à l'index ${i}:`, columns);
             break;
           }
         }
@@ -5674,7 +5442,6 @@ End Sub`;
               columns.some((col: string) => col.toLowerCase().includes('référence'))) {
             headerRowIndex = i;
             headerRow = columns;
-            console.log(`🔍 En-tête Orange Money trouvé à l'index ${i} (après colonnes génériques):`, columns);
             break;
           }
         }
@@ -5700,7 +5467,6 @@ End Sub`;
         if (hasSpecificPattern && columns.length >= 10) {
           headerRowIndex = i;
           headerRow = columns;
-          console.log(`🔍 En-tête Orange Money spécifique trouvé à l'index ${i}:`, columns);
           break;
         }
       }
@@ -5709,7 +5475,6 @@ End Sub`;
     // Corriger les caractères spéciaux dans les colonnes détectées
     if (headerRowIndex !== -1) {
       headerRow = this.fixOrangeMoneyColumnNames(headerRow);
-      console.log(`🔧 Colonnes Orange Money corrigées:`, headerRow);
     }
 
     return { isOrangeMoney: headerRowIndex !== -1, headerRowIndex, headerRow };
@@ -5717,8 +5482,6 @@ End Sub`;
 
   // Méthode pour forcer la mise à jour de l'affichage après détection Orange Money
   private updateOrangeMoneyDisplay(columns: string[]): void {
-    console.log(`🟠 updateOrangeMoneyDisplay appelée avec:`, columns);
-    console.log(`🟠 updateOrangeMoneyDisplay - allColumns avant:`, this.allColumns);
     
     // Vider les anciennes colonnes
     this.allColumns = [];
@@ -5730,8 +5493,6 @@ End Sub`;
     this.columns = [...columns];
     this.selectedCols = [...columns]; // Sélectionner toutes les colonnes par défaut
     
-    console.log(`🟠 Affichage Orange Money mis à jour:`, this.allColumns);
-    console.log(`🟠 updateOrangeMoneyDisplay - allColumns après:`, this.allColumns);
     
     // Forcer la détection des changements
     this.cd.detectChanges();
@@ -5739,7 +5500,6 @@ End Sub`;
     // Attendre un peu puis forcer à nouveau
     setTimeout(() => {
       this.cd.detectChanges();
-      console.log(`🟠 Détection des changements forcée - allColumns:`, this.allColumns.length);
       
       // Appliquer automatiquement le filtre Orange Money complet (filtres + colonnes spécifiques)
       this.applyAutomaticOrangeMoneyFilter();
@@ -5777,7 +5537,6 @@ End Sub`;
 
   // Méthode pour appliquer automatiquement le filtre "Succès" sur les fichiers Orange Money
   private applyAutomaticOrangeMoneyFilter(): void {
-    console.log('🎯 Application automatique du filtre Orange Money...');
     
     // Chercher la colonne "Statut" dans les colonnes disponibles
     const statutColumn = this.allColumns.find(col => 
@@ -5803,21 +5562,17 @@ End Sub`;
     
     // Appliquer le filtre sur le statut "Succès"
     if (statutColumn && filteredRows.length > 0) {
-      console.log('✅ Colonne Statut trouvée:', statutColumn);
       
       filteredRows = filteredRows.filter(row => {
         const statutValue = row[statutColumn];
         return statutValue && statutValue.toString().toLowerCase().includes('succès');
       });
       
-      console.log(`✅ Filtre Statut "Succès" appliqué: ${filteredRows.length} lignes restantes`);
     } else {
-      console.log('⚠️ Colonne Statut non trouvée ou aucune donnée disponible');
     }
     
     // Appliquer le filtre sur les types d'opération (Cash in et Merchant Payment)
     if (operationColumn && filteredRows.length > 0) {
-      console.log('✅ Colonne Type d\'opération trouvée:', operationColumn);
       
       const originalCount = filteredRows.length;
       
@@ -5829,7 +5584,6 @@ End Sub`;
           uniqueOperations.add(operationValue.toString());
         }
       });
-      console.log('🔍 Types d\'opération disponibles:', Array.from(uniqueOperations));
       
       filteredRows = filteredRows.filter(row => {
         const operationValue = row[operationColumn];
@@ -5850,16 +5604,12 @@ End Sub`;
                operationLower.includes('topup');
         
         if (isAccepted) {
-          console.log(`✅ Opération acceptée: "${operationValue}"`);
         }
         
         return isAccepted;
       });
       
-      console.log(`✅ Filtre Type d'opération appliqué: ${filteredRows.length} lignes restantes (${originalCount - filteredRows.length} lignes filtrées)`);
     } else {
-      console.log('⚠️ Colonne Type d\'opération non trouvée ou aucune donnée disponible');
-      console.log('🔍 Colonnes disponibles:', this.allColumns);
     }
     
     // Appliquer le filtre de colonnes spécifique pour Orange Money
@@ -5874,10 +5624,8 @@ End Sub`;
       // Mettre à jour l'affichage
       this.updateDisplayedRows();
       
-      console.log(`✅ Filtres automatiques appliqués: ${filteredRows.length} lignes finales`);
       this.showSuccess('filter', `Filtres automatiques Orange Money appliqués: ${filteredRows.length} lignes (Succès + Cash in/Merchant Payment)`);
     } else {
-      console.log('⚠️ Aucune ligne ne correspond aux critères de filtrage');
       this.showError('filter', 'Aucune ligne ne correspond aux critères de filtrage automatique.');
     }
     
@@ -5887,7 +5635,6 @@ End Sub`;
 
   // Nouvelle méthode pour appliquer le filtre de colonnes spécifique Orange Money
   private applyOrangeMoneyColumnFilter(): void {
-    console.log('🎯 Application du filtre de colonnes Orange Money...');
     
     // Définir l'ordre spécifique des colonnes pour Orange Money
     const orangeMoneyColumnOrder = [
@@ -5926,16 +5673,12 @@ End Sub`;
       
       if (foundColumn) {
         availableColumns.push(foundColumn);
-        console.log(`✅ Colonne trouvée pour "${targetColumn}": "${foundColumn}"`);
       } else {
-        console.log(`⚠️ Colonne non trouvée pour "${targetColumn}"`);
       }
     }
     
     // Appliquer le filtre de colonnes si des colonnes ont été trouvées
     if (availableColumns.length > 0) {
-      console.log(`🎯 Application du filtre de colonnes Orange Money: ${availableColumns.length} colonnes`);
-      console.log(`📋 Colonnes sélectionnées:`, availableColumns);
       
       // Mettre à jour les colonnes affichées
       this.columns = [...availableColumns];
@@ -5945,16 +5688,13 @@ End Sub`;
       // Mettre à jour l'affichage
       this.updateDisplayedRows();
       
-      console.log(`✅ Filtre de colonnes Orange Money appliqué avec succès`);
       this.showSuccess('select', `Filtre de colonnes Orange Money appliqué: ${availableColumns.length} colonnes affichées dans l'ordre spécifique`);
     } else {
-      console.log('⚠️ Aucune colonne correspondante trouvée pour le filtre Orange Money');
     }
   }
 
   // Méthode pour concaténer automatiquement les colonnes Date et Heure pour les fichiers Orange Money
   private applyAutomaticDateHeureConcatenation(): void {
-    console.log('📅 Application de la concaténation automatique Date + Heure pour Orange Money...');
     
     // Chercher les colonnes Date et Heure avec une détection plus flexible
     const dateColumn = this.allColumns.find(col => {
@@ -5974,7 +5714,6 @@ End Sub`;
     });
     
     if (dateColumn && heureColumn && this.allRows.length > 0) {
-      console.log('✅ Colonnes Date et Heure trouvées:', { date: dateColumn, heure: heureColumn });
       
       // Vérifier si la colonne DATE existe déjà
       const dateColumnExists = this.allColumns.includes('DATE');
@@ -6006,14 +5745,10 @@ End Sub`;
         // Mettre à jour l'affichage
         this.updateDisplayedRows();
         
-        console.log(`✅ Concaténation automatique appliquée: colonne DATE créée avec ${concatenatedCount} valeurs`);
         this.showSuccess('concat', `Concaténation automatique Orange Money: colonne DATE créée (${dateColumn} + ${heureColumn}) - ${concatenatedCount} valeurs traitées`);
       } else {
-        console.log('ℹ️ Colonne DATE existe déjà, pas de concaténation automatique');
       }
     } else {
-      console.log('⚠️ Colonnes Date et/ou Heure non trouvées pour la concaténation automatique');
-      console.log('🔍 Colonnes disponibles:', this.allColumns);
       if (!dateColumn) console.log('❌ Colonne Date non trouvée');
       if (!heureColumn) console.log('❌ Colonne Heure non trouvée');
     }
@@ -6024,17 +5759,14 @@ End Sub`;
    */
   private performFieldTypeAnalysis(): void {
     try {
-      console.log('🔍 Début de l\'analyse automatique des types de champs');
       
       if (this.allRows.length === 0) {
-        console.log('⚠️ Aucune donnée à analyser');
         return;
       }
 
       // Sécurité: désactiver l'analyse automatique pour les fichiers extrêmement volumineux
       const MAX_ANALYSIS_ROWS = 100000;
       if (this.allRows.length > MAX_ANALYSIS_ROWS) {
-        console.warn(`⚠️ Dataset trop volumineux (${this.allRows.length} lignes), analyse automatique des types de champs désactivée.`);
         return;
       }
 
@@ -6044,8 +5776,6 @@ End Sub`;
       // Générer les recommandations de formatage
       this.formattingRecommendations = this.fieldTypeDetectionService.generateFormattingRecommendations(this.fieldTypeAnalysis);
       
-      console.log('✅ Analyse des types de champs terminée:', this.fieldTypeAnalysis.length, 'colonnes analysées');
-      console.log('📋 Recommandations de formatage:', this.formattingRecommendations.length, 'recommandations');
       
       // Appliquer automatiquement les formatages si activé
       if (this.autoFormattingEnabled && this.formattingRecommendations.length > 0) {
@@ -6061,15 +5791,9 @@ End Sub`;
       
       if (interestingTypes.length > 0) {
         this.showFieldTypeAnalysis = true;
-        console.log('📊 Types de champs détectés:', interestingTypes.map(a => ({
-          column: a.columnName,
-          type: a.typeInfo.type,
-          confidence: a.typeInfo.confidence
-        })));
       }
       
     } catch (error) {
-      console.error('❌ Erreur lors de l\'analyse des types de champs:', error);
     }
   }
 
@@ -6078,11 +5802,9 @@ End Sub`;
    */
   private applyAutomaticFormatting(): void {
     try {
-      console.log('🔄 Application automatique des formatages recommandés');
       
       for (const recommendation of this.formattingRecommendations) {
         if (recommendation.confidence > 0.7) {
-          console.log(`📋 Application du formatage pour ${recommendation.column} (${recommendation.type})`);
           
           switch (recommendation.type) {
             case 'date':
@@ -6105,11 +5827,9 @@ End Sub`;
       // Appliquer le formatage si des options ont été activées
       if (this.hasFormattingOption()) {
         this.applyFormatting();
-        console.log('✅ Formatage automatique appliqué');
       }
       
     } catch (error) {
-      console.error('❌ Erreur lors de l\'application automatique du formatage:', error);
     }
   }
 
@@ -6125,7 +5845,6 @@ End Sub`;
    */
   applySpecificFormatting(column: string, type: string): void {
     try {
-      console.log(`🔄 Application du formatage spécifique pour ${column} (${type})`);
       
       switch (type) {
         case 'date':
@@ -6148,7 +5867,6 @@ End Sub`;
       this.showSuccess('format', `Formatage appliqué pour ${column} (${type})`);
       
     } catch (error) {
-      console.error('❌ Erreur lors de l\'application du formatage spécifique:', error);
       this.showError('format', 'Erreur lors de l\'application du formatage');
     }
   }
@@ -6218,14 +5936,12 @@ End Sub`;
    * Force la re-détection des périodes (pour debug)
    */
   forceRedetectPeriods(): void {
-    console.log('🔄 Force re-détection des périodes...');
     this.detectedPeriods = [];
     this.detectedPeriodsPage = 1;
     this.detectedPeriodsTotalPages = 0;
     if (this.exportDateCol && this.exportDatePeriod) {
       this.detectPeriods();
     } else {
-      console.warn('⚠️ Colonne de date ou période non sélectionnée');
     }
   }
 
@@ -6235,8 +5951,6 @@ End Sub`;
   private detectPeriods(): void {
     if (!this.exportDateCol || !this.exportDatePeriod) return;
 
-    console.log(`🔍 Détection des périodes pour la colonne: ${this.exportDateCol}, période: ${this.exportDatePeriod}`);
-    console.log(`📊 Nombre total de lignes à analyser: ${this.combinedRows.length}`);
 
     const periodMap = new Map<string, number>();
     let processedRows = 0;
@@ -6255,30 +5969,21 @@ End Sub`;
           
           // Log des premières dates pour debug
           if (index < 10 || Math.random() < 0.001) {
-            console.log(`📅 Ligne ${index}: "${dateValue}" -> ${periodKey}`);
           }
         } else {
           invalidDates++;
           // Log des dates invalides pour debug
           if (invalidDates <= 10) {
-            console.warn(`⚠️ Date invalide à la ligne ${index}: "${dateValue}"`);
           }
         }
       } else {
         invalidDates++;
         if (invalidDates <= 5) {
-          console.warn(`⚠️ Valeur de date vide à la ligne ${index}`);
         }
       }
       processedRows++;
     });
 
-    console.log(`✅ Détection terminée:`);
-    console.log(`   - Lignes traitées: ${processedRows}`);
-    console.log(`   - Dates valides: ${validDates}`);
-    console.log(`   - Dates invalides: ${invalidDates}`);
-    console.log(`   - Périodes uniques détectées: ${uniqueDates.size}`);
-    console.log(`   - Périodes détectées:`, Array.from(uniqueDates).sort());
 
     this.detectedPeriods = Array.from(periodMap.entries())
       .map(([key, count]) => ({
@@ -6288,7 +5993,6 @@ End Sub`;
       }))
       .sort((a, b) => a.key.localeCompare(b.key));
 
-    console.log(`📋 Périodes finales:`, this.detectedPeriods.map(p => `${p.label} (${p.count} lignes)`));
 
     // Calculer le nombre total de pages pour la pagination
     this.detectedPeriodsTotalPages = Math.ceil(this.detectedPeriods.length / this.detectedPeriodsPageSize);
@@ -6342,16 +6046,6 @@ End Sub`;
    * Exporte toutes les périodes (toutes les pages)
    */
   exportAllPages(): void {
-    console.log('🔄 Début de l\'export de toutes les pages...');
-    console.log('📋 Paramètres:', {
-      exportDateCol: this.exportDateCol,
-      exportDatePeriod: this.exportDatePeriod,
-      exportDateFormat: this.exportDateFormat,
-      totalPages: this.detectedPeriodsTotalPages,
-      totalPeriods: this.detectedPeriods.length,
-      totalRows: this.combinedRows.length,
-      totalColumns: this.columns.length
-    });
 
     if (!this.exportDateCol || !this.exportDatePeriod || !this.exportDateFormat) {
       this.showError('exportDate', 'Veuillez sélectionner une colonne de date, une période et un format.');
@@ -6383,19 +6077,16 @@ End Sub`;
     try {
       // Grouper les données pour toutes les périodes
       const periodGroups = this.groupDataByPeriod();
-      console.log(`📊 Groupes de périodes pour toutes les pages: ${periodGroups.size}`);
 
       let exportedCount = 0;
       const errors: string[] = [];
 
-      console.log(`🚀 Début de l'export de ${periodGroups.size} périodes (toutes les pages)...`);
       
       for (const [periodKey, rows] of periodGroups.entries()) {
         try {
           const periodLabel = this.formatPeriodLabel(periodKey, this.exportDatePeriod);
           const fileName = this.generateExportFileName(periodKey, periodLabel);
           
-          console.log(`📁 Export de la période: ${periodLabel} (${rows.length} lignes) -> ${fileName}`);
           
           if (this.exportDateFormat === 'csv') {
             this.exportPeriodAsCSV(rows, fileName);
@@ -6408,14 +6099,11 @@ End Sub`;
           }
           
           exportedCount++;
-          console.log(`✅ Fichier exporté avec succès: ${fileName}`);
         } catch (periodError) {
-          console.error(`❌ Erreur pour la période ${periodKey}:`, periodError);
           errors.push(`Période ${periodKey}: ${periodError.message}`);
         }
       }
       
-      console.log(`🏁 Export terminé: ${exportedCount} fichiers créés, ${errors.length} erreurs`);
 
       if (exportedCount > 0) {
         const message = errors.length > 0 
@@ -6424,13 +6112,11 @@ End Sub`;
         this.showSuccess('exportDate', message);
         
         if (errors.length > 0) {
-          console.warn('⚠️ Erreurs lors de l\'export:', errors);
         }
       } else {
         this.showError('exportDate', 'Aucun fichier n\'a pu être exporté. Vérifiez les données et les paramètres.');
       }
     } catch (error) {
-      console.error('❌ Erreur lors de l\'export de toutes les pages:', error);
       this.showError('exportDate', `Erreur lors de l'export de toutes les pages: ${error.message}`);
     }
   }
@@ -6442,7 +6128,6 @@ End Sub`;
     try {
       const date = this.parseDate(dateValue);
       if (!date) {
-        console.warn(`⚠️ Impossible de parser la date: ${dateValue}`);
         return null;
       }
 
@@ -6483,17 +6168,14 @@ End Sub`;
           break;
         }
         default:
-          console.warn(`⚠️ Type de période non supporté: ${period}`);
           return null;
       }
       
       // Log seulement pour les premières dates pour éviter de surcharger la console
       if (Math.random() < 0.01) { // 1% des cas seulement
-        console.log(`🔑 Clé de période générée: ${dateValue} -> ${periodKey} (${period})`);
       }
       return periodKey;
     } catch (error) {
-      console.error('❌ Erreur lors de la génération de la clé de période:', error, 'pour la valeur:', dateValue);
       return null;
     }
   }
@@ -6553,13 +6235,11 @@ End Sub`;
    */
   private parseDate(dateValue: any): Date | null {
     if (!dateValue) {
-      console.warn('⚠️ Valeur de date vide ou nulle');
       return null;
     }
 
     // Si c'est déjà un objet Date
     if (dateValue instanceof Date) {
-      console.log(`📅 Date déjà parsée: ${dateValue.toISOString()}`);
       return dateValue;
     }
 
@@ -6568,7 +6248,6 @@ End Sub`;
       const trimmedValue = dateValue.trim();
       // Log seulement pour les premières dates pour éviter de surcharger la console
       if (Math.random() < 0.01) { // 1% des cas seulement
-        console.log(`🔍 Tentative de parsing de la date: "${trimmedValue}"`);
       }
       
       // Essayer différents formats de date
@@ -6617,7 +6296,6 @@ End Sub`;
             const parsed = format.parser(trimmedValue);
             if (!isNaN(parsed.getTime())) {
               if (Math.random() < 0.01) { // 1% des cas seulement
-                console.log(`✅ Date parsée avec le format ${format.name}: "${trimmedValue}" -> ${parsed.toISOString()}`);
               }
               return parsed;
             }
@@ -6633,7 +6311,6 @@ End Sub`;
         const parsed = new Date(trimmedValue);
         if (!isNaN(parsed.getTime())) {
           if (Math.random() < 0.01) { // 1% des cas seulement
-            console.log(`✅ Date parsée directement: "${trimmedValue}" -> ${parsed.toISOString()}`);
           }
           return parsed;
         }
@@ -6641,9 +6318,7 @@ End Sub`;
         // Ignore l'erreur et continue
       }
       
-      console.warn(`❌ Impossible de parser la date: "${trimmedValue}"`);
     } else {
-      console.warn(`❌ Type de valeur non supporté pour le parsing de date: ${typeof dateValue}`, dateValue);
     }
 
     return null;
@@ -6653,16 +6328,6 @@ End Sub`;
    * Exporte les données par période de date (page courante seulement)
    */
   exportByDate(): void {
-    console.log('🔄 Début de l\'export par date (page courante)...');
-    console.log('📋 Paramètres:', {
-      exportDateCol: this.exportDateCol,
-      exportDatePeriod: this.exportDatePeriod,
-      exportDateFormat: this.exportDateFormat,
-      currentPage: this.detectedPeriodsPage,
-      totalPages: this.detectedPeriodsTotalPages,
-      totalRows: this.combinedRows.length,
-      totalColumns: this.columns.length
-    });
 
     if (!this.exportDateCol || !this.exportDatePeriod || !this.exportDateFormat) {
       this.showError('exportDate', 'Veuillez sélectionner une colonne de date, une période et un format.');
@@ -6694,7 +6359,6 @@ End Sub`;
     try {
       // Obtenir les périodes de la page courante
       const currentPagePeriods = this.getPagedDetectedPeriods();
-      console.log(`📊 Périodes de la page courante (${this.detectedPeriodsPage}/${this.detectedPeriodsTotalPages}): ${currentPagePeriods.length}`);
       
       if (currentPagePeriods.length === 0) {
         this.showError('exportDate', 'Aucune période sur la page courante à exporter.');
@@ -6703,19 +6367,16 @@ End Sub`;
 
       // Grouper les données pour les périodes de la page courante seulement
       const periodGroups = this.groupDataByPeriodForPage(currentPagePeriods);
-      console.log(`📊 Groupes de périodes pour la page courante: ${periodGroups.size}`);
 
       let exportedCount = 0;
       const errors: string[] = [];
 
-      console.log(`🚀 Début de l'export de ${periodGroups.size} périodes de la page courante...`);
       
       for (const [periodKey, rows] of periodGroups.entries()) {
         try {
           const periodLabel = this.formatPeriodLabel(periodKey, this.exportDatePeriod);
           const fileName = this.generateExportFileName(periodKey, periodLabel);
           
-          console.log(`📁 Export de la période: ${periodLabel} (${rows.length} lignes) -> ${fileName}`);
           
           if (this.exportDateFormat === 'csv') {
             this.exportPeriodAsCSV(rows, fileName);
@@ -6728,14 +6389,11 @@ End Sub`;
           }
           
           exportedCount++;
-          console.log(`✅ Fichier exporté avec succès: ${fileName}`);
         } catch (periodError) {
-          console.error(`❌ Erreur pour la période ${periodKey}:`, periodError);
           errors.push(`Période ${periodKey}: ${periodError.message}`);
         }
       }
       
-      console.log(`🏁 Export terminé: ${exportedCount} fichiers créés, ${errors.length} erreurs`);
 
       if (exportedCount > 0) {
         const message = errors.length > 0 
@@ -6744,13 +6402,11 @@ End Sub`;
         this.showSuccess('exportDate', message);
         
         if (errors.length > 0) {
-          console.warn('⚠️ Erreurs lors de l\'export:', errors);
         }
       } else {
         this.showError('exportDate', 'Aucun fichier n\'a pu être exporté. Vérifiez les données et les paramètres.');
       }
     } catch (error) {
-      console.error('❌ Erreur lors de l\'export par date:', error);
       this.showError('exportDate', `Erreur lors de l'export par date: ${error.message}`);
     }
   }
@@ -6761,13 +6417,9 @@ End Sub`;
   private groupDataByPeriodForPage(currentPagePeriods: any[]): Map<string, any[]> {
     const groups = new Map<string, any[]>();
     
-    console.log('🔍 Début du groupement des données pour la page courante...');
-    console.log(`📊 Périodes à traiter: ${currentPagePeriods.length}`);
-    console.log(`📊 Nombre total de lignes: ${this.combinedRows.length}`);
 
     // Créer un Set des clés de période de la page courante pour un accès rapide
     const currentPageKeys = new Set(currentPagePeriods.map(period => period.key));
-    console.log(`🔑 Clés de période de la page courante:`, Array.from(currentPageKeys));
 
     let processedRows = 0;
     let validDates = 0;
@@ -6791,28 +6443,19 @@ End Sub`;
         } else {
           invalidDates++;
           if (invalidDates <= 5) {
-            console.warn(`⚠️ Date invalide à la ligne ${index}:`, dateValue);
           }
         }
       } else {
         invalidDates++;
         if (invalidDates <= 5) {
-          console.warn(`⚠️ Valeur de date vide à la ligne ${index}`);
         }
       }
       processedRows++;
     });
 
-    console.log(`✅ Groupement pour la page courante terminé:`);
-    console.log(`   - Lignes traitées: ${processedRows}`);
-    console.log(`   - Dates valides: ${validDates}`);
-    console.log(`   - Dates invalides: ${invalidDates}`);
-    console.log(`   - Périodes correspondantes: ${matchedPeriods}`);
-    console.log(`   - Groupes créés: ${groups.size}`);
     
     // Afficher les détails de chaque groupe
     for (const [periodKey, rows] of groups.entries()) {
-      console.log(`   📅 ${periodKey}: ${rows.length} lignes`);
     }
 
     return groups;
@@ -6824,10 +6467,6 @@ End Sub`;
   private groupDataByPeriod(): Map<string, any[]> {
     const groups = new Map<string, any[]>();
     
-    console.log('🔍 Début du groupement des données par période...');
-    console.log(`📊 Nombre total de lignes à traiter: ${this.combinedRows.length}`);
-    console.log(`📅 Colonne de date sélectionnée: ${this.exportDateCol}`);
-    console.log(`📆 Période d'export: ${this.exportDatePeriod}`);
 
     let processedRows = 0;
     let validDates = 0;
@@ -6847,36 +6486,27 @@ End Sub`;
           invalidDates++;
           // Log seulement les premières erreurs pour éviter de surcharger la console
           if (invalidDates <= 5) {
-            console.warn(`⚠️ Date invalide à la ligne ${index}:`, dateValue);
           }
         }
       } else {
         invalidDates++;
         // Log seulement les premières erreurs pour éviter de surcharger la console
         if (invalidDates <= 5) {
-          console.warn(`⚠️ Valeur de date vide à la ligne ${index}`);
         }
       }
       processedRows++;
     });
 
-    console.log(`✅ Groupement terminé:`);
-    console.log(`   - Lignes traitées: ${processedRows}`);
-    console.log(`   - Dates valides: ${validDates}`);
-    console.log(`   - Dates invalides: ${invalidDates}`);
-    console.log(`   - Périodes détectées: ${groups.size}`);
     
     // Afficher les détails de chaque période (limité à 10 pour éviter de surcharger)
     let periodCount = 0;
     for (const [periodKey, rows] of groups.entries()) {
       if (periodCount < 10) {
-        console.log(`   📅 ${periodKey}: ${rows.length} lignes`);
       }
       periodCount++;
     }
     
     if (groups.size > 10) {
-      console.log(`   ... et ${groups.size - 10} autres périodes`);
     }
 
     return groups;
@@ -6900,15 +6530,12 @@ End Sub`;
    */
   private exportPeriodAsCSV(rows: any[], fileName: string): void {
     try {
-      console.log(`🔄 Export CSV: ${rows.length} lignes, ${this.columns.length} colonnes`);
       
       if (!rows || rows.length === 0) {
-        console.warn('⚠️ Aucune donnée à exporter en CSV');
         return;
       }
 
       if (!this.columns || this.columns.length === 0) {
-        console.warn('⚠️ Aucune colonne définie pour l\'export CSV');
         return;
       }
 
@@ -6946,9 +6573,7 @@ End Sub`;
       a.click();
       URL.revokeObjectURL(url);
       
-      console.log(`✅ Export CSV réussi: ${fileName}`);
     } catch (error) {
-      console.error('❌ Erreur lors de l\'export CSV:', error);
       throw new Error(`Erreur lors de l'export CSV: ${error.message}`);
     }
   }
@@ -6958,15 +6583,12 @@ End Sub`;
    */
   private exportPeriodAsXLS(rows: any[], fileName: string): void {
     try {
-      console.log(`🔄 Export XLS: ${rows.length} lignes, ${this.columns.length} colonnes`);
       
       if (!rows || rows.length === 0) {
-        console.warn('⚠️ Aucune donnée à exporter en XLS');
         return;
       }
 
       if (!this.columns || this.columns.length === 0) {
-        console.warn('⚠️ Aucune colonne définie pour l\'export XLS');
         return;
       }
 
@@ -6992,7 +6614,6 @@ End Sub`;
         return exportRow;
       });
 
-      console.log(`📊 Données préparées pour XLS: ${exportData.length} lignes`);
       
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -7004,9 +6625,7 @@ End Sub`;
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Données');
       XLSX.writeFile(workbook, fileName);
       
-      console.log(`✅ Export XLS réussi: ${fileName}`);
     } catch (error) {
-      console.error('❌ Erreur lors de l\'export XLS:', error);
       throw new Error(`Erreur lors de l'export XLS: ${error.message}`);
     }
   }
@@ -7016,15 +6635,12 @@ End Sub`;
    */
   private exportPeriodAsXLSX(rows: any[], fileName: string): void {
     try {
-      console.log(`🔄 Export XLSX: ${rows.length} lignes, ${this.columns.length} colonnes`);
       
       if (!rows || rows.length === 0) {
-        console.warn('⚠️ Aucune donnée à exporter en XLSX');
         return;
       }
 
       if (!this.columns || this.columns.length === 0) {
-        console.warn('⚠️ Aucune colonne définie pour l\'export XLSX');
         return;
       }
 
@@ -7050,7 +6666,6 @@ End Sub`;
         return exportRow;
       });
 
-      console.log(`📊 Données préparées pour XLSX: ${exportData.length} lignes`);
       
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -7062,9 +6677,7 @@ End Sub`;
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Données');
       XLSX.writeFile(workbook, fileName);
       
-      console.log(`✅ Export XLSX réussi: ${fileName}`);
     } catch (error) {
-      console.error('❌ Erreur lors de l\'export XLSX:', error);
       throw new Error(`Erreur lors de l'export XLSX: ${error.message}`);
     }
   }

@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnDestroy, OnChanges, SimpleChanges, OnInit, ChangeDetectorRef } from '@angular/core';
+﻿import { Component, Input, Output, EventEmitter, OnDestroy, OnChanges, SimpleChanges, OnInit, ChangeDetectorRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -752,19 +752,16 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
     ) {}
 
     ngOnChanges(changes: SimpleChanges) {
-        console.log('Input data changed:', changes);
         if (changes['boData'] || changes['partnerData']) {
             this.initializeColumns();
         }
     }
 
     ngOnDestroy() {
-        console.log('ColumnSelectionComponent destroyed');
         this.subscription.unsubscribe();
     }
 
     ngOnInit() {
-        console.log('🔍 DEBUG - ColumnSelectionComponent initialized');
         
         // Détecter automatiquement le mode manuel depuis l'URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -772,10 +769,8 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         
         // Si on est en mode manuel (pas de paramètre mode ou mode = 'manual'), désactiver l'analyse automatique
         if (!mode || mode === 'manual') {
-            console.log('🚫 Mode manuel détecté - désactivation de l\'analyse automatique');
             this.disableAutoAnalysis = true;
         } else {
-            console.log('🤖 Mode assisté détecté - activation de l\'analyse automatique');
             this.disableAutoAnalysis = false;
         }
         
@@ -808,31 +803,21 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
      * Charge les données depuis le service avec optimisation
      */
     private loadDataFromService(): void {
-        console.log('🔍 DEBUG - Chargement des données depuis le service...');
         
         // Récupérer les données directement depuis le service
         this.boData = this.appStateService.getBoData();
         this.partnerData = this.appStateService.getPartnerData();
         
-        console.log('🔍 DEBUG - Données récupérées depuis le service:', {
-            boDataLength: this.boData?.length || 0,
-            partnerDataLength: this.partnerData?.length || 0,
-            boDataSample: this.boData?.slice(0, 2),
-            partnerDataSample: this.partnerData?.slice(0, 2)
-        });
         
         // Permettre de charger les colonnes même si un seul fichier est disponible
         if ((this.boData?.length > 0 || this.partnerData?.length > 0)) {
             if (this.boData?.length > 0 && this.partnerData?.length > 0) {
-                console.log('✅ Données complètes trouvées, optimisation en cours...');
                 this.optimizeAndLoadData(this.boData, this.partnerData);
             } else {
-                console.log('⚠️ Données partielles trouvées, chargement des colonnes disponibles...');
                 // Charger au moins les colonnes disponibles même si un fichier manque
                 this.loadAvailableColumns();
             }
         } else {
-            console.log('⚠️ Aucune donnée trouvée, tentative de parsing automatique...');
             this.tryAutoParseFiles();
         }
     }
@@ -841,35 +826,27 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
      * Charge les colonnes disponibles même si un seul fichier est disponible
      */
     private loadAvailableColumns(): void {
-        console.log('📊 Chargement des colonnes disponibles...');
         
         // Extraire les colonnes disponibles
         if (this.boData?.length > 0) {
             this.boColumns = Object.keys(this.boData[0]);
-            console.log('📋 Colonnes BO disponibles:', this.boColumns);
         } else {
             this.boColumns = [];
-            console.log('⚠️ Aucune colonne BO disponible');
         }
         
         if (this.partnerData?.length > 0) {
             this.partnerColumns = Object.keys(this.partnerData[0]);
-            console.log('📋 Colonnes Partenaire disponibles:', this.partnerColumns);
         } else {
             this.partnerColumns = [];
-            console.log('⚠️ Aucune colonne Partenaire disponible');
         }
         
         // Si on a au moins un fichier avec des colonnes, on peut continuer
         if (this.boColumns.length > 0 || this.partnerColumns.length > 0) {
-            console.log('✅ Colonnes chargées avec succès');
             // Ne pas lancer l'analyse automatique si les deux fichiers ne sont pas disponibles
             if (this.boData?.length === 0 || this.partnerData?.length === 0) {
-                console.log('⚠️ Fichier(s) manquant(s), désactivation de l\'analyse automatique');
                 this.disableAutoAnalysis = true;
             }
         } else {
-            console.error('❌ Aucune colonne disponible, redirection vers l\'upload');
             this.router.navigate(['/upload']);
         }
     }
@@ -878,19 +855,16 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
      * Tente de parser automatiquement les fichiers uploadés
      */
     private async tryAutoParseFiles(): Promise<void> {
-        console.log('🔄 Tentative de parsing automatique des fichiers...');
         
         // Récupérer les fichiers uploadés
         const uploadedFiles = this.appStateService.getUploadedFiles();
         
         if (!uploadedFiles.boFile || !uploadedFiles.partnerFile) {
-            console.warn('❌ Aucun fichier disponible pour le parsing automatique');
             this.router.navigate(['/upload']);
             return;
         }
         
         try {
-            console.log('📁 Fichiers trouvés, début du parsing automatique...');
             
             // Parser les fichiers CSV
             const boData = await this.parseCsvFile(uploadedFiles.boFile);
@@ -900,10 +874,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
             this.appStateService.setBoData(boData);
             this.appStateService.setPartnerData(partnerData);
             
-            console.log('✅ Parsing automatique réussi:', {
-                boRecords: boData.length,
-                partnerRecords: partnerData.length
-            });
             
             // Charger les données parsées
             this.boData = boData;
@@ -911,7 +881,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
             this.optimizeAndLoadData(boData, partnerData);
             
         } catch (error) {
-            console.error('❌ Erreur lors du parsing automatique:', error);
             this.router.navigate(['/upload']);
         }
     }
@@ -921,17 +890,14 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
      */
     private parseCsvFile(file: File): Promise<Record<string, string>[]> {
         return new Promise((resolve, reject) => {
-            console.log(`📖 Début de la lecture du fichier: ${file.name} (${file.size} bytes)`);
             
             const reader = new FileReader();
             
             reader.onload = (e) => {
                 try {
                     const content = e.target?.result as string;
-                    console.log(`📄 Contenu du fichier ${file.name}: ${content.length} caractères`);
                     
                     const lines = content.split('\n');
-                    console.log(`📋 Nombre de lignes dans ${file.name}: ${lines.length}`);
                     
                     if (lines.length < 2) {
                         reject(new Error('Fichier CSV invalide: au moins 2 lignes requises (en-tête + données)'));
@@ -944,17 +910,14 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                     const semicolonCount = (firstLine.match(/;/g) || []).length;
                     const separator = semicolonCount > commaCount ? ';' : ',';
                     
-                    console.log(`🔧 Séparateur détecté pour ${file.name}: "${separator}" (virgules: ${commaCount}, points-virgules: ${semicolonCount})`);
                     
                     // Parser l'en-tête
                     const headers = lines[0].split(separator).map(h => h.trim());
-                    console.log(`🏷️ En-têtes trouvées dans ${file.name}:`, headers);
                     
                     const data: Record<string, string>[] = [];
                     
                     // Parser les données (limitées à 10000 lignes pour l'analyse des clés)
                     const maxLines = Math.min(lines.length - 1, 10000);
-                    console.log(`📊 Parsing de ${maxLines} lignes de données dans ${file.name}`);
                     
                     for (let i = 1; i <= maxLines; i++) {
                         if (lines[i].trim().length === 0) continue;
@@ -969,20 +932,16 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                         data.push(row);
                     }
                     
-                    console.log(`✅ Fichier ${file.name} parsé avec succès: ${data.length} enregistrements`);
                     if (data.length > 0) {
-                        console.log(`📊 Exemple de données:`, data[0]);
                     }
                     resolve(data);
                     
                 } catch (error) {
-                    console.error(`❌ Erreur lors du parsing du fichier ${file.name}:`, error);
                     reject(new Error(`Erreur lors du parsing du fichier ${file.name}: ${error}`));
                 }
             };
             
             reader.onerror = (error) => {
-                console.error(`❌ Erreur lors de la lecture du fichier ${file.name}:`, error);
                 reject(new Error(`Erreur lors de la lecture du fichier ${file.name}`));
             };
             
@@ -997,7 +956,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         if (this.loadingInProgress) return;
         
         this.loadingInProgress = true;
-        console.log('🚀 Début de l\'optimisation des données...');
         
         // Traiter les données par chunks pour éviter le blocage
         setTimeout(() => {
@@ -1012,7 +970,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         const totalBoRows = boData.length;
         const totalPartnerRows = partnerData.length;
         
-        console.log(`📊 Traitement de ${totalBoRows} lignes BO et ${totalPartnerRows} lignes Partner`);
         
         // Utiliser un échantillon pour l'initialisation rapide
         const boSample = this.getDataSample(boData, this.SAMPLE_SIZE);
@@ -1045,16 +1002,13 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
      * Initialise les colonnes avec un échantillon
      */
     private initializeColumnsWithSample(boSample: any[], partnerSample: any[]): void {
-        console.log('🔧 DEBUG - Initializing columns with sample data');
         
         if (boSample.length > 0) {
             this.boColumns = Object.keys(boSample[0]);
-            console.log('✅ BO columns initialized from sample:', this.boColumns);
         }
         
         if (partnerSample.length > 0) {
             this.partnerColumns = Object.keys(partnerSample[0]);
-            console.log('✅ Partner columns initialized from sample:', this.partnerColumns);
         }
         
         this.dataLoaded = true;
@@ -1071,11 +1025,9 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
      */
     private analyzeAndSuggestKeys(): void {
         if (!this.boData || !this.partnerData || this.boData.length === 0 || this.partnerData.length === 0) {
-            console.warn('⚠️ Données insuffisantes pour l\'analyse des clés');
             return;
         }
 
-        console.log('🔍 Début de l\'analyse des clés de réconciliation...');
         this.isAnalyzing = true;
         this.showSuggestions = false;
         
@@ -1100,7 +1052,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                     throw new Error('La première ligne Partner n\'est pas un objet valide');
                 }
                 
-                console.log('🔍 Données validées, lancement de l\'analyse...');
                 const result = this.keySuggestionService.analyzeAndSuggestKeys(this.boData, this.partnerData);
                 
                 this.keySuggestions = result.suggestions;
@@ -1108,17 +1059,11 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 this.recommendedKeys = result.recommendedKeys;
                 this.showSuggestions = true;
                 
-                console.log('✅ Analyse des clés terminée:', {
-                    suggestionsCount: this.keySuggestions.length,
-                    overallConfidence: this.overallConfidence,
-                    recommendedKeys: this.recommendedKeys
-                });
                 
                 // Appliquer automatiquement les meilleures suggestions
                 this.applyTopSuggestions();
                 
             } catch (error) {
-                console.error('❌ Erreur lors de l\'analyse des clés:', error);
                 this.showSuggestions = false;
                 this.keySuggestions = [];
                 this.overallConfidence = 0;
@@ -1133,17 +1078,14 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
      * Gère le changement de l'option d'analyse automatique
      */
     onAnalysisToggleChange(disabled: boolean): void {
-        console.log('🔄 Option d\'analyse automatique changée:', disabled ? 'désactivée' : 'activée');
         
         if (disabled) {
             // Désactiver les suggestions automatiques
             this.showSuggestions = false;
             this.keySuggestions = [];
             this.overallConfidence = 0;
-            console.log('🚫 Analyse automatique désactivée - mode manuel uniquement');
         } else {
             // Relancer l'analyse automatique
-            console.log('🔄 Relance de l\'analyse automatique...');
             this.launchKeyAnalysis();
         }
         
@@ -1156,13 +1098,11 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
     private launchKeyAnalysis(): void {
         // Vérifier si l'analyse automatique est désactivée
         if (this.disableAutoAnalysis) {
-            console.log('🚫 Analyse automatique des clés désactivée - mode manuel uniquement');
             this.showSuggestions = false;
             this.isAnalyzing = false;
             return;
         }
 
-        console.log('🔍 Lancement de l\'analyse automatique des clés...');
         this.isAnalyzing = true;
         this.cdr.detectChanges();
 
@@ -1187,7 +1127,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                     throw new Error('La première ligne Partner n\'est pas un objet valide');
                 }
                 
-                console.log('🔍 Données validées, lancement de l\'analyse...');
                 const result = this.keySuggestionService.analyzeAndSuggestKeys(this.boData, this.partnerData);
                 
                 this.keySuggestions = result.suggestions;
@@ -1195,17 +1134,11 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 this.recommendedKeys = result.recommendedKeys;
                 this.showSuggestions = true;
                 
-                console.log('✅ Analyse des clés terminée:', {
-                    suggestionsCount: this.keySuggestions.length,
-                    overallConfidence: this.overallConfidence,
-                    recommendedKeys: this.recommendedKeys
-                });
                 
                 // Appliquer automatiquement les meilleures suggestions
                 this.applyTopSuggestions();
                 
             } catch (error) {
-                console.error('❌ Erreur lors de l\'analyse des clés:', error);
                 this.showSuggestions = false;
                 this.keySuggestions = [];
                 this.overallConfidence = 0;
@@ -1227,16 +1160,10 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         if (topSuggestion.confidence > 0.7) {
             this.selectedBoKeyColumn = topSuggestion.boColumn;
             this.selectedPartnerKeyColumn = topSuggestion.partnerColumn;
-            console.log('✅ Clé principale appliquée automatiquement:', {
-                boColumn: topSuggestion.boColumn,
-                partnerColumn: topSuggestion.partnerColumn,
-                confidence: topSuggestion.confidence
-            });
         }
         
         // Ne pas appliquer de clés supplémentaires
         this.additionalKeys = [];
-        console.log('✅ Aucune clé supplémentaire appliquée (mode clés principales uniquement)');
     }
 
     /**
@@ -1253,17 +1180,13 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
      * Compresse les données pour économiser la mémoire
      */
     private compressData(boData: any[], partnerData: any[]): void {
-        console.log('🗜️ Compression des données en cours...');
         
         // Compresser les données BO
         this.compressedBoData = this.compressDataset(boData);
-        console.log(`✅ Données BO compressées: ${boData.length} → ${this.compressedBoData.length} lignes`);
         
         // Compresser les données Partner
         this.compressedPartnerData = this.compressDataset(partnerData);
-        console.log(`✅ Données Partner compressées: ${partnerData.length} → ${this.compressedPartnerData.length} lignes`);
         
-        console.log('🎯 Optimisation terminée !');
     }
 
     /**
@@ -1298,114 +1221,77 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
     }
 
     private initializeColumns() {
-        console.log('🔧 DEBUG - Initializing columns with data:', {
-            boDataLength: this.boData.length,
-            partnerDataLength: this.partnerData.length,
-            boDataFirstRow: this.boData[0],
-            partnerDataFirstRow: this.partnerData[0]
-        });
 
         if (this.boData.length > 0) {
             this.boColumns = Object.keys(this.boData[0]);
-            console.log('✅ BO columns initialized:', this.boColumns);
         } else {
-            console.warn('❌ Pas de données BO disponibles');
         }
         
         if (this.partnerData.length > 0) {
             this.partnerColumns = Object.keys(this.partnerData[0]);
-            console.log('✅ Partner columns initialized:', this.partnerColumns);
         } else {
-            console.warn('❌ Pas de données Partner disponibles');
         }
         
-        console.log('🔧 DEBUG - État final des colonnes:', {
-            boColumns: this.boColumns,
-            partnerColumns: this.partnerColumns,
-            boColumnsLength: this.boColumns.length,
-            partnerColumnsLength: this.partnerColumns.length
-        });
     }
 
     onBoKeyColumnChange(value: string) {
-        console.log('🔧 DEBUG - BO key column changed:', value);
-        console.log('🔧 DEBUG - État avant changement:', {
-            selectedBoKeyColumn: this.selectedBoKeyColumn,
-            boColumns: this.boColumns,
-            boDataLength: this.boData.length
-        });
         
         this.selectedBoKeyColumn = value;
         this.isValid = this.validateSelection();
         
-        console.log('🔧 DEBUG - État après changement:', {
-            selectedBoKeyColumn: this.selectedBoKeyColumn,
-            isValid: this.isValid
-        });
         
         // Afficher quelques exemples de valeurs pour aider au debug
         if (value && this.boData.length > 0) {
             const sampleValues = this.boData.slice(0, 5).map(row => row[value]).filter(val => val !== undefined && val !== null);
-            console.log(`🔍 Exemples de valeurs pour la colonne BO "${value}":`, sampleValues);
         }
     }
 
     onPartnerKeyColumnChange(value: string) {
-        console.log('Partner key column changed:', value);
         this.selectedPartnerKeyColumn = value;
         this.isValid = this.validateSelection();
         
         // Afficher quelques exemples de valeurs pour aider au debug
         if (value && this.partnerData.length > 0) {
             const sampleValues = this.partnerData.slice(0, 5).map(row => row[value]).filter(val => val !== undefined && val !== null);
-            console.log(`🔍 Exemples de valeurs pour la colonne Partner "${value}":`, sampleValues);
         }
     }
 
     onBoComparisonColumnChange(value: string, index: number) {
-        console.log('BO comparison column changed:', value, 'at index:', index);
         this.comparisonColumns[index].boColumn = value;
         this.isValid = this.validateSelection();
     }
 
     onPartnerComparisonColumnChange(value: string, index: number) {
-        console.log('Partner comparison column changed:', value, 'at index:', index);
         this.comparisonColumns[index].partnerColumn = value;
         this.isValid = this.validateSelection();
     }
 
     addComparisonColumn() {
-        console.log('Adding new comparison column');
         this.comparisonColumns.push({ boColumn: '', partnerColumn: '' });
         this.isValid = this.validateSelection();
     }
 
     removeComparisonColumn(index: number) {
-        console.log('Removing comparison column at index:', index);
         this.comparisonColumns.splice(index, 1);
         this.isValid = this.validateSelection();
     }
 
     addAdditionalKey() {
-        console.log('Adding new additional key');
         this.additionalKeys.push({ boColumn: '', partnerColumn: '' });
         this.isValid = this.validateSelection();
     }
 
     removeAdditionalKey(index: number) {
-        console.log('Removing additional key at index:', index);
         this.additionalKeys.splice(index, 1);
         this.isValid = this.validateSelection();
     }
 
     onAdditionalBoKeyChange(value: string, index: number) {
-        console.log('Additional BO key changed:', value, 'at index:', index);
         this.additionalKeys[index].boColumn = value;
         this.isValid = this.validateSelection();
     }
 
     onAdditionalPartnerKeyChange(value: string, index: number) {
-        console.log('Additional Partner key changed:', value, 'at index:', index);
         this.additionalKeys[index].partnerColumn = value;
         this.isValid = this.validateSelection();
     }
@@ -1431,17 +1317,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         // Seules les colonnes clés principales sont obligatoires
         this.isValid = hasBoKey && hasPartnerKey && hasValidComparisonColumns && hasValidAdditionalKeys;
         
-        console.log('🔍 Validation de la sélection:', {
-            hasBoKey,
-            hasPartnerKey,
-            hasValidComparisonColumns,
-            hasValidAdditionalKeys,
-            selectedBoKeyColumn: this.selectedBoKeyColumn,
-            selectedPartnerKeyColumn: this.selectedPartnerKeyColumn,
-            comparisonColumns: this.comparisonColumns,
-            additionalKeys: this.additionalKeys,
-            isValid: this.isValid
-        });
         
         return this.isValid;
     }
@@ -1451,11 +1326,9 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
      */
     logKeyStatistics() {
         if (!this.selectedBoKeyColumn || !this.selectedPartnerKeyColumn) {
-            console.log('❌ Colonnes clés non sélectionnées');
             return;
         }
 
-        console.log('📊 Analyse des statistiques des clés...');
         
         // Utiliser les données compressées si disponibles
         const boDataToAnalyze = this.compressedBoData.length > 0 ? this.compressedBoData : this.boData;
@@ -1471,23 +1344,9 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         const boUnique = new Set(boValues);
         const partnerUnique = new Set(partnerValues);
         
-        console.log('📈 Statistiques des clés:', {
-            boColumn: this.selectedBoKeyColumn,
-            partnerColumn: this.selectedPartnerKeyColumn,
-            boTotalValues: boValues.length,
-            boUniqueValues: boUnique.size,
-            partnerTotalValues: partnerValues.length,
-            partnerUniqueValues: partnerUnique.size,
-            boDuplicates: boValues.length - boUnique.size,
-            partnerDuplicates: partnerValues.length - partnerUnique.size
-        });
         
         // Analyser les correspondances potentielles
         const commonValues = [...boUnique].filter(value => partnerUnique.has(value));
-        console.log('🔗 Correspondances potentielles:', {
-            commonValuesCount: commonValues.length,
-            commonValuesSample: commonValues.slice(0, 10)
-        });
     }
 
     isReconciliationActive(): boolean {
@@ -1503,11 +1362,9 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         }
 
         if (!this.validateSelection()) {
-            console.error('❌ Sélection invalide, impossible de procéder');
             return;
         }
 
-        console.log('🚀 Début de la réconciliation optimisée...');
         
         // Utiliser les données compressées si disponibles
         let boDataToReconcile = this.compressedBoData.length > 0 ? this.compressedBoData : this.boData;
@@ -1520,7 +1377,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         );
         
         if (selectedSuggestion?.transformation) {
-            console.log('🔧 Application de la transformation détectée:', selectedSuggestion.transformation.description);
             
             // Créer une copie des données BO avec la transformation appliquée
             boDataToReconcile = boDataToReconcile.map(row => {
@@ -1551,21 +1407,13 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                     }
                     
                     transformedRow[this.selectedBoKeyColumn] = transformedValue;
-                    console.log(`🔧 Transformation: "${originalValue}" → "${transformedValue}"`);
                 }
                 
                 return transformedRow;
             });
             
-            console.log('✅ Transformation appliquée aux données BO');
         }
         
-        console.log('📊 Données pour réconciliation:', {
-            boDataLength: boDataToReconcile.length,
-            partnerDataLength: partnerDataToReconcile.length,
-            usingCompressedData: this.compressedBoData.length > 0,
-            transformationApplied: selectedSuggestion?.transformation ? true : false
-        });
 
         // Préparer les paramètres de réconciliation
         const reconciliationParams = {
@@ -1584,14 +1432,12 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         // Vérifier si le traitement par chunks sera utilisé
         const willUseChunks = this.willUseChunkedProcessing(boDataToReconcile, partnerDataToReconcile);
         if (willUseChunks) {
-            console.log('📊 Gros fichier détecté - Le système utilisera un traitement par chunks optimisé');
             this.popupService.showInfo(
                 'Gros fichier détecté ! Le système utilisera un traitement par chunks optimisé pour éviter les erreurs de mémoire. Le traitement peut prendre plus de temps mais sera plus stable.',
                 'Traitement Optimisé'
             );
             
             // Pour les très gros fichiers, utiliser directement le traitement par chunks
-            console.log('🚀 Lancement direct du traitement par chunks pour éviter l\'erreur de sérialisation');
             this.launchChunkedReconciliation(reconciliationParams);
             return;
         }
@@ -1600,18 +1446,8 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         if (selectedSuggestion?.transformation) {
             const boSample = boDataToReconcile.slice(0, 3).map(row => row[this.selectedBoKeyColumn]);
             const partnerSample = partnerDataToReconcile.slice(0, 3).map(row => row[this.selectedPartnerKeyColumn]);
-            console.log('🔍 Échantillons après transformation:', {
-                boKeys: boSample,
-                partnerKeys: partnerSample
-            });
         }
 
-        console.log('⚙️ Paramètres de réconciliation:', {
-            boKeyColumn: reconciliationParams.boKeyColumn,
-            partnerKeyColumn: reconciliationParams.partnerKeyColumn,
-            comparisonColumnsCount: reconciliationParams.comparisonColumns.length,
-            additionalKeysCount: reconciliationParams.additionalKeys.length
-        });
 
         // Démarrer la réconciliation avec progression
         this.startReconciliationProgress();
@@ -1619,15 +1455,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         // Lancer la réconciliation avec gestion d'erreur
         this.reconciliationService.reconcile(reconciliationParams).subscribe({
             next: (result: any) => {
-                console.log('✅ Réconciliation terminée avec succès');
-                console.log('📊 Résultats de la réconciliation:', {
-                    matches: result.matches?.length || 0,
-                    boOnly: result.boOnly?.length || 0,
-                    partnerOnly: result.partnerOnly?.length || 0,
-                    mismatches: result.mismatches?.length || 0,
-                    totalBoRecords: result.totalBoRecords || 0,
-                    totalPartnerRecords: result.totalPartnerRecords || 0
-                });
                 
                 this.finishReconciliationProgress();
                 
@@ -1636,12 +1463,10 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 
                 // Naviguer vers la page des résultats avec un délai pour voir la progression
                 setTimeout(() => {
-                    console.log('🚀 Navigation vers les résultats...');
                     this.router.navigate(['/results']);
                 }, 2000); // 2 secondes de délai pour voir la progression
             },
             error: (error: any) => {
-                console.error('❌ Erreur lors de la réconciliation:', error);
                 this.finishReconciliationProgress();
                 
                 // Afficher l'erreur à l'utilisateur
@@ -1654,7 +1479,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
      * Lance directement le traitement par chunks pour éviter l'erreur de sérialisation
      */
     private launchChunkedReconciliation(reconciliationParams: any): void {
-        console.log('🚀 Lancement direct du traitement par chunks');
         
         // Démarrer la progression
         this.startReconciliationProgress();
@@ -1672,15 +1496,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         // Lancer la réconciliation par chunks
         this.reconciliationService.reconcile(chunkedRequest).subscribe({
             next: (result: any) => {
-                console.log('✅ Réconciliation par chunks terminée avec succès');
-                console.log('📊 Résultats de la réconciliation:', {
-                    matches: result.matches?.length || 0,
-                    boOnly: result.boOnly?.length || 0,
-                    partnerOnly: result.partnerOnly?.length || 0,
-                    mismatches: result.mismatches?.length || 0,
-                    totalBoRecords: result.totalBoRecords || 0,
-                    totalPartnerRecords: result.totalPartnerRecords || 0
-                });
                 
                 this.finishReconciliationProgress();
                 
@@ -1689,12 +1504,10 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 
                 // Naviguer vers la page des résultats avec un délai pour voir la progression
                 setTimeout(() => {
-                    console.log('🚀 Navigation vers les résultats...');
                     this.router.navigate(['/results']);
                 }, 2000); // 2 secondes de délai pour voir la progression
             },
             error: (error: any) => {
-                console.error('❌ Erreur lors de la réconciliation par chunks:', error);
                 this.finishReconciliationProgress();
                 
                 // Afficher l'erreur à l'utilisateur
@@ -1709,27 +1522,19 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
     private willUseChunkedProcessing(boData: any[], partnerData: any[]): boolean {
         // Désactiver le traitement par chunks frontend pour forcer l'utilisation du backend
         // Le backend est plus optimisé pour les gros volumes et la logique de correspondance
-        console.log('📊 Utilisation du backend pour tous les fichiers (traitement optimisé)');
         return false;
     }
 
     // Méthodes pour gérer la progression
     private startReconciliationProgress(): void {
-        console.log('🎯 startReconciliationProgress() appelé');
         this.isReconciliationInProgress = true;
         this.reconciliationProgress = 0;
         this.reconciliationStatus = 'Initialisation...';
         this.reconciliationStartTime = Date.now();
         
         // Déclencher l'affichage de la progression globale
-        console.log('📈 Déclenchement de la progression globale dans appStateService');
         this.appStateService.setReconciliationProgress(true);
         
-        console.log('✅ État de progression:', {
-            isReconciliationInProgress: this.isReconciliationInProgress,
-            reconciliationProgress: this.reconciliationProgress,
-            reconciliationStatus: this.reconciliationStatus
-        });
         
         // Forcer la détection de changement
         this.cdr.detectChanges();
@@ -1737,18 +1542,13 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         // Vérifier si l'élément DOM existe après un délai
         setTimeout(() => {
             const progressElement = document.querySelector('.reconciliation-progress');
-            console.log('🔍 Élément DOM de progression:', progressElement);
             if (progressElement) {
-                console.log('✅ Barre de progression trouvée dans le DOM');
-                console.log('📏 Styles appliqués:', window.getComputedStyle(progressElement));
             } else {
-                console.log('❌ Barre de progression non trouvée dans le DOM');
             }
         }, 100);
     }
 
     private updateProgressStatus(): void {
-        console.log('📊 updateProgressStatus() - Progression:', this.reconciliationProgress);
         if (this.reconciliationProgress < 20) {
             this.reconciliationStatus = 'Analyse des données...';
         } else if (this.reconciliationProgress < 40) {
@@ -1762,22 +1562,18 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         } else {
             this.reconciliationStatus = 'Terminé !';
         }
-        console.log('📝 Nouveau statut:', this.reconciliationStatus);
         
         // Forcer la détection de changement
         this.cdr.detectChanges();
     }
 
     private finishReconciliationProgress(): void {
-        console.log('🏁 finishReconciliationProgress() appelé');
         this.reconciliationProgress = 100;
         this.reconciliationStatus = 'Réconciliation terminée !';
         // Ne pas masquer immédiatement la barre
         // this.isReconciliationInProgress = false;
-        console.log('✅ Progression terminée');
         
         // Arrêter la progression globale
-        console.log('📈 Arrêt de la progression globale dans appStateService');
         this.appStateService.setReconciliationProgress(false);
         
         // Forcer la détection de changement
@@ -1807,7 +1603,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
 
     // Méthode de test pour afficher la barre de progression
     testProgressBar(): void {
-        console.log('🧪 Test de la barre de progression');
         this.isReconciliationInProgress = true;
         this.reconciliationProgress = 50;
         this.reconciliationStatus = 'Test en cours...';

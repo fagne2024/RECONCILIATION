@@ -282,6 +282,13 @@ public class ReconciliationController {
                 }
                 
                 log.info("🔄 Début du traitement de la réconciliation...");
+                String progressSessionId = request.getProgressSessionId();
+                if (progressSessionId == null || progressSessionId.isBlank()) {
+                    progressSessionId = UUID.randomUUID().toString();
+                    request.setProgressSessionId(progressSessionId);
+                }
+                progressService.createJob(progressSessionId, "Démarrage de la réconciliation...");
+
                 ReconciliationResponse response = reconciliationService.reconcile(request);
                 request.setBoFileContent(null);
                 request.setPartnerFileContent(null);
@@ -488,6 +495,14 @@ public class ReconciliationController {
             error.put("error", "Erreur serveur: " + e.getMessage());
             return ResponseEntity.internalServerError().body(error);
         }
+    }
+
+    @GetMapping("/live-progress/{sessionId}")
+    public ResponseEntity<Map<String, Object>> getLiveProgress(@PathVariable String sessionId) {
+        ReconciliationProgress progress = progressService.getProgress(sessionId);
+        Map<String, Object> response = new HashMap<>();
+        response.put("progress", progress);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/progress/{jobId}")

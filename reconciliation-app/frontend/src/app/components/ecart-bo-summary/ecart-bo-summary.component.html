@@ -49,8 +49,8 @@
           <option value="">T-E (agrégat / non renseigné)</option>
           <option *ngFor="let code of envCodePresetOptions; trackBy: trackByString" [value]="code">{{ code }}</option>
         </select>
-        <button type="button" class="env-preload-btn primary" (click)="confirmEnvAndLoadData()">
-          Afficher les données
+        <button type="button" class="env-preload-btn primary" (click)="confirmEnvAndLoadData()" [disabled]="isLoading">
+          {{ isLoading ? 'Chargement...' : 'Afficher les données' }}
         </button>
       </div>
       <button type="button" class="env-preload-btn ghost" (click)="loadSavedSummaryData()">
@@ -154,7 +154,7 @@
   </div>
 
   <!-- Filtres -->
-  <div class="filters-section" style="flex-shrink: 0;">
+  <div class="filters-section" *ngIf="!isLoading" style="flex-shrink: 0;">
     <div class="filter-row">
       <div class="filter-item">
         <label>Date du</label>
@@ -227,7 +227,7 @@
           <input 
             type="text" 
             [(ngModel)]="selectedToken" 
-            (input)="applyFilters()"
+            (input)="onSearch()"
             (keyup.enter)="loadByToken()"
             placeholder="Liaison BO/Partenaire..."
             class="filter-input"
@@ -285,8 +285,8 @@
             <th class="th-checkbox">
               <input 
                 type="checkbox" 
-                [checked]="getSelectableItemsFiltered().length > 0 && isAllSelectedFiltered" 
-                [indeterminate]="isSomeSelectedFiltered"
+                [checked]="filteredItems.length > 0 && isAllSelectedFiltered" 
+                [indeterminate]="someFilteredSelected"
                 (change)="toggleSelectAllFiltered()"
                 title="Tout sélectionner / désélectionner les lignes actionnables"
               >
@@ -378,7 +378,7 @@
   <!-- Chargement -->
   <div *ngIf="isLoading" class="loading">
     <div class="spinner"></div>
-    <p>Chargement des données...</p>
+    <p>{{ loadingStep || 'Chargement des données...' }}</p>
   </div>
 
   <!-- Pagination -->

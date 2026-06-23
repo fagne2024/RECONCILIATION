@@ -1,4 +1,4 @@
-import { Injectable, OnInit, OnDestroy } from '@angular/core';
+﻿import { Injectable, OnInit, OnDestroy } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout, of, defer } from 'rxjs';
 import { catchError, tap, map, finalize, retry, takeUntil, switchMap, retryWhen, delay, concatMap } from 'rxjs/operators';
@@ -66,7 +66,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
     private destroy$ = new Subject<void>();
     
     constructor(private http: HttpClient, private appStateService: AppStateService) {
-        console.log('🚀 ReconciliationService initialisé - Mode HTTP classique');
     }
 
     private with429Retry<T>(factory: () => Observable<T>, attempt = 0): Observable<T> {
@@ -74,7 +73,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
             catchError((error: HttpErrorResponse | any) => {
                 if (error?.status === 429 && attempt < ReconciliationService.MAX_429_RETRIES) {
                     const delayMs = Math.min(3000 * Math.pow(2, attempt), 30000);
-                    console.warn(`⏳ 429 sur le flux de réconciliation, retry dans ${delayMs}ms (tentative ${attempt + 1}/${ReconciliationService.MAX_429_RETRIES})`);
                     return timer(delayMs).pipe(
                         switchMap(() => this.with429Retry(factory, attempt + 1))
                     );
@@ -99,13 +97,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Mode HTTP classique sans WebSocket
      */
     startReconciliation(config: ReconciliationConfig): Observable<{ jobId: string; status: string }> {
-        console.log('🚀 Démarrage de la réconciliation HTTP classique');
         
         // Détecter si c'est un gros fichier nécessitant un traitement par chunks
         const isLargeFile = this.isLargeFile(config.boFile, config.partnerFile);
         
         if (isLargeFile) {
-            console.log('📊 Gros fichier détecté, utilisation du traitement par chunks');
             return this.startChunkedReconciliation(config);
         }
         
@@ -136,7 +132,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
         return this.with429Retry(() => this.http.post<{ jobId: string; status: string }>(`${this.apiUrl}/upload-and-prepare`, formData))
             .pipe(
                 tap(response => {
-                    console.log('✅ Job créé:', response);
                     this.currentJobId = response.jobId;
                     
                     this.updateProgress({
@@ -155,11 +150,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Démarre la réconciliation par chunks pour les gros fichiers
      */
     private startChunkedReconciliation(config: ReconciliationConfig): Observable<{ jobId: string; status: string }> {
-        console.log('🔄 Démarrage de la réconciliation par chunks');
         
         // Pour les très gros fichiers, utiliser le traitement côté frontend
         if (this.isVeryLargeFile(config.boFile, config.partnerFile)) {
-            console.log('📊 Très gros fichier détecté, utilisation du traitement frontend');
             return this.startFrontendChunkedReconciliation(config);
         }
         
@@ -191,7 +184,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
         return this.with429Retry(() => this.http.post<{ jobId: string; status: string }>(`${this.apiUrl}/upload-and-prepare-chunked`, formData))
             .pipe(
                 tap(response => {
-                    console.log('✅ Job par chunks créé:', response);
                     this.currentJobId = response.jobId;
                     
                     this.updateProgress({
@@ -210,7 +202,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Démarre la réconciliation par chunks côté frontend pour les très gros fichiers
      */
     private startFrontendChunkedReconciliation(config: ReconciliationConfig): Observable<{ jobId: string; status: string }> {
-        console.log('🔄 Démarrage de la réconciliation par chunks côté frontend');
         
         return new Observable(observer => {
             // Simuler un job ID pour le traitement frontend
@@ -243,13 +234,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
      */
     private async processFrontendChunkedReconciliation(config: ReconciliationConfig, jobId: string): Promise<void> {
         try {
-            console.log('🔄 Début du traitement frontend par chunks');
             
             // Lire les fichiers par chunks
             const boData = await this.readFileInChunks(config.boFile);
             const partnerData = await this.readFileInChunks(config.partnerFile);
             
-            console.log(`📊 Données chargées: BO=${boData.length}, Partner=${partnerData.length}`);
             
             // Traitement par chunks de la réconciliation
             const chunkSize = 10000; // 10k lignes par chunk
@@ -302,7 +291,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
             });
             
         } catch (error) {
-            console.error('❌ Erreur lors du traitement frontend par chunks:', error);
             throw error;
         }
     }
@@ -426,7 +414,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
      */
     private saveChunkedResults(jobId: string, results: any, config?: ChunkProcessingConfig): void {
         try {
-            console.log('💾 Sauvegarde des résultats complets...');
             
             // Sauvegarder toutes les données mais de manière optimisée
             const fullResults = {
@@ -451,14 +438,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
             // Sauvegarder par chunks pour éviter l'erreur de sérialisation
             this.saveResultsInChunks(jobId, fullResults);
             
-            console.log('💾 Résultats complets sauvegardés:', {
-                totalMatched: fullResults.totalMatched,
-                totalUnmatchedBo: fullResults.totalUnmatchedBo,
-                totalUnmatchedPartner: fullResults.totalUnmatchedPartner
-            });
             
         } catch (error) {
-            console.error('❌ Erreur lors de la sauvegarde des résultats:', error);
             // Sauvegarder au moins les métadonnées essentielles
             const minimalResults = {
                 jobId: jobId,
@@ -473,7 +454,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
             };
             
             localStorage.setItem(`reconciliation-results-${jobId}`, JSON.stringify(minimalResults));
-            console.log('💾 Résultats minimaux sauvegardés');
         }
     }
 
@@ -484,7 +464,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
         try {
             // Pour les très gros fichiers, utiliser la mémoire en temps réel au lieu du localStorage
             if (results.totalMatched > 10000 || results.totalUnmatchedBo > 10000 || results.totalUnmatchedPartner > 10000) {
-                console.log('📊 Fichier très volumineux détecté - Utilisation de la mémoire en temps réel');
                 this.saveInMemory(jobId, results);
                 return;
             }
@@ -505,7 +484,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
             };
             
             localStorage.setItem(`reconciliation-results-${jobId}`, JSON.stringify(metadata));
-            console.log('💾 Métadonnées sauvegardées');
             
             // Sauvegarder les données par chunks plus petits
             const chunkSize = 500; // 500 enregistrements par chunk pour éviter le quota
@@ -517,12 +495,10 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 try {
                     localStorage.setItem(chunkKey, JSON.stringify(chunk));
                 } catch (error) {
-                    console.warn(`⚠️ Quota localStorage atteint pour les matches, passage en mode mémoire`);
                     this.saveInMemory(jobId, results);
                     return;
                 }
             }
-            console.log(`💾 Matches sauvegardés en ${Math.ceil(results.matchedRecords.length / chunkSize)} chunks`);
             
             // Sauvegarder les unmatchedBo par chunks
             for (let i = 0; i < results.unmatchedBoRecords.length; i += chunkSize) {
@@ -531,12 +507,10 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 try {
                     localStorage.setItem(chunkKey, JSON.stringify(chunk));
                 } catch (error) {
-                    console.warn(`⚠️ Quota localStorage atteint pour les bo-only, passage en mode mémoire`);
                     this.saveInMemory(jobId, results);
                     return;
                 }
             }
-            console.log(`💾 UnmatchedBo sauvegardés en ${Math.ceil(results.unmatchedBoRecords.length / chunkSize)} chunks`);
             
             // Sauvegarder les unmatchedPartner par chunks
             for (let i = 0; i < results.unmatchedPartnerRecords.length; i += chunkSize) {
@@ -545,15 +519,12 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 try {
                     localStorage.setItem(chunkKey, JSON.stringify(chunk));
                 } catch (error) {
-                    console.warn(`⚠️ Quota localStorage atteint pour les partner-only, passage en mode mémoire`);
                     this.saveInMemory(jobId, results);
                     return;
                 }
             }
-            console.log(`💾 UnmatchedPartner sauvegardés en ${Math.ceil(results.unmatchedPartnerRecords.length / chunkSize)} chunks`);
             
         } catch (error) {
-            console.error('❌ Erreur lors de la sauvegarde par chunks:', error);
             // En cas d'erreur, passer en mode mémoire
             this.saveInMemory(jobId, results);
         }
@@ -582,11 +553,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
             unmatchedPartnerRecords: results.unmatchedPartnerRecords
         });
         
-        console.log('💾 Résultats sauvegardés en mémoire:', {
-            totalMatched: results.totalMatched,
-            totalUnmatchedBo: results.totalUnmatchedBo,
-            totalUnmatchedPartner: results.totalUnmatchedPartner
-        });
     }
 
     /**
@@ -624,7 +590,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
         return this.http.get(`${this.apiUrl}/progress/${jobId}`)
             .pipe(
                 tap((status: any) => {
-                    console.log('📊 Statut du job:', status);
                     
                     // Mettre à jour la progression basée sur le statut
                     if (status.progress) {
@@ -659,7 +624,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Optimisé pour les fichiers volumineux et les connexions distantes
      */
     getJobResultsSummary(jobId: string): Observable<ReconciliationResponse> {
-        console.log('📋 Chargement du résumé pour le job:', jobId);
         
         // Timeout adapté pour les connexions distantes (60 secondes pour les gros fichiers)
         const RESULTS_TIMEOUT = 60000;
@@ -681,13 +645,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 return throwError(error);
                             }
                             const delayTime = Math.min(2000 * Math.pow(2, retryAttempt - 1), 8000);
-                            console.log(`⏳ Retry getJobResultsSummary (tentative ${retryAttempt}/3) dans ${delayTime}ms...`);
                             return timer(delayTime);
                         })
                     )
                 ),
                 tap(results => {
-                    console.log('✅ Résumé obtenu:', results);
                     
                     this.updateProgress({
                         percentage: 100,
@@ -705,13 +667,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Charge les matches avec pagination
      */
     getMatches(jobId: string, page: number = 0, size: number = 1000): Observable<{ matches: any[], total: number, page: number, size: number, totalPages: number }> {
-        console.log(`📋 Chargement des matches pour le job ${jobId} (page: ${page}, size: ${size})`);
         
         return this.http.get<{ matches: any[], total: number, page: number, size: number, totalPages: number }>(
             `${this.apiUrl}/results/matches?sessionId=${jobId}&page=${page}&size=${size}`
         ).pipe(
             tap(response => {
-                console.log(`✅ ${response.matches.length} matches chargés (page ${page + 1}/${response.totalPages})`);
             }),
             catchError(this.handleError)
         );
@@ -721,13 +681,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Charge les mismatches avec pagination
      */
     getMismatches(jobId: string, page: number = 0, size: number = 1000): Observable<{ mismatches: any[], total: number, page: number, size: number, totalPages: number }> {
-        console.log(`📋 Chargement des mismatches pour le job ${jobId} (page: ${page}, size: ${size})`);
         
         return this.http.get<{ mismatches: any[], total: number, page: number, size: number, totalPages: number }>(
             `${this.apiUrl}/results/mismatches?sessionId=${jobId}&page=${page}&size=${size}`
         ).pipe(
             tap(response => {
-                console.log(`✅ ${response.mismatches.length} mismatches chargés (page ${page + 1}/${response.totalPages})`);
             }),
             catchError(this.handleError)
         );
@@ -737,13 +695,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Charge les boOnly avec pagination
      */
     getBoOnly(jobId: string, page: number = 0, size: number = 1000): Observable<{ boOnly: any[], total: number, page: number, size: number, totalPages: number }> {
-        console.log(`📋 Chargement des boOnly pour le job ${jobId} (page: ${page}, size: ${size})`);
         
         return this.http.get<{ boOnly: any[], total: number, page: number, size: number, totalPages: number }>(
             `${this.apiUrl}/results/bo-only?sessionId=${jobId}&page=${page}&size=${size}`
         ).pipe(
             tap(response => {
-                console.log(`✅ ${response.boOnly.length} boOnly chargés (page ${page + 1}/${response.totalPages})`);
             }),
             catchError(this.handleError)
         );
@@ -753,13 +709,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Charge les partnerOnly avec pagination
      */
     getPartnerOnly(jobId: string, page: number = 0, size: number = 1000): Observable<{ partnerOnly: any[], total: number, page: number, size: number, totalPages: number }> {
-        console.log(`📋 Chargement des partnerOnly pour le job ${jobId} (page: ${page}, size: ${size})`);
         
         return this.http.get<{ partnerOnly: any[], total: number, page: number, size: number, totalPages: number }>(
             `${this.apiUrl}/results/partner-only?sessionId=${jobId}&page=${page}&size=${size}`
         ).pipe(
             tap(response => {
-                console.log(`✅ ${response.partnerOnly.length} partnerOnly chargés (page ${page + 1}/${response.totalPages})`);
             }),
             catchError(this.handleError)
         );
@@ -774,7 +728,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 // Vérifier d'abord en mémoire
                 if (this.memoryResults.has(jobId)) {
                     const results = this.memoryResults.get(jobId);
-                    console.log('✅ Résultats frontend récupérés depuis la mémoire:', results);
                     
                     // Convertir au format standard
                     const response: ReconciliationResponse = {
@@ -808,18 +761,15 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 const resultsData = localStorage.getItem(`reconciliation-results-${jobId}`);
                 if (resultsData) {
                     const results = JSON.parse(resultsData);
-                    console.log('✅ Résultats frontend récupérés depuis localStorage:', results);
                     
                     // Vérifier si c'est un traitement par chunks avec données complètes
                     if (results.isChunkedProcessing) {
-                        console.log('📊 Résultats de traitement par chunks détectés - Récupération des données complètes');
                         
                         // Récupérer toutes les données depuis les chunks
                         const allMatches = this.loadDataFromChunks(jobId, 'matches');
                         const allBoOnly = this.loadDataFromChunks(jobId, 'bo-only');
                         const allPartnerOnly = this.loadDataFromChunks(jobId, 'partner-only');
                         
-                        console.log(`📊 Données complètes récupérées: ${allMatches.length} matches, ${allBoOnly.length} bo-only, ${allPartnerOnly.length} partner-only`);
                         
                         // Convertir au format standard
                         const response: ReconciliationResponse = {
@@ -902,12 +852,10 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 allData.push(...chunk);
                 chunkIndex++;
             } catch (error) {
-                console.error(`❌ Erreur lors du chargement du chunk ${chunkKey}:`, error);
                 break;
             }
         }
         
-        console.log(`📊 ${dataType}: ${allData.length} enregistrements chargés depuis ${chunkIndex} chunks`);
         return allData;
     }
 
@@ -918,7 +866,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
         return this.http.post(`${this.apiUrl}/cancel`, { jobId })
             .pipe(
                 tap(() => {
-                    console.log('❌ Job annulé:', jobId);
                     this.currentJobId = null;
                 }),
                 catchError(this.handleError)
@@ -970,24 +917,17 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Méthode de réconciliation classique (sans WebSocket)
      */
     reconcile(request: ReconciliationRequest): Observable<ReconciliationResponse> {
-        console.log('🔄 Démarrage de la réconciliation classique');
         
         // Récupérer le type de réconciliation depuis le service d'état
         const reconciliationType = this.appStateService.getReconciliationType();
         request.reconciliationType = reconciliationType;
         
-        console.log('🎯 Type de réconciliation utilisé:', reconciliationType);
         
         // Vérifier si les données sont trop volumineuses pour la sérialisation
         const boDataLength = request.boFileContent?.length || 0;
         const partnerDataLength = request.partnerFileContent?.length || 0;
         
         if (boDataLength > 100000 || partnerDataLength > 100000) {
-            console.log('📊 Gros fichier détecté - Utilisation du traitement par chunks backend');
-            console.log('🔍 Détails de la détection:', {
-                boDataLength: boDataLength,
-                partnerDataLength: partnerDataLength
-            });
             return this.markReconciliationRun(this.reconcileWithBackendChunks(request));
         }
         
@@ -1010,7 +950,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
             })).pipe(
                 timeout(RECONCILIATION_TIMEOUT),
                 tap(response => {
-                    console.log('✅ Réconciliation terminée:', response);
                     
                     this.updateProgress({
                         percentage: 100,
@@ -1102,7 +1041,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Réconciliation par chunks avec le backend (utilise l'endpoint classique)
      */
     private reconcileWithBackendChunks(request: ReconciliationRequest): Observable<ReconciliationResponse> {
-        console.log('🔄 Démarrage de la réconciliation par chunks backend optimisée');
         
         return new Observable(observer => {
             // Réduire la taille des chunks pour éviter les timeouts (50000 lignes au lieu de 100000)
@@ -1116,11 +1054,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
             if (partnerDataLength > 200000 && partnerDataLength < 300000) {
                 // Pour fichiers Partner moyens (200k-300k), utiliser 50k pour équilibrer vitesse/stabilité
                 chunkSize = 50000;
-                console.log('📊 Fichier Partner volumineux détecté - Utilisation de chunks optimisés (50k)');
             } else if (partnerDataLength >= 300000) {
                 // Pour très gros fichiers Partner (>300k), réduire les chunks pour éviter les timeouts
                 chunkSize = 40000; // 40k lignes pour très gros fichiers
-                console.log('📊 Fichier Partner très volumineux détecté - Utilisation de chunks réduits (40k)');
             } else if (boDataLength > 200000) {
                 chunkSize = 50000; // 50k lignes pour gros fichiers BO
             }
@@ -1129,7 +1065,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
             const boChunks = this.createChunks(request.boFileContent || [], chunkSize);
             const allPartnerData = request.partnerFileContent || [];
             
-            console.log(`📊 Données divisées: ${boChunks.length} chunks BO (${chunkSize} lignes/chunk), ${allPartnerData.length} lignes Partner complètes`);
             
             // Émettre une mise à jour initiale de progression
             this.progressSubject.next({
@@ -1190,10 +1125,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
             ? 1  // Production : traitement séquentiel (1 chunk à la fois) pour éviter les timeouts
             : Math.min(3, boChunks.length); // Local : max 3 chunks simultanés
         
-        console.log(`🔧 Environnement détecté: ${isProduction ? 'PRODUCTION' : 'LOCAL'} - Limite de concurrence: ${MAX_CONCURRENT_CHUNKS} chunk(s)`);
         
         if (isProduction) {
-            console.log('⚠️ Mode PRODUCTION: Traitement séquentiel activé pour éviter les problèmes de connexion');
         }
         
         let completedChunks = 0;
@@ -1235,7 +1168,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
             processingChunks.add(chunkIndex);
             
             const modeText = MAX_CONCURRENT_CHUNKS === 1 ? 'séquentiel' : 'parallèle';
-            console.log(`🔄 Traitement chunk BO ${chunkIndex + 1}/${boChunks.length} (${modeText}) avec ${remainingPartnerData.length} lignes Partner`);
             
             // Mettre à jour la progression
             this.progressSubject.next({
@@ -1257,26 +1189,18 @@ export class ReconciliationService implements OnInit, OnDestroy {
             
             // 🔍 DEBUG: Log des clés et exemples de valeurs pour le premier chunk
             if (chunkIndex === 0) {
-                console.log('🔍 DEBUG - Clés de réconciliation:');
-                console.log(`  - BO Key Column: "${originalRequest.boKeyColumn}"`);
-                console.log(`  - Partner Key Column: "${originalRequest.partnerKeyColumn}"`);
                 
                 // Vérifier que les colonnes existent dans les données
                 if (boChunk.length > 0) {
                     const boColumns = Object.keys(boChunk[0]);
                     const boKeyExists = boColumns.includes(originalRequest.boKeyColumn);
-                    console.log('🔍 DEBUG - Colonnes disponibles dans les données BO:', boColumns);
-                    console.log(`🔍 DEBUG - Colonne clé BO existe? ${boKeyExists}`);
                     if (!boKeyExists) {
-                        console.error(`❌ ERREUR: La colonne "${originalRequest.boKeyColumn}" n'existe pas dans les données BO!`);
-                        console.error('  Colonnes disponibles:', boColumns);
                         // Chercher des colonnes similaires
                         const similarColumns = boColumns.filter(col => 
                             col.toLowerCase().includes(originalRequest.boKeyColumn.toLowerCase()) ||
                             originalRequest.boKeyColumn.toLowerCase().includes(col.toLowerCase())
                         );
                         if (similarColumns.length > 0) {
-                            console.warn('  Colonnes similaires trouvées:', similarColumns);
                         }
                     }
                     
@@ -1291,25 +1215,19 @@ export class ReconciliationService implements OnInit, OnDestroy {
                             exists: key !== undefined
                         };
                     });
-                    console.log('🔍 DEBUG - Exemples de clés BO (5 premiers):', boKeys);
                 }
                 
                 // Vérifier que les colonnes existent dans les données Partner
                 if (currentPartnerData.length > 0) {
                     const partnerColumns = Object.keys(currentPartnerData[0]);
                     const partnerKeyExists = partnerColumns.includes(originalRequest.partnerKeyColumn);
-                    console.log('🔍 DEBUG - Colonnes disponibles dans les données Partner:', partnerColumns);
-                    console.log(`🔍 DEBUG - Colonne clé Partner existe? ${partnerKeyExists}`);
                     if (!partnerKeyExists) {
-                        console.error(`❌ ERREUR: La colonne "${originalRequest.partnerKeyColumn}" n'existe pas dans les données Partner!`);
-                        console.error('  Colonnes disponibles:', partnerColumns);
                         // Chercher des colonnes similaires
                         const similarColumns = partnerColumns.filter(col => 
                             col.toLowerCase().includes(originalRequest.partnerKeyColumn.toLowerCase()) ||
                             originalRequest.partnerKeyColumn.toLowerCase().includes(col.toLowerCase())
                         );
                         if (similarColumns.length > 0) {
-                            console.warn('  Colonnes similaires trouvées:', similarColumns);
                         }
                     }
                     
@@ -1324,7 +1242,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
                             exists: key !== undefined
                         };
                     });
-                    console.log('🔍 DEBUG - Exemples de clés Partner (5 premiers):', partnerKeys);
                     
                     // Vérifier si les clés correspondent
                     const boKeySet = new Set(boChunk.slice(0, 100).map(r => {
@@ -1336,18 +1253,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
                         return key ? String(key).trim() : null;
                     }).filter(k => k !== null && k !== ''));
                     const intersection = [...boKeySet].filter(k => partnerKeySet.has(k));
-                    console.log(`🔍 DEBUG - Intersection des 100 premières clés: ${intersection.length} correspondances trouvées`);
-                    console.log(`  - Clés BO uniques: ${boKeySet.size}`);
-                    console.log(`  - Clés Partner uniques: ${partnerKeySet.size}`);
                     if (intersection.length === 0 && boKeySet.size > 0 && partnerKeySet.size > 0) {
-                        console.warn('⚠️ DEBUG - Aucune correspondance trouvée dans les 100 premiers enregistrements!');
                         const firstBoKey = [...boKeySet][0];
                         const firstPartnerKey = [...partnerKeySet][0];
-                        console.warn('  Exemple clé BO:', firstBoKey, `(type: ${typeof firstBoKey}, longueur: ${firstBoKey?.length})`);
-                        console.warn('  Exemple clé Partner:', firstPartnerKey, `(type: ${typeof firstPartnerKey}, longueur: ${firstPartnerKey?.length})`);
-                        console.warn('  Correspondance exacte?', firstBoKey === firstPartnerKey);
-                        console.warn('  Correspondance après trim?', firstBoKey?.trim() === firstPartnerKey?.trim());
-                        console.warn('  Correspondance ignore case?', firstBoKey?.toLowerCase() === firstPartnerKey?.toLowerCase());
                     }
                 }
             }
@@ -1391,7 +1299,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 // Réinitialiser le compteur d'erreurs en cas de succès
                                 consecutiveErrors = Math.max(0, consecutiveErrors - 1);
                                 
-                                console.log(`✅ Chunk BO ${chunkIndex + 1} traité: ${response.matches?.length || 0} matches`);
                                 
                                 // Stocker les résultats pour traitement séquentiel
                                 // IMPORTANT: gérer les doublons -> on compte les occurrences Partner retirées par clé.
@@ -1414,7 +1321,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 
                                 resolve();
                             } catch (error) {
-                                console.error(`❌ Erreur lors du traitement des résultats du chunk BO ${chunkIndex + 1}:`, error);
                                 reject(error);
                             }
                         },
@@ -1427,13 +1333,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 // Réduire dynamiquement la concurrence si trop d'erreurs
                                 if (consecutiveErrors >= 2 && MAX_CONCURRENT_CHUNKS > 1) {
                                     MAX_CONCURRENT_CHUNKS = Math.max(1, MAX_CONCURRENT_CHUNKS - 1);
-                                    console.warn(`⚠️ Réduction de la concurrence à ${MAX_CONCURRENT_CHUNKS} chunk(s) en raison des erreurs répétées`);
                                 }
                                 
                                 // En production, augmenter le délai de backoff pour laisser le serveur récupérer
                                 const baseDelay = isProduction ? 3000 : 1000; // 3s en prod, 1s en local
                                 const backoffDelay = Math.min(baseDelay * Math.pow(2, retryCount), isProduction ? 60000 : 30000);
-                                console.warn(`⏰ Timeout chunk BO ${chunkIndex + 1} (tentative ${retryCount + 1}/${maxRetries}). Retry dans ${backoffDelay}ms...`);
                                 
                                 setTimeout(() => {
                                     processChunkWithRetry(retryCount + 1, maxRetries).then(resolve).catch(reject);
@@ -1444,13 +1348,10 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 // Réduire la concurrence si erreur persistante
                                 if (consecutiveErrors >= 3 && MAX_CONCURRENT_CHUNKS > 1) {
                                     MAX_CONCURRENT_CHUNKS = 1; // Passer en mode séquentiel
-                                    console.warn(`⚠️ Passage en mode séquentiel (1 chunk) en raison des erreurs persistantes`);
                                 }
                                 
                                 if (isTimeout) {
-                                    console.error(`❌ Timeout persistant pour le chunk BO ${chunkIndex + 1} après ${maxRetries} tentatives`);
                                 } else {
-                                    console.error(`❌ Erreur lors du traitement du chunk BO ${chunkIndex + 1}:`, error);
                                 }
                                 
                                 // En cas d'erreur, ajouter le chunk comme "bo-only"
@@ -1502,9 +1403,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
                             return true;
                         });
                         
-                        console.log(
-                            `📊 Chunk ${nextChunkToProcess + 1}: ${beforeCount - remainingPartnerData.length} occurrence(s) Partner retirée(s), ${remainingPartnerData.length} restantes`
-                        );
                     }
                     
                     // Ajouter les bo-only
@@ -1531,7 +1429,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
                     
                     // Vérifier si tous les chunks sont terminés
                     if (completedChunks >= boChunks.length) {
-                        console.log('✅ Tous les chunks BO traités, finalisation des résultats...');
                         this.finalizeOptimizedResults(
                             allMatches,
                             allBoOnly,
@@ -1551,17 +1448,14 @@ export class ReconciliationService implements OnInit, OnDestroy {
         const startProcessing = async () => {
             // En production avec MAX_CONCURRENT_CHUNKS = 1, traitement séquentiel strict
             if (isProduction && MAX_CONCURRENT_CHUNKS === 1) {
-                console.log('🔄 Mode séquentiel strict activé pour la production');
                 for (let i = 0; i < boChunks.length; i++) {
                     try {
                         await processChunk(i);
                         // Délai entre les chunks en production pour laisser le serveur récupérer
                         if (i < boChunks.length - 1) {
-                            console.log(`⏳ Pause de 1s avant le chunk suivant...`);
                             await new Promise(resolve => setTimeout(resolve, 1000));
                         }
                     } catch (error) {
-                        console.error(`❌ Erreur lors du traitement du chunk ${i + 1}:`, error);
                         // Continuer avec le chunk suivant même en cas d'erreur
                     }
                 }
@@ -1603,11 +1497,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
         initialPartnerRowCount?: number
     ): void {
         try {
-            console.log('📊 Finalisation des résultats optimisés:', {
-                totalMatches: allMatches.length,
-                totalBoOnly: allBoOnly.length,
-                totalPartnerOnly: remainingPartnerData.length
-            });
             
             // OPTIMISATION: Calculer le temps d'exécution réel
             const executionTimeMs = startTime ? Date.now() - startTime : 0;
@@ -1631,19 +1520,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 progressPercentage: 100
             };
             
-            console.log('✅ Résultats optimisés finalisés:', {
-                matches: finalResult.matches.length,
-                boOnly: finalResult.boOnly.length,
-                partnerOnly: finalResult.partnerOnly.length,
-                totalBoRecords: finalResult.totalBoRecords,
-                totalPartnerRecords: finalResult.totalPartnerRecords
-            });
             
             observer.next(finalResult);
             observer.complete();
             
         } catch (error) {
-            console.error('❌ Erreur lors de la finalisation des résultats:', error);
             observer.error(error);
         }
     }
@@ -1652,10 +1533,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Agrège les résultats de tous les chunks
      */
     private aggregateChunkResults(accumulatedResults: any[], observer: any): void {
-        console.log(`📊 Agrégation de ${accumulatedResults.length} résultats de chunks`);
         
         if (accumulatedResults.length === 0) {
-            console.error('❌ Aucun résultat à agréger');
             observer.error(new Error('Aucun résultat à agréger'));
             return;
         }
@@ -1694,17 +1573,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 aggregatedResult.executionTimeMs += result.executionTimeMs || 0;
                 aggregatedResult.processedRecords += result.processedRecords || 0;
                 
-                console.log(`📊 Chunk ${index + 1}: ${result.matches?.length || 0} matches, ${result.boOnly?.length || 0} bo-only, ${result.partnerOnly?.length || 0} partner-only`);
             }
         });
         
-        console.log('✅ Résultats agrégés avec succès:', {
-            totalMatches: aggregatedResult.matches.length,
-            totalBoOnly: aggregatedResult.boOnly.length,
-            totalPartnerOnly: aggregatedResult.partnerOnly.length,
-            totalBoRecords: aggregatedResult.totalBoRecords,
-            totalPartnerRecords: aggregatedResult.totalPartnerRecords
-        });
         
         observer.next(aggregatedResult);
         observer.complete();
@@ -1728,7 +1599,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
     private isLargeReconciliationRequest(request: ReconciliationRequest): boolean {
         // Désactiver le traitement par chunks frontend pour forcer l'utilisation du backend
         // Le backend est plus optimisé pour les gros volumes et la logique de correspondance
-        console.log('📊 Utilisation du backend pour tous les fichiers (traitement optimisé)');
         return false;
     }
 
@@ -1736,7 +1606,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Réconciliation par chunks pour les gros fichiers
      */
     private reconcileWithChunks(request: ReconciliationRequest): Observable<ReconciliationResponse> {
-        console.log('🔄 Démarrage de la réconciliation par chunks');
         
         return new Observable(observer => {
             // Simuler un job ID pour le traitement frontend
@@ -1777,12 +1646,10 @@ export class ReconciliationService implements OnInit, OnDestroy {
      */
     private async processReconciliationChunks(request: ReconciliationRequest, jobId: string): Promise<void> {
         try {
-            console.log('🔄 Début du traitement par chunks');
             
             const boData = request.boFileContent || [];
             const partnerData = request.partnerFileContent || [];
             
-            console.log(`📊 Données à traiter: BO=${boData.length}, Partner=${partnerData.length}`);
             
             // Traitement par chunks de la réconciliation
             const chunkSize = 10000; // 10k lignes par chunk
@@ -1841,7 +1708,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
             });
             
         } catch (error) {
-            console.error('❌ Erreur lors du traitement par chunks:', error);
             throw error;
         }
     }
@@ -1936,7 +1802,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Gestion des erreurs
      */
     private handleError = (error: HttpErrorResponse | any): Observable<never> => {
-        console.error('❌ Erreur dans ReconciliationService:', error);
         
         let errorMessage = 'Une erreur est survenue';
         
@@ -1944,7 +1809,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
         if (error.name === 'TimeoutError' || error.message?.includes('timeout') || error.message?.includes('Timeout')) {
             errorMessage = 'Le délai d\'attente a été dépassé. La réconciliation prend plus de temps que prévu. ' +
                           'Pour les très gros fichiers, veuillez patienter ou diviser les fichiers en plus petits lots.';
-            console.warn('⏰ Timeout détecté lors de la réconciliation');
         } else if (error.error instanceof ErrorEvent) {
             // Erreur côté client
             errorMessage = `Erreur: ${error.error.message}`;

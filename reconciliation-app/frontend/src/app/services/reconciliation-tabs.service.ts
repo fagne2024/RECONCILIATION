@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+﻿import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { Match } from '../models/reconciliation-response.model';
 import { filterRecordsByMagicPartition } from '../utils/magic-partition.util';
@@ -25,12 +25,10 @@ export class ReconciliationTabsService {
 
     // Méthodes pour mettre à jour les données filtrées
     setFilteredMatches(matches: Match[]) {
-        console.log('📊 ReconciliationTabsService - Mise à jour des correspondances filtrées:', matches.length);
         this.filteredMatchesSubject.next(matches);
     }
 
     setFilteredBoOnly(boOnly: Record<string, string>[]) {
-        console.log('📊 ReconciliationTabsService - Mise à jour des écarts BO filtrés:', boOnly.length);
         this.filteredBoOnlySubject.next(boOnly);
     }
 
@@ -57,12 +55,10 @@ export class ReconciliationTabsService {
     }
 
     setFilteredPartnerOnly(partnerOnly: Record<string, string>[]) {
-        console.log('📊 ReconciliationTabsService - Mise à jour des écarts Partenaire filtrés:', partnerOnly.length);
         this.filteredPartnerOnlySubject.next(partnerOnly);
     }
 
     setFilteredMismatches(mismatches: Record<string, string>[]) {
-        console.log('📊 ReconciliationTabsService - Mise à jour des incohérences filtrées:', mismatches.length);
         this.filteredMismatchesSubject.next(mismatches);
     }
 

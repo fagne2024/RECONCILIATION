@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output, ChangeDetectorRef, NgZone, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
+﻿import { Component, EventEmitter, Input, Output, ChangeDetectorRef, NgZone, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, AutoProcessingModel, ProcessingResult, ColumnProcessingRule } from '../../services/auto-processing.service';
 import { ModelPreProcessingService } from '../../services/model-preprocessing.service';
@@ -501,7 +501,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.selectedTraitementModelId = this.getTraitementModelId(this.traitementModels[0]);
             }
         } catch (error) {
-            console.error('Erreur chargement modèles de traitement:', error);
             await this.popupService.showError(
                 'Impossible de charger les modèles de traitement.',
                 'Erreur'
@@ -674,7 +673,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 return analyzed.columns.map((col: string) => String(col).trim()).filter(Boolean);
             }
         } catch (error) {
-            console.warn('Impossible de charger les colonnes du fichier modèle:', error);
         }
 
         return [];
@@ -707,7 +705,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.traitementColumnKeepMap[col] = true;
             }
         } catch (error) {
-            console.warn('Impossible de charger les colonnes du modèle:', error);
         } finally {
             this.traitementOutputColumnsLoading = false;
             this.cd.detectChanges();
@@ -1026,7 +1023,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
         } catch (error: any) {
             perf.end('Traitement échoué', { erreur: error?.message || String(error) });
-            console.error('Erreur traitement assisté:', error);
             this.traitementProcessing = false;
             this.closeTraitementModal(true);
             await this.popupService.showError(
@@ -1043,11 +1039,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     /** Fusion multi-fichiers uniquement ; Excel mono-fichier (y compris multi-feuilles) = lecture directe. */
     private async needsAssistedCompilation(files: File[]): Promise<boolean> {
         const needs = files.length > 1;
-        console.log(
-            needs
-                ? `⏱️ [traitement] Fusion requise : ${files.length} fichiers — ${files.map(f => f.name).join(', ')}`
-                : `⏱️ [traitement] Lecture directe : ${files[0]?.name ?? '(aucun)'} (pas de fusion inter-fichiers)`
-        );
         return needs;
     }
 
@@ -1104,26 +1095,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         let last = t0;
         console.groupCollapsed(`⏱️ [${runId}] ${label}`);
         if (details) {
-            console.log('📋 Contexte:', details);
         }
         return {
             mark: (step: string, detail?: Record<string, unknown>) => {
                 const now = performance.now();
                 const delta = now - last;
                 const total = now - t0;
-                console.log(
-                    `⏱️ [${runId}] ${step} — +${delta.toFixed(0)} ms (total ${total.toFixed(0)} ms)`,
-                    detail ?? ''
-                );
                 last = now;
             },
             end: (step: string, detail?: Record<string, unknown>) => {
                 const now = performance.now();
                 const total = now - t0;
-                console.log(
-                    `⏱️ [${runId}] ✅ ${step} — TOTAL ${total.toFixed(0)} ms (${(total / 1000).toFixed(2)} s)`,
-                    detail ?? ''
-                );
                 console.groupEnd();
             }
         };
@@ -1531,11 +1513,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             rows.push(enrichRowWithCanonicalFrenchColumns(row));
         }
 
-        console.log(
-            `📋 Traitement assisté (${assistedHeader.source}) — en-tête ligne ${headerLine + 1}, ` +
-            `${skippedBeforeHeader} ligne(s) avant en-tête ignorée(s), ` +
-            `${skippedUselessRows} ligne(s) inutile(s) filtrée(s), ${rows.length} ligne(s) conservée(s)`
-        );
 
         return {
             rows,
@@ -1608,13 +1585,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         const gridParseMs = performance.now() - gridParseStart;
-        console.log(
-            `📋 Traitement assisté (${assistedHeader.source}) — en-tête ligne ${headerLine + 1}, ` +
-            `${skippedBeforeHeader} ligne(s) avant en-tête ignorée(s), ` +
-            `${skippedUselessRows} ligne(s) inutile(s) filtrée(s), ${rows.length} ligne(s) conservée(s) — ` +
-            `⏱️ ${gridParseMs.toFixed(0)} ms (${rows.length ? (gridParseMs / rows.length).toFixed(2) : 0} ms/ligne) ` +
-            `[${progressLabel}]`
-        );
 
         return {
             rows,
@@ -1663,10 +1633,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.appendRowsSafely(mergedRows, firstParse.rows);
         let removedLines = firstParse.removedLines;
 
-        console.log(
-            `📊 Mode assisté — ${sheetNames.length} feuille(s) : ` +
-            `${firstParse.rows.length} ligne(s) sur « ${sheetNames[0]} »`
-        );
 
         for (let i = 1; i < sheetNames.length; i++) {
             const sheetName = sheetNames[i];
@@ -1686,10 +1652,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 grid,
                 headers,
                 assistedHeader.headerRow
-            );
-            console.log(
-                `📄 Feuille « ${sheetName} » : ${continuation.rows.length} ligne(s) ajoutée(s), ` +
-                `${continuation.removedLines} ignorée(s)`
             );
             this.appendRowsSafely(mergedRows, continuation.rows);
             removedLines += continuation.removedLines;
@@ -1714,10 +1676,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             raw: true,
             blankrows: false
         }) as any[][];
-        console.log(
-            `⏱️ [traitement] sheet_to_json — ${grid.length.toLocaleString('fr-FR')} ligne(s) ` +
-            `en ${(performance.now() - extractStart).toFixed(0)} ms`
-        );
         return grid;
     }
 
@@ -2185,7 +2143,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         if (duplicatesRemoved > 0) {
-            console.log(`🧹 ${duplicatesRemoved} doublon(s) ignoré(s) sur ${rows.length} ligne(s) traitées`);
         }
 
         return { uniqueRows, duplicatesRemoved };
@@ -2221,7 +2178,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         if (duplicatesRemoved > 0) {
-            console.log(`🧹 ${duplicatesRemoved} doublon(s) ignoré(s) sur ${rows.length} ligne(s) traitées`);
         }
 
         return { uniqueRows, duplicatesRemoved };
@@ -2466,7 +2422,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.assistedPartnerReconciliationModelId = matchId;
             }
         } catch (error) {
-            console.warn('Impossible de mémoriser le modèle partenaire:', error);
         }
     }
 
@@ -2817,11 +2772,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
             const xlsxStart = performance.now();
             const workbook = await this.readAssistedXlsxWorkbook(data, fileSizeMB);
-            console.log(
-                `⏱️ [traitement] XLSX.read — ${file.name} (${fileSizeMB.toFixed(1)} Mo) ` +
-                `en ${(performance.now() - xlsxStart).toFixed(0)} ms, ` +
-                `${workbook.SheetNames?.length ?? 0} feuille(s)`
-            );
             if (!workbook.SheetNames?.length) {
                 throw new Error('Aucune feuille Excel trouvée');
             }
@@ -2829,10 +2779,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             await this.yieldToMainThread();
             const workbookStart = performance.now();
             const parsed = await this.parseAssistedTreatmentWorkbook(workbook);
-            console.log(
-                `⏱️ [traitement] parseAssistedTreatmentWorkbook — ${parsed.rows.length.toLocaleString('fr-FR')} ligne(s) ` +
-                `en ${(performance.now() - workbookStart).toFixed(0)} ms`
-            );
             return parsed;
         } catch (error) {
             throw error instanceof Error ? error : new Error(String(error));
@@ -2885,11 +2831,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     onBoFileSelected(event: Event): void {
-        console.log('🎯 onBoFileSelected() appelé');
         const input = event.target as HTMLInputElement;
         if (input.files?.length) {
             this.boFile = input.files[0];
-            console.log('📁 Fichier BO sélectionné:', this.boFile.name, 'Taille:', this.boFile.size);
             
             if (this.reconciliationMode === 'manual') {
                 // Mode manuel: pas de traitement automatique
@@ -2902,11 +2846,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     onPartnerFileSelected(event: Event): void {
-        console.log('🎯 onPartnerFileSelected() appelé');
         const input = event.target as HTMLInputElement;
         if (input.files?.length) {
             this.partnerFile = input.files[0];
-            console.log('📁 Fichier Partenaire sélectionné:', this.partnerFile.name, 'Taille:', this.partnerFile.size);
             
             if (this.reconciliationMode === 'manual') {
                 // Mode manuel: pas de traitement automatique
@@ -2921,7 +2863,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     // Méthodes de suppression des fichiers
     removeBoFile(event: Event): void {
         event.stopPropagation(); // Empêcher le déclenchement du clic sur le conteneur
-        console.log('🗑️ Suppression du fichier BO');
         this.boFile = null;
         this.boData = [];
         this.estimatedTime = '';
@@ -2932,7 +2873,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     removePartnerFile(event: Event): void {
         event.stopPropagation(); // Empêcher le déclenchement du clic sur le conteneur
-        console.log('🗑️ Suppression du fichier Partenaire');
         this.partnerFile = null;
         this.partnerData = [];
         this.estimatedTime = '';
@@ -2943,7 +2883,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     removeAutoBoFile(event: Event): void {
         event.stopPropagation(); // Empêcher le déclenchement du clic sur le conteneur
-        console.log('🗑️ Suppression du fichier BO automatique');
         this.autoBoFile = null;
         this.autoBoData = [];
         this.autoBoFileName = '';
@@ -2955,7 +2894,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     removeAutoPartnerFile(event: Event): void {
         event.stopPropagation(); // Empêcher le déclenchement du clic sur le conteneur
-        console.log('🗑️ Suppression du fichier Partenaire automatique');
         this.autoPartnerFile = null;
         this.autoPartnerData = [];
         this.autoPartnerFileName = '';
@@ -3078,7 +3016,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Nouvelle méthode pour traiter le fichier BO en mode manuel avec détection TRXBO
     private processManualBoFile(file: File): void {
-        console.log('🔧 Traitement du fichier BO en mode manuel:', file.name);
         
         // En mode manuel, utiliser la même logique que le mode automatique pour les fichiers CSV
         // La détection TRXBO est maintenant intégrée dans parseCSV
@@ -3087,7 +3024,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Nouvelle méthode pour le traitement automatique optimisé
     private processFileWithAutoProcessing(file: File, fileType: 'bo' | 'partner'): void {
-        console.log(`🔍 Vérification des modèles automatiques pour ${file.name} (${fileType})`);
         
         // Détecter si c'est un gros fichier (> 50MB)
         const isLargeFile = file.size > 50 * 1024 * 1024; // 50MB
@@ -3126,28 +3062,19 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         
         // Traitement simplifié sans callback de progression
         this.autoProcessingService.processFile(file).then((result: ProcessingResult) => {
-                console.log(`📊 Résultat du traitement automatique pour ${file.name}:`, result);
                 
                 if (result.success) {
-                    console.log(`✅ Traitement automatique appliqué pour ${file.name}:`, result);
-                    console.log(`📊 Modèle utilisé: ${result.modelId}`);
-                    console.log(`⚡ Temps de traitement: ${result.processingTime}ms`);
-                    console.log(`📈 Lignes traitées: ${result.processedData.length}`);
                     
                     // Utiliser les données traitées
                     if (fileType === 'bo') {
                         this.boData = result.processedData;
-                        console.log(`✅ Données BO mises à jour: ${this.boData.length} lignes`);
                     } else {
                         this.partnerData = result.processedData;
-                        console.log(`✅ Données Partenaire mises à jour: ${this.partnerData.length} lignes`);
                     }
                     
                     // Afficher une notification de succès
                     this.showProcessingNotification(result);
                 } else {
-                    console.log(`❌ Aucun modèle automatique trouvé pour ${file.name}, utilisation du traitement standard`);
-                    console.log(`💡 Pour créer un modèle automatique, allez dans "Modèles de Traitement"`);
                     
                     // Traitement standard
                     this.parseFile(file, fileType === 'bo');
@@ -3165,19 +3092,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.processingAbortController = null;
                 
                 // Vérifier l'état après traitement
-                console.log(`🔍 État après traitement de ${file.name}:`, {
-                    boDataLength: this.boData.length,
-                    partnerDataLength: this.partnerData.length,
-                    canProceed: this.canProceed()
-                });
         }).catch((error) => {
-                console.error('❌ Erreur lors du traitement automatique:', error);
                 
                 if (this.processingCancelled) {
-                    console.log('🛑 Traitement annulé par l\'utilisateur');
                     this.processingMessage = 'Traitement annulé';
                 } else {
-                    console.log(`🔄 Fallback vers le traitement standard pour ${file.name}`);
                     
                     // Fallback vers le traitement standard
                     this.parseFile(file, fileType === 'bo');
@@ -3194,11 +3113,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.processingAbortController = null;
                 
                 // Vérifier l'état après fallback
-                console.log(`🔍 État après fallback pour ${file.name}:`, {
-                    boDataLength: this.boData.length,
-                    partnerDataLength: this.partnerData.length,
-                    canProceed: this.canProceed()
-                });
         });
     }
 
@@ -3225,10 +3139,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         // Déterminer le type de fichier (BO ou partenaire) basé sur le nom ou l'extension
         const fileType = this.determineFileType(file.name);
 
-        console.log(`🚀 Démarrage de la réconciliation automatique pour ${file.name} (type: ${fileType})`);
 
         // Méthode simplifiée sans réconciliation automatique
-        console.log(`🚀 Traitement de fichier pour ${file.name} (type: ${fileType})`);
         // TODO: Implémenter le traitement de fichier
     }
 
@@ -3249,13 +3161,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Méthode pour afficher les résultats de la réconciliation automatique
     private displayAutoReconciliationResults(result: any): void {
-        console.log('📊 Résultats de la réconciliation automatique:');
-        console.log('   - Fichier traité:', result.fileName);
-        console.log('   - Modèle utilisé:', result.modelId);
-        console.log('   - Temps de traitement:', result.processingTime, 'ms');
-        console.log('   - Temps de réconciliation:', result.reconciliationTime, 'ms');
-        console.log('   - Étapes appliquées:', result.appliedSteps.length);
-        console.log('   - Résultat de réconciliation:', result.reconciliationResult);
         
         // Appliquer le filtrage automatique Orange Money si nécessaire
         this.applyAutomaticOrangeMoneyFilterForReconciliation(result);
@@ -3326,14 +3231,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Méthode pour appliquer le filtrage automatique Orange Money dans la réconciliation
     private applyAutomaticOrangeMoneyFilterForReconciliation(result: any): void {
-        console.log('🎯 Vérification du filtrage automatique Orange Money pour la réconciliation...');
         
         // Vérifier si le fichier traité est un fichier Orange Money
         const fileName = result.fileName || '';
         const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
         
         if (isOrangeMoneyFile) {
-            console.log('🎯 Fichier Orange Money détecté dans la réconciliation automatique');
             
             // Vérifier si le modèle utilisé est un modèle Orange Money
             const modelId = result.modelId || '';
@@ -3342,13 +3245,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                                      modelId.toLowerCase().includes('orange money');
             
             if (isOrangeMoneyModel) {
-                console.log('✅ Modèle Orange Money détecté, application du filtrage automatique');
                 
                 // Appliquer le filtrage sur les données traitées
                 if (result.processedData && result.processedData.length > 0) {
                     const filteredData = this.filterOrangeMoneyData(result.processedData);
                     
-                    console.log(`✅ Filtrage Orange Money appliqué: ${filteredData.length} lignes avec "Succès" sur ${result.processedData.length} lignes totales`);
                     
                     // Mettre à jour les résultats avec les données filtrées
                     result.processedData = filteredData;
@@ -3359,17 +3260,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     this.showOrangeMoneyFilterNotification(result);
                 }
             } else {
-                console.log('⚠️ Modèle non-Orange Money détecté, pas de filtrage automatique');
             }
         } else {
-            console.log('⚠️ Fichier non-Orange Money détecté, pas de filtrage automatique');
         }
     }
 
     // Méthode pour filtrer les données Orange Money
     private filterOrangeMoneyData(data: any[]): any[] {
-        console.log('🔍 filterOrangeMoneyData appelé avec', data.length, 'lignes');
-        console.log('📊 Colonnes disponibles avant filtrage:', data.length > 0 ? Object.keys(data[0]) : []);
         
         // Vérifier si c'est un fichier Orange Money avec traitement spécial
         const isOrangeMoneyFile = data.length > 0 && Object.keys(data[0]).some(col => 
@@ -3379,7 +3276,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         );
         
         if (isOrangeMoneyFile) {
-            console.log('🟠 Fichier Orange Money détecté, préservation de toutes les colonnes');
             
             const filteredData = data.filter(row => {
                 // Chercher la colonne "Statut" dans les données
@@ -3392,17 +3288,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     const statutValue = row[statutColumn];
                     const shouldKeep = statutValue && statutValue.toString().toLowerCase().includes('succès');
                     if (!shouldKeep) {
-                        console.log(`❌ Ligne exclue: statut="${statutValue}" ne contient pas "succès"`);
                     }
                     return shouldKeep;
                 }
                 
-                console.log('⚠️ Aucune colonne Statut trouvée, garder toutes les lignes');
                 return true; // Si pas de colonne Statut, garder toutes les lignes
             });
             
-            console.log('✅ Filtrage Orange Money terminé:', filteredData.length, 'lignes conservées sur', data.length);
-            console.log('📊 Colonnes disponibles après filtrage Orange Money:', filteredData.length > 0 ? Object.keys(filteredData[0]) : []);
             
             return filteredData;
         } else {
@@ -3418,17 +3310,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     const statutValue = row[statutColumn];
                     const shouldKeep = statutValue && statutValue.toString().toLowerCase().includes('succès');
                     if (!shouldKeep) {
-                        console.log(`❌ Ligne exclue: statut="${statutValue}" ne contient pas "succès"`);
                     }
                     return shouldKeep;
                 }
                 
-                console.log('⚠️ Aucune colonne Statut trouvée, garder toutes les lignes');
                 return true; // Si pas de colonne Statut, garder toutes les lignes
             });
             
-            console.log('✅ Filtrage normal terminé:', filteredData.length, 'lignes conservées sur', data.length);
-            console.log('📊 Colonnes disponibles après filtrage normal:', filteredData.length > 0 ? Object.keys(filteredData[0]) : []);
             
             return filteredData;
         }
@@ -3443,25 +3331,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                        `📊 Total initial: ${result.processedData.length + (result.totalRowsCount - result.filteredRowsCount)} lignes\n\n` +
                        `Seules les lignes avec le statut "Succès" ont été conservées pour la réconciliation.`;
         
-        console.log('🎯 Notification Orange Money:', message);
         // Vous pouvez remplacer alert par une notification plus élégante
         this.popupService.showInfo(message);
     }
 
     // Méthode pour appliquer le filtrage automatique Orange Money dans le file upload
     private applyAutomaticOrangeMoneyFilterForFileUpload(fileName: string, isBo: boolean): void {
-        console.log('🎯 Vérification du filtrage automatique Orange Money pour le file upload...');
-        console.log('🔍 Nom du fichier:', fileName);
-        console.log('🔍 Type de fichier (isBo):', isBo);
         
         // Vérifier si le fichier traité est un fichier Orange Money
         const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
-        console.log('🔍 Est-ce un fichier Orange Money?', isOrangeMoneyFile);
         
         if (isOrangeMoneyFile) {
-            console.log('🎯 Fichier Orange Money détecté dans le file upload');
-            console.log('🔍 boData.length:', this.boData.length);
-            console.log('🔍 partnerData.length:', this.partnerData.length);
             
             // Appliquer le filtrage sur les données appropriées
             if (isBo && this.boData.length > 0) {
@@ -3469,22 +3349,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.boData = this.filterOrangeMoneyData(this.boData);
                 const filteredCount = this.boData.length;
                 
-                console.log(`✅ Filtrage Orange Money appliqué sur BO: ${filteredCount} lignes avec "Succès" sur ${originalCount} lignes totales`);
                 this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'BO', originalCount, filteredCount);
             } else if (!isBo && this.partnerData.length > 0) {
                 const originalCount = this.partnerData.length;
                 this.partnerData = this.filterOrangeMoneyData(this.partnerData);
                 const filteredCount = this.partnerData.length;
                 
-                console.log(`✅ Filtrage Orange Money appliqué sur Partenaire: ${filteredCount} lignes avec "Succès" sur ${originalCount} lignes totales`);
                 this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'Partenaire', originalCount, filteredCount);
             } else {
-                console.log('⚠️ Aucune donnée disponible pour le filtrage (isBo:', isBo, ', boData.length:', this.boData.length, ', partnerData.length:', this.partnerData.length, ')');
             }
         } else {
-            console.log('⚠️ Fichier non-Orange Money détecté, pas de filtrage automatique');
-            console.log('🔍 Clés de détection utilisées: ciomcm, orange, orange money');
-            console.log('🔍 Nom du fichier en minuscules:', fileName.toLowerCase());
         }
     }
 
@@ -3497,7 +3371,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                        `📊 Total initial: ${originalCount} lignes\n\n` +
                        `Seules les lignes avec le statut "Succès" ont été conservées.`;
         
-        console.log('🎯 Notification Orange Money (File Upload):', message);
         this.popupService.showInfo(message, 'Filtrage Orange Money');
     }
 
@@ -3512,12 +3385,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         const startTime = performance.now();
         const isLargeDataset = rows.length > 100000;
-        console.log(`🔄 [APPLY_OM] Début de applyOrangeMoneyColumnSelection pour ${rows.length} enregistrements (fichier volumineux: ${isLargeDataset})`);
 
         // Pour les gros datasets, normaliser par chunks pour éviter de bloquer l'UI
         let normalizedRows: T[];
         if (isLargeDataset) {
-            console.log(`📦 [APPLY_OM] Normalisation par chunks pour éviter le blocage de l'UI...`);
             const normalizeStartTime = performance.now();
             const CHUNK_SIZE = 50000;
             normalizedRows = [] as T[];
@@ -3538,7 +3409,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 if ((i + CHUNK_SIZE) % 100000 === 0 || i + CHUNK_SIZE >= rows.length) {
                     const progress = ((i + CHUNK_SIZE) / rows.length * 100).toFixed(1);
                     const duration = ((performance.now() - normalizeStartTime) / 1000).toFixed(2);
-                    console.log(`📊 [APPLY_OM] Normalisation: ${progress}% (${Math.min(i + CHUNK_SIZE, rows.length)}/${rows.length} enregistrements, ${duration}s)`);
                 }
                 
                 // Petite pause pour permettre à l'UI de se mettre à jour (sans await car fonction synchrone)
@@ -3546,7 +3416,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 // La pause sera gérée par le traitement par chunks lui-même
             }
             const normalizeDuration = ((performance.now() - normalizeStartTime) / 1000).toFixed(2);
-            console.log(`✅ [APPLY_OM] Normalisation terminée en ${normalizeDuration}s`);
         } else {
             // Normaliser les colonnes dans les données d'abord
             const normalizeStartTime = performance.now();
@@ -3559,18 +3428,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 return normalizedRow as T;
             });
             const normalizeDuration = ((performance.now() - normalizeStartTime) / 1000).toFixed(2);
-            console.log(`✅ [APPLY_OM] Normalisation terminée en ${normalizeDuration}s`);
         }
 
         const headers = Object.keys(normalizedRows[0]);
-        console.log('🔍 [APPLY_OM] Colonnes d\'entrée (normalisées):', headers);
-        console.log('🔍 [APPLY_OM] Nom du fichier:', fileName);
         
         const lower = (s: string) => s.toLowerCase();
 
         // EXCEPTION: Le fichier PMOMBF ne doit pas utiliser les colonnes par défaut Orange Money
         if (fileName && lower(fileName).includes('pmombf')) {
-            console.log('🚫 Exception PMOMBF détectée - retour des données originales sans transformation Orange Money');
             return normalizedRows;
         }
 
@@ -3579,10 +3444,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             && headers.some(h => lower(h).includes('statut') || lower(h).includes('status'))
             && headers.some(h => lower(h).includes('date'));
 
-        console.log('🔍 Détection Orange Money:', looksLikeOM);
         
         if (!looksLikeOM) {
-            console.log('✅ Fichier non-Orange Money détecté, retour des données originales (normalisées)');
             return normalizedRows;
         }
 
@@ -3618,24 +3481,19 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         };
 
         const mappedColumns: (string | null)[] = targetOrder.map(findColumn);
-        console.log(`🔍 [APPLY_OM] Colonnes mappées:`, mappedColumns);
 
         // Si aucune correspondance pertinente, ne pas altérer
         if (mappedColumns.every(c => c === null)) {
-            console.log(`✅ [APPLY_OM] Aucune correspondance Orange Money, retour des données normalisées`);
             const totalDuration = ((performance.now() - startTime) / 1000).toFixed(2);
-            console.log(`✅ [APPLY_OM] Processus complet terminé en ${totalDuration}s`);
             return normalizedRows;
         }
 
         // Recomposer les lignes avec uniquement les colonnes cibles, dans l'ordre
-        console.log(`🔄 [APPLY_OM] Début du remapping des colonnes...`);
         const remapStartTime = performance.now();
         
         let remapped: T[];
         if (isLargeDataset) {
             // Pour les gros datasets, remapper par chunks
-            console.log(`📦 [APPLY_OM] Remapping par chunks...`);
             const REMAP_CHUNK_SIZE = 50000;
             remapped = [] as T[];
             
@@ -3660,7 +3518,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 if ((i + REMAP_CHUNK_SIZE) % 100000 === 0 || i + REMAP_CHUNK_SIZE >= normalizedRows.length) {
                     const progress = ((i + REMAP_CHUNK_SIZE) / normalizedRows.length * 100).toFixed(1);
                     const duration = ((performance.now() - remapStartTime) / 1000).toFixed(2);
-                    console.log(`📊 [APPLY_OM] Remapping: ${progress}% (${Math.min(i + REMAP_CHUNK_SIZE, normalizedRows.length)}/${normalizedRows.length} enregistrements, ${duration}s)`);
                 }
             }
         } else {
@@ -3681,24 +3538,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         
         const remapDuration = ((performance.now() - remapStartTime) / 1000).toFixed(2);
         const totalDuration = ((performance.now() - startTime) / 1000).toFixed(2);
-        console.log(`✅ [APPLY_OM] Remapping terminé en ${remapDuration}s`);
-        console.log(`✅ [APPLY_OM] Processus complet terminé en ${totalDuration}s: ${remapped.length} enregistrements`);
 
         return remapped;
     }
 
     private parseFile(file: File, isBo: boolean): void {
-        console.log(`🔧 parseFile() appelé pour ${file.name} (isBo: ${isBo})`);
         
         const fileName = file.name.toLowerCase();
         if (fileName.endsWith('.csv')) {
-            console.log(`📄 Parsing CSV: ${file.name}`);
             this.parseCSV(file, isBo);
         } else if (this.isExcelFile(fileName)) {
-            console.log(`📄 Parsing Excel: ${file.name}`);
             this.parseXLSX(file, isBo);
         } else {
-            console.error(`❌ Format de fichier non supporté: ${file.name}`);
             this.errorMessage = `Format de fichier non supporté: ${file.name}. Formats supportés: CSV, XLS, XLSX, XLSM, XLSB, XLT, XLTX, XLTM`;
         }
     }
@@ -3737,7 +3588,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 const semicolonCount = (firstLine.match(/;/g) || []).length;
                 const delimiter = semicolonCount > commaCount ? ';' : ',';
                 
-                console.log(`📊 Fichier ${file.name}: détecté délimiteur "${delimiter}"`);
                 
                 Papa.parse(text, {
                     header: true,
@@ -3748,14 +3598,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         return this.normalizeColumnName(header);
                     },
                     complete: (results) => {
-                        console.log('Première ligne lue:', results.data[0]);
                         if (isBo) {
                             this.boData = results.data as Record<string, string>[];
                             
                             // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services (pour le mode manuel)
                             setTimeout(() => {
                                 if (this.boData && this.boData.length > 0) {
-                                    console.log('🔍 Vérification TRXBO sur les données BO chargées...');
                                     if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
                                         if (this.availableAgencies.length > 0) {
                                             this.showAgencySelectionStep();
@@ -3772,20 +3620,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                             if (this.reconciliationMode === 'manual') {
                                 // Utiliser setTimeout pour laisser Angular terminer le cycle de détection en cours
                                 setTimeout(() => {
-                                    console.log('🕐 setTimeout exécuté pour la détection partenaire (mode manuel)');
                                     if (this.partnerData && this.partnerData.length > 0) {
-                                        console.log('🔍 Vérification service/type/statut sur les données partenaire chargées (mode manuel)...');
                                         const detected = this.detectPartnerServiceTypeAndStatusForManual(this.partnerData);
-                                        console.log('🔍 Résultat de la détection partenaire:', detected);
                                         if (detected === 'agency') {
                                             requestAnimationFrame(() => this.showPartnerAgencySelectionStep());
                                         } else if (detected === 'services') {
                                             requestAnimationFrame(() => this.showManualPartnerServiceSelectionStep());
                                         } else {
-                                            console.log('❌ Détection partenaire échouée, pas de popup');
                                         }
                                     } else {
-                                        console.log('⚠️ partnerData est vide ou null');
                                     }
                                 }, 100);
                             }
@@ -3800,14 +3643,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         this.cd.detectChanges();
                     },
                     error: (error: any) => {
-                        console.error('Erreur lors de la lecture du fichier CSV:', error);
                         this.cd.detectChanges();
                     }
                 });
             }
         };
         reader.onerror = (e) => {
-            console.error('Erreur lors de la lecture du fichier (FileReader):', e);
         };
         reader.readAsText(file, 'utf-8');
     }
@@ -3838,7 +3679,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         headerRowIndex: number;
         headerRow: string[];
     } {
-        console.log('🔍 Détection ciblée des en-têtes Excel - Nouvelle approche');
         
         const lines = content.split('\n').filter(line => line.trim());
         let bestHeaderRowIndex = -1;
@@ -3846,7 +3686,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         let bestHeaderRow: string[] = [];
         
         // NOUVELLE APPROCHE : Chercher d'abord à la ligne 23 (ligne spécifique) mais vérifier que ce sont des en-têtes
-        console.log('🎯 ÉTAPE 1: Recherche ciblée à la ligne 23');
         
         // Vérifier si la ligne 23 existe
         if (lines.length > 22) {
@@ -3855,8 +3694,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             const rowStrings23 = cells23.map(cell => cell.toString());
             const nonEmptyColumns23 = rowStrings23.filter(cell => cell && cell !== '').length;
             
-            console.log(`🔍 Ligne 23 - Données brutes:`, cells23);
-            console.log(`🔍 Ligne 23 - Colonnes non vides: ${nonEmptyColumns23}`);
             
             // Vérifier si la ligne 23 contient des en-têtes valides (pas des données)
             const hasValidHeaders = this.hasValidHeaders(rowStrings23);
@@ -3864,7 +3701,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             // Si la ligne 23 a beaucoup de colonnes ET contient des en-têtes valides
             // ET que ce ne sont PAS des données (vérification stricte)
             if (nonEmptyColumns23 >= 10 && hasValidHeaders) {
-                console.log('✅ Ligne 23 trouvée avec suffisamment de colonnes et en-têtes valides!');
                 return {
                     isOrangeMoney: true,
                     headerRowIndex: 22, // Index 22 = ligne 23
@@ -3872,17 +3708,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 };
             } else {
                 if (!hasValidHeaders) {
-                    console.log('❌ Ligne 23 contient des données au lieu d\'en-têtes, recherche dans les premières lignes');
                 } else {
-                    console.log('⚠️ Ligne 23 n\'a pas assez de colonnes, recherche dans les 50 premières lignes');
                 }
             }
         } else {
-            console.log('⚠️ Ligne 23 n\'existe pas, recherche dans les 50 premières lignes');
         }
         
         // ÉTAPE 2: Si ligne 23 pas trouvée, chercher dans les 50 premières lignes
-        console.log('🎯 ÉTAPE 2: Recherche dans les 50 premières lignes');
         
         for (let i = 0; i < Math.min(50, lines.length); i++) {
             const line = lines[i];
@@ -3934,7 +3766,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             // PÉNALITÉ MAJEURE si la ligne ressemble à des données
             if (!hasValidHeaders) {
                 score -= 1000; // Pénalité massive pour rejeter les lignes de données
-                console.log(`❌ Ligne ${i} rejetée: contient des données au lieu d'en-têtes`);
             }
             
             // Bonus pour avoir plusieurs colonnes non vides (critère important pour Orange Money)
@@ -3978,27 +3809,20 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 score += 10;
             }
             
-            console.log(`🔍 Ligne ${i} - Données brutes:`, cells);
-            console.log(`🔍 Ligne ${i} - Après conversion:`, cells);
-            console.log(`🔍 Ligne ${i}: score=${score}, colonnes=${nonEmptyColumns}`);
             
             if (score > bestScore) {
                 bestScore = score;
                 bestHeaderRowIndex = i;
                 bestHeaderRow = cells;
-                console.log(`⭐ Nouveau meilleur en-tête trouvé à la ligne ${i} avec score ${score}`);
             }
         }
         
-        console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
-        console.log(`🔍 En-tête détecté:`, bestHeaderRow);
         
         // Vérifier que le meilleur en-tête trouvé est vraiment valide
         // (score > 0 signifie qu'il a passé la validation hasValidHeaders)
         const isValidResult = bestScore > 0 && bestHeaderRowIndex >= 0 && bestHeaderRow.length > 0;
         
         if (!isValidResult) {
-            console.warn('⚠️ Aucun en-tête valide trouvé dans les 50 premières lignes');
         }
         
         return {
@@ -4130,9 +3954,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const CHUNK_SIZE = 10000;
         const data: Record<string, string>[] = [];
         
-        console.log(`📦 [PARSE_LARGE] Début du parsing optimisé pour ${fileName}`);
-        console.log(`📊 [PARSE_LARGE] Nombre de lignes: ${lines.length}`);
-        console.log(`📊 [PARSE_LARGE] Taille de chunk: ${CHUNK_SIZE} lignes`);
         
         // Activer l'indicateur de progression
         this.isProcessingLargeFile = true;
@@ -4146,7 +3967,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const headers = firstLine.split(delimiter);
         const detectDuration = ((performance.now() - detectStartTime) / 1000).toFixed(3);
         
-        console.log(`🔧 [PARSE_LARGE] Parsing optimisé: délimiteur "${delimiter}", ${headers.length} colonnes (${detectDuration}s)`);
         
         // Traitement par chunks
         for (let i = 1; i < lines.length; i += CHUNK_SIZE) {
@@ -4173,7 +3993,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.processingProgress = Math.round(progress);
             this.processingMessage = `Traitement: ${data.length} lignes traitées sur ${lines.length - 1}`;
             
-            console.log(`📊 Progression parsing: ${Math.round(progress)}% (${data.length} lignes traitées)`);
             
             // Petite pause pour permettre l'affichage de la progression
             setTimeout(() => {}, 10);
@@ -4181,8 +4000,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         
         const parseEndTime = performance.now();
         const parseDuration = ((parseEndTime - parseStartTime) / 1000).toFixed(2);
-        console.log(`✅ [PARSE_LARGE] Parsing terminé en ${parseDuration}s: ${data.length} lignes traitées`);
-        console.log(`📊 [PARSE_LARGE] Taille mémoire approximative: ${(JSON.stringify(data).length / (1024 * 1024)).toFixed(2)} MB`);
         
         // Désactiver l'indicateur de progression
         this.isProcessingLargeFile = false;
@@ -4190,57 +4007,38 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.processingMessage = '';
         
         // Traitement des données avec logs
-        console.log(`🔄 [PARSE_LARGE] Début du traitement post-parsing...`);
         const postProcessStartTime = performance.now();
         
         try {
             if (isBo) {
-                console.log(`🔄 [PARSE_LARGE] Application de applyOrangeMoneyColumnSelection pour BO...`);
                 const selectionStartTime = performance.now();
                 this.boData = this.applyOrangeMoneyColumnSelection(data, fileName);
                 const selectionDuration = ((performance.now() - selectionStartTime) / 1000).toFixed(2);
-                console.log(`✅ [PARSE_LARGE] applyOrangeMoneyColumnSelection terminé en ${selectionDuration}s: ${this.boData.length} enregistrements`);
             } else {
-                console.log(`🔄 [PARSE_LARGE] Conversion débit/crédit pour Partenaire...`);
                 const convertStartTime = performance.now();
                 const convertedData = this.convertDebitCreditToNumber(data);
                 const convertDuration = ((performance.now() - convertStartTime) / 1000).toFixed(2);
-                console.log(`✅ [PARSE_LARGE] Conversion terminée en ${convertDuration}s`);
                 
-                console.log(`🔄 [PARSE_LARGE] Application de applyOrangeMoneyColumnSelection pour Partenaire...`);
                 const selectionStartTime = performance.now();
                 this.partnerData = this.applyOrangeMoneyColumnSelection(convertedData, fileName);
                 const selectionDuration = ((performance.now() - selectionStartTime) / 1000).toFixed(2);
-                console.log(`✅ [PARSE_LARGE] applyOrangeMoneyColumnSelection terminé en ${selectionDuration}s: ${this.partnerData.length} enregistrements`);
             }
             
             const postProcessDuration = ((performance.now() - postProcessStartTime) / 1000).toFixed(2);
-            console.log(`✅ [PARSE_LARGE] Traitement post-parsing terminé en ${postProcessDuration}s`);
             
             // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
             if (this.boFile && this.partnerFile) {
-                console.log(`🔄 [PARSE_LARGE] Mise à jour de l'estimation du temps...`);
                 const estimateStartTime = performance.now();
                 this.updateEstimatedTime();
                 const estimateDuration = ((performance.now() - estimateStartTime) / 1000).toFixed(2);
-                console.log(`✅ [PARSE_LARGE] Estimation mise à jour en ${estimateDuration}s`);
             }
             
             // Forcer la détection des changements
-            console.log(`🔄 [PARSE_LARGE] Détection des changements...`);
             this.cd.detectChanges();
-            console.log(`✅ [PARSE_LARGE] Processus complet terminé`);
             
         } catch (error) {
             const errorTime = performance.now();
             const errorDuration = ((errorTime - postProcessStartTime) / 1000).toFixed(2);
-            console.error(`❌ [PARSE_LARGE] Erreur lors du traitement post-parsing après ${errorDuration}s:`, error);
-            console.error(`❌ [PARSE_LARGE] Détails de l'erreur:`, {
-                message: error instanceof Error ? error.message : String(error),
-                stack: error instanceof Error ? error.stack : 'N/A',
-                dataLength: data.length,
-                isBo: isBo
-            });
             throw error;
         }
     }
@@ -4258,7 +4056,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             }
         }
         
-        console.log(`🔍 Détection délimiteur: "${bestDelimiter}" (${maxCount} occurrences)`);
         return bestDelimiter;
     }
 
@@ -4342,22 +4139,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         
         const isDataLike = hasManyDataPatterns || (hasFewHeaders && (hasManyLongNumbers || hasManyCodes));
         
-        console.log('🔍 Validation des en-têtes:', {
-            keys: keys.slice(0, 10), // Afficher les 10 premiers
-            nonEmptyKeys: nonEmptyKeys.slice(0, 10),
-            dataMatches,
-            headerMatches,
-            dataRatio: (dataRatio * 100).toFixed(1) + '%',
-            headerRatio: (headerRatio * 100).toFixed(1) + '%',
-            nonEmptyKeysCount: nonEmptyKeys.length,
-            totalKeys: keys.length,
-            hasManyDataPatterns,
-            hasFewHeaders,
-            hasManyLongNumbers,
-            hasManyCodes,
-            isDataLike,
-            result: !isDataLike ? '✅ EN-TÊTES VALIDES' : '❌ DONNÉES DÉTECTÉES'
-        });
         
         return !isDataLike;
     }
@@ -4367,7 +4148,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
      * Essaie d'abord de trouver une vraie ligne d'en-tête dans les premières lignes
      */
     private parseCSVWithoutHeaders(text: string, delimiter: string, isBo: boolean, fileName: string): void {
-        console.log('🔧 Parsing CSV sans en-têtes - Recherche d\'une ligne d\'en-tête valide');
         
         Papa.parse(text, {
             header: false,
@@ -4375,10 +4155,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             skipEmptyLines: true,
             complete: (results) => {
                 const rawRows = results.data as any[][];
-                console.log('📊 Lignes brutes sans en-têtes:', rawRows.length);
                 
                 if (rawRows.length === 0) {
-                    console.log('⚠️ Aucune donnée trouvée');
                     return;
                 }
                 
@@ -4397,7 +4175,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                             const normalized = this.normalizeColumnName(h);
                             return normalized || `Colonne_${idx + 1}`;
                         });
-                        console.log(`✅ Ligne d'en-tête trouvée à la ligne ${i + 1}:`, headers);
                         break;
                     }
                 }
@@ -4408,10 +4185,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     const columnCount = firstRow ? firstRow.length : 0;
                     headers = Array.from({ length: columnCount }, (_, i) => `Colonne_${i + 1}`);
                     headerRowIndex = 0; // Utiliser la première ligne comme données
-                    console.log('⚠️ Aucune ligne d\'en-tête valide trouvée, génération de noms génériques:', headers);
                 }
                 
-                console.log('📊 En-têtes utilisés:', headers);
                 
                 // Créer les lignes de données avec les en-têtes trouvés ou générés
                 const processedRows: any[] = [];
@@ -4429,7 +4204,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     processedRows.push(row);
                 }
                 
-                console.log('📊 Lignes de données créées:', processedRows.length);
                 
                 if (isBo) {
                     this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(processedRows), fileName);
@@ -4445,7 +4219,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.cd.detectChanges();
             },
             error: (error: any) => {
-                console.error('Erreur lors de la lecture du fichier CSV sans en-têtes:', error);
             }
         });
     }
@@ -4454,36 +4227,28 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const reader = new FileReader();
         reader.onload = (e: ProgressEvent<FileReader>) => {
             try {
-                console.log(`🔄 Début lecture fichier Excel: ${file.name}`);
-                console.log(`📄 Format détecté: ${this.getExcelFormat(file.name)}`);
                 
                 const data = new Uint8Array(e.target?.result as ArrayBuffer);
                 const workbook = XLSX.read(data, { type: 'array' });
                 
-                console.log(`📊 Fichier Excel: ${workbook.SheetNames.length} feuilles détectées`);
-                console.log(`📋 Feuilles disponibles: ${workbook.SheetNames.join(', ')}`);
                 
                 const firstSheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[firstSheetName];
                 
-                console.log(`📄 Utilisation de la feuille: ${firstSheetName}`);
                 
                 // Conversion en tableau de tableaux pour analyse
                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
                 if (jsonData.length === 0) {
-                    console.log('❌ Fichier Excel vide');
                     this.errorMessage = 'Le fichier Excel est vide ou ne contient pas de données';
                     return;
                 }
                 
-                console.log(`📊 Données Excel brutes: ${jsonData.length} lignes`);
                 
                 // Détecter les en-têtes avec une méthode améliorée
                 const headerDetection = this.detectExcelHeadersImproved(jsonData);
                 const headers = headerDetection.headerRow;
                 const headerRowIndex = headerDetection.headerRowIndex;
                 
-                console.log(`✅ En-têtes détectés à la ligne ${headerRowIndex}:`, headers);
                 
                 // Vérifier si c'est un fichier Orange Money
                 const isOrangeMoneyFile = headers.some(header => 
@@ -4495,11 +4260,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     )
                 );
                 
-                console.log(`🟠 Détection Orange Money Excel: ${isOrangeMoneyFile}`);
                 
                 // Vérifier si des en-têtes valides ont été trouvés
                 if (!headers || headers.length === 0 || headers.every(h => !h || h.trim() === '')) {
-                    console.log('⚠️ Aucun en-tête valide détecté, utilisation de la première ligne');
                     const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
                     const correctedHeaders = fallbackHeaders.map(header => this.normalizeColumnName(header));
                     
@@ -4524,7 +4287,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         if (this.reconciliationMode === 'manual') {
                             setTimeout(() => {
                                 if (this.boData && this.boData.length > 0) {
-                                    console.log('🔍 Vérification TRXBO sur les données BO chargées (Excel - fallback)...');
                                     if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
                                         if (this.availableAgencies.length > 0) {
                                             this.showAgencySelectionStep();
@@ -4542,7 +4304,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         if (this.reconciliationMode === 'manual') {
                             setTimeout(() => {
                                 if (this.partnerData && this.partnerData.length > 0) {
-                                    console.log('🔍 Vérification service/type/statut sur les données partenaire chargées (mode manuel, Excel - fallback)...');
                                     const pr = this.detectPartnerServiceTypeAndStatusForManual(this.partnerData);
                                     if (pr === 'agency') {
                                         this.showPartnerAgencySelectionStep();
@@ -4558,7 +4319,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 } else {
                     // Corriger les caractères spéciaux dans les en-têtes
                     const correctedHeaders = headers.map(header => this.normalizeColumnName(header));
-                    console.log(`🔧 En-têtes Excel corrigés:`, correctedHeaders);
                     
                     // Créer les lignes de données en commençant après la ligne d'en-tête
                     const rows: any[] = [];
@@ -4574,7 +4334,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         rows.push(row);
                     }
                     
-                    console.log(`📊 Lignes de données créées: ${rows.length}`);
                     
                     if (isBo) {
                         this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(rows), file.name);
@@ -4583,7 +4342,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         if (this.reconciliationMode === 'manual') {
                             setTimeout(() => {
                                 if (this.boData && this.boData.length > 0) {
-                                    console.log('🔍 Vérification TRXBO sur les données BO chargées (Excel)...');
                                     if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
                                         if (this.availableAgencies.length > 0) {
                                             this.showAgencySelectionStep();
@@ -4601,7 +4359,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         if (this.reconciliationMode === 'manual') {
                             setTimeout(() => {
                                 if (this.partnerData && this.partnerData.length > 0) {
-                                    console.log('🔍 Vérification service/type/statut sur les données partenaire chargées (mode manuel, Excel)...');
                                     const pr = this.detectPartnerServiceTypeAndStatusForManual(this.partnerData);
                                     if (pr === 'agency') {
                                         this.showPartnerAgencySelectionStep();
@@ -4616,11 +4373,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     this.cd.detectChanges();
                 }
                 
-                console.log(`✅ Fichier Excel traité: ${isBo ? this.boData.length : this.partnerData.length} lignes`);
                 
                 // Appliquer le filtrage automatique Orange Money si nécessaire
                 if (isOrangeMoneyFile) {
-                    console.log(`🟠 Fichier Orange Money Excel détecté, application du filtrage`);
                     this.applyAutomaticOrangeMoneyFilterForFileUpload(file.name, isBo);
                 }
                 
@@ -4630,12 +4385,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 }
                 
             } catch (error) {
-                console.error('❌ Erreur lors de la lecture du fichier Excel:', error);
                 this.errorMessage = `Erreur lors de la lecture du fichier Excel: ${error}`;
             }
         };
         reader.onerror = (e) => {
-            console.error('Erreur lors de la lecture du fichier (FileReader):', e);
             this.errorMessage = 'Erreur lors de la lecture du fichier';
         };
         reader.readAsArrayBuffer(file);
@@ -4646,7 +4399,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
      */
     private detectExcelHeadersImproved(jsonData: any[][], silent = false): { headerRowIndex: number; headerRow: string[] } {
         if (!silent) {
-            console.log('🔄 Détection améliorée des en-têtes Excel');
         }
 
         const maxRowsToCheck = Math.min(300, jsonData.length);
@@ -4665,14 +4417,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             });
 
             if (!silent) {
-                console.log(`🔍 Ligne ${i} - Données brutes:`, row);
-                console.log(`🔍 Ligne ${i} - Après conversion:`, rowStrings);
             }
 
             const score = this.calculateHeaderScore(rowStrings, i);
 
             if (!silent) {
-                console.log(`🔍 Ligne ${i}: score=${score}, colonnes=${rowStrings.filter(cell => cell !== '').length}`);
             }
 
             if (score > bestScore) {
@@ -4680,14 +4429,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 bestHeaderRowIndex = i;
                 bestHeaderRow = [...rowStrings];
                 if (!silent) {
-                    console.log(`⭐ Nouveau meilleur en-tête trouvé à la ligne ${i} avec score ${score}`);
                 }
             }
         }
 
         if (!silent) {
-            console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
-            console.log(`🔍 En-tête détecté:`, bestHeaderRow);
         }
         
         // Fallback orienté Orange Money: si la meilleure ligne ne contient pas assez d'indices, chercher plus bas
@@ -4705,7 +4451,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     bestHeaderRowIndex = i;
                     bestHeaderRow = [...rowStrings];
                     if (!silent) {
-                        console.log(`⭐ Fallback OM: en-tête ajusté à la ligne ${i} (matches=${matches})`);
                     }
                     break;
                 }
@@ -4726,7 +4471,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         
         // Vérification défensive
         if (!Array.isArray(rowStrings)) {
-            console.warn('⚠️ calculateHeaderScore: rowStrings n\'est pas un tableau:', rowStrings);
             return 0;
         }
         
@@ -4832,11 +4576,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this._lastDataLengths = { bo: currentBoLength, partner: currentPartnerLength };
         
         // Log seulement si les données ont changé
-        console.log('🔍 canProceed() mis à jour:', {
-            boDataLength: currentBoLength,
-            partnerDataLength: currentPartnerLength,
-            canProceed: canProceed
-        });
         
         // Forcer la détection des changements si l'état a changé
         this.cd.detectChanges();
@@ -4845,17 +4584,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     onProceed(): void {
-        console.log('🎯 onProceed() appelé');
-        console.log('🔍 État des données:', {
-            boDataLength: this.boData.length,
-            partnerDataLength: this.partnerData.length,
-            canProceed: this.canProceed()
-        });
         
         if (this.canProceed()) {
-            console.log('✅ Navigation vers la sélection des colonnes...');
-            console.log('Données BO:', this.boData.length, 'lignes');
-            console.log('Données Partenaire:', this.partnerData.length, 'lignes');
             
             // Sauvegarder les données dans le service d'état
             this.appStateService.setReconciliationLaunchMode('manual');
@@ -4867,7 +4597,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             // Naviguer vers la page de sélection des colonnes
             this.router.navigate(['/column-selection']);
         } else {
-            console.log('❌ onProceed() - Conditions non remplies');
         }
     }
 
@@ -4955,7 +4684,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         );
         
         if (hasServiceColumn) {
-            console.log('🔍 Fichier TRXBO détecté, extraction des agences...');
             
             // D'abord, chercher la colonne Agence pour filtrer
             const agencyColumn = columns.find(col => 
@@ -4964,7 +4692,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
             
             if (agencyColumn) {
-                console.log('📋 Colonne Agence trouvée:', agencyColumn);
                 
                 // Extraire toutes les agences uniques
                 const agencies = this.collectUniqueColumnValues(data, agencyColumn);
@@ -4972,13 +4699,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.agencySelectionData = data;
                 this.agencyColumn = agencyColumn;
                 
-                console.log('📋 Agences disponibles:', this.availableAgencies);
-                console.log('📊 Nombre total de lignes:', data.length);
                 
                 return true;
             } else {
                 // Pas de colonne Agence, passer directement à l'extraction des services
-                console.log('⚠️ Colonne Agence non trouvée, passage direct à l\'extraction des services...');
                 return this.extractServicesFromTRXBO(data);
             }
         }
@@ -5013,10 +4737,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.serviceSelectionData = data;
             
             if (statusColumn) {
-                console.log('📋 Colonne statut trouvée (mode auto):', statusColumn);
             }
-            console.log('📋 Services disponibles:', this.availableServices);
-            console.log('📊 Nombre total de lignes:', data.length);
             
             return true;
         }
@@ -5038,7 +4759,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         );
         
         if (hasServiceColumn) {
-            console.log('🔍 Fichier TRXBO détecté en mode manuel, extraction des agences...');
             
             // D'abord, chercher la colonne Agence pour filtrer
             const agencyColumn = columns.find(col => 
@@ -5047,7 +4767,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
             
             if (agencyColumn) {
-                console.log('📋 Colonne Agence trouvée (mode manuel):', agencyColumn);
                 
                 // Extraire toutes les agences uniques
                 const agencies = this.collectUniqueColumnValues(data, agencyColumn);
@@ -5055,13 +4774,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.agencySelectionData = data;
                 this.agencyColumn = agencyColumn;
                 
-                console.log('📋 Agences disponibles (mode manuel):', this.availableAgencies);
-                console.log('📊 Nombre total de lignes:', data.length);
                 
                 return true;
             } else {
                 // Pas de colonne Agence, passer directement à l'extraction des services
-                console.log('⚠️ Colonne Agence non trouvée, passage direct à l\'extraction des services (mode manuel)...');
                 return this.extractServicesFromTRXBOForManual(data);
             }
         }
@@ -5099,11 +4815,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.manualStatusColumn = statusColumn || null;
             
             if (statusColumn) {
-                console.log('📋 Colonne statut trouvée (mode manuel):', statusColumn);
             }
             
-            console.log('📋 Services disponibles (mode manuel):', this.manualAvailableServices);
-            console.log('📊 Nombre total de lignes:', data.length);
             
             return true;
         }
@@ -5159,14 +4872,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     .filter(agency => agency && agency.toString().trim())
             )].sort();
             if (agencies.length > 0) {
-                console.log('🔍 Fichier partenaire : colonne Agence détectée, étape sélection agences (mode manuel)');
-                console.log('📋 Colonne agence:', agencyColumn);
                 this.partnerAvailableAgencies = agencies;
                 this.partnerAgencySelectionData = data;
                 this.partnerAgencyColumn = agencyColumn;
                 return 'agency';
             }
-            console.log('⚠️ Colonne agence présente mais vide, enchaînement direct sur les services partenaire');
         }
         
         const services = [...new Set(
@@ -5176,12 +4886,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         
         this.partnerAvailableServices = services;
         this.assignPartnerServiceSelectionData(data);
-        
-        console.log('🔍 Fichier partenaire avec colonne service/type (sans agence ou agence vide), mode manuel');
-        console.log('📋 Colonne service/type:', serviceColumn);
-        if (statusColumn) console.log('📋 Colonne statut:', statusColumn);
-        console.log('📋 Services/Types:', this.partnerAvailableServices);
-        console.log('📊 Lignes:', data.length);
         
         return 'services';
     }
@@ -5235,8 +4939,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 )].sort();
 
                 if (agencies.length > 0) {
-                    console.log('🔍 Fichier partenaire : colonne Agence détectée, étape sélection agences (mode auto)');
-                    console.log('📋 Colonne agence:', agencyColumn);
                     this.partnerAvailableAgencies = agencies;
                     this.partnerAgencySelectionData = data;
                     this.partnerAgencyColumn = agencyColumn;
@@ -5244,10 +4946,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 }
             }
 
-            console.log('🔍 Fichier partenaire avec colonne service/type détectée, extraction des valeurs...');
-            console.log('📋 Colonne service/type trouvée:', serviceColumn);
             if (statusColumn) {
-                console.log('📋 Colonne statut trouvée:', statusColumn);
             }
 
             // Extraire toutes les valeurs uniques de service/type
@@ -5259,8 +4958,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.partnerAvailableServices = services.sort();
             this.assignPartnerServiceSelectionData(data);
 
-            console.log('📋 Services/Types disponibles (partenaire):', this.partnerAvailableServices);
-            console.log('📊 Nombre total de lignes:', data.length);
 
             return 'services';
         }
@@ -5300,7 +4997,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
-        console.log('✅ Agences sélectionnées:', this.selectedAgencies);
         
         // Filtrer les données pour ne garder que les lignes des agences sélectionnées
         if (!this.agencyColumn || !this.agencySelectionData || this.agencySelectionData.length === 0) {
@@ -5312,7 +5008,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.selectedAgencies.includes(row[this.agencyColumn!])
         );
         
-        console.log('📊 Données filtrées par agence:', filteredData.length, 'lignes sur', this.agencySelectionData.length, 'originales');
         
         // Maintenant extraire les services des données filtrées
         // Vérifier si on est en mode manuel ou automatique
@@ -5379,7 +5074,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.partnerSelectedAgencies.includes(row[this.partnerAgencyColumn!])
         );
 
-        console.log('📊 Partenaire filtré par agence:', filteredData.length, 'lignes sur', this.partnerAgencySelectionData.length);
 
         const services = [...new Set(
             filteredData.map(row => row[this.partnerServiceColumn!])
@@ -5603,7 +5297,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
-        console.log('✅ Services sélectionnés:', this.selectedServices);
         
         // Filtrer les données pour ne garder que les lignes des services sélectionnés
         const serviceColumn = Object.keys(this.serviceSelectionData[0]).find(col => 
@@ -5616,7 +5309,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.selectedServices.includes(row[serviceColumn])
             );
             
-            console.log('📊 Données filtrées:', filteredData.length, 'lignes sur', this.serviceSelectionData.length, 'originales');
             
             // Masquer la sélection des services
             this.showServiceSelection = false;
@@ -5698,13 +5390,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
-        console.log('✅ Statuts sélectionnés (mode auto):', this.autoSelectedStatuses);
 
         const filteredData = this.autoStatusSelectionData.filter(row =>
             this.autoSelectedStatuses.includes(row[this.autoStatusColumn!])
         );
 
-        console.log('📊 Données filtrées par statut (mode auto):', filteredData.length, 'lignes');
 
         this.autoBoData = filteredData;
         this.showAutoStatusSelection = false;
@@ -5859,20 +5549,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Méthode pour afficher la sélection des services/type/statut pour le partenaire (mode manuel)
     private showManualPartnerServiceSelectionStep(): void {
-        console.log('🎯 showManualPartnerServiceSelectionStep() appelée');
-        console.log('📊 État avant changement - showPartnerServiceSelection:', this.showPartnerServiceSelection);
-        console.log('📊 État des autres overlays - showManualServiceSelection:', this.showManualServiceSelection);
-        console.log('📊 État des autres overlays - showServiceSelection:', this.showServiceSelection);
-        console.log('📊 partnerAvailableServices:', this.partnerAvailableServices);
-        console.log('📊 partnerAvailableServices.length:', this.partnerAvailableServices?.length);
         
         // S'assurer que les autres overlays sont fermés
         if (this.showManualServiceSelection) {
-            console.log('⚠️ showManualServiceSelection est encore à true, on le ferme');
             this.showManualServiceSelection = false;
         }
         if (this.showServiceSelection) {
-            console.log('⚠️ showServiceSelection est encore à true, on le ferme');
             this.showServiceSelection = false;
         }
         
@@ -5880,21 +5562,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.partnerServiceSearchFilter = '';
         this.partnerSelectedServices = [...this.partnerAvailableServices]; // Sélectionner tous par défaut
         
-        console.log('✅ Affichage de la sélection des services partenaire (mode manuel)');
-        console.log('📊 État après changement - showPartnerServiceSelection:', this.showPartnerServiceSelection);
-        console.log('📊 État après changement - showManualServiceSelection:', this.showManualServiceSelection);
-        console.log('📋 Services disponibles:', this.partnerAvailableServices);
-        console.log('✅ Services sélectionnés par défaut:', this.partnerSelectedServices);
-        console.log('📊 partnerSelectedServices.length:', this.partnerSelectedServices?.length);
         
         // Forcer la détection des changements pour mettre à jour la vue
         this.cd.detectChanges();
-        console.log('✅ detectChanges() appelé');
         
         // Double vérification après un court délai
         setTimeout(() => {
-            console.log('🔍 Vérification finale - showPartnerServiceSelection:', this.showPartnerServiceSelection);
-            console.log('🔍 Vérification finale - showManualServiceSelection:', this.showManualServiceSelection);
         }, 200);
     }
 
@@ -5908,7 +5581,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
-        console.log('✅ Services/Types sélectionnés (partenaire):', this.partnerSelectedServices);
         
         if (!this.partnerServiceColumn || !this.partnerServiceSelectionData || this.partnerServiceSelectionData.length === 0) {
             this.errorMessage = 'Erreur: colonne service/type non trouvée.';
@@ -5928,7 +5600,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
             this.processingMessage = '';
         
-            console.log('📊 Données filtrées par service (partenaire):', filteredData.length, 'lignes sur', this.partnerServiceSelectionData.length, 'originales');
         
             if (this.partnerStatusColumn && filteredData.length > 0) {
                 const { values, counts } = this.extractUniqueSortedValuesWithCounts(
@@ -5940,7 +5611,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.partnerStatusSelectionData = filteredData;
                 this.partnerStatusCounts = counts;
             
-                console.log('📋 Statuts disponibles (partenaire):', this.partnerAvailableStatuses);
             
                 this.showPartnerServiceSelection = false;
                 this.showPartnerStatusSelectionStep();
@@ -6078,7 +5748,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
-        console.log('✅ Statuts sélectionnés (partenaire):', this.partnerSelectedStatuses);
         
         if (!this.partnerStatusColumn || !this.partnerStatusSelectionData || this.partnerStatusSelectionData.length === 0) {
             this.errorMessage = 'Erreur: colonne statut non trouvée.';
@@ -6098,7 +5767,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
             this.processingMessage = '';
         
-            console.log('📊 Données filtrées par statut (partenaire):', filteredData.length, 'lignes sur', this.partnerStatusSelectionData.length, 'originales');
         
             if (filteredData.length > 0) {
                 const firstRow = filteredData[0];
@@ -6116,7 +5784,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 });
             
                 if (paymentColumn) {
-                    console.log('📋 Colonne Paiement trouvée:', paymentColumn);
                 
                     const { values, counts } = this.extractUniqueSortedValuesWithCounts(filteredData, paymentColumn);
                 
@@ -6125,7 +5792,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     this.partnerPaymentCounts = counts;
                     this.partnerPaymentColumn = paymentColumn;
                 
-                    console.log('📋 Paiements disponibles (partenaire):', this.partnerAvailablePayments);
                 
                     this.showPartnerStatusSelection = false;
                     this.partnerStatusSelectionData = [];
@@ -6185,7 +5851,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
-        console.log('✅ Paiements sélectionnés (partenaire):', this.partnerSelectedPayments);
         
         if (!this.partnerPaymentColumn || !this.partnerPaymentSelectionData || this.partnerPaymentSelectionData.length === 0) {
             this.errorMessage = 'Erreur: colonne Paiement non trouvée.';
@@ -6205,7 +5870,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
             this.processingMessage = '';
         
-            console.log('📊 Données filtrées par paiement (partenaire):', filteredData.length, 'lignes sur', this.partnerPaymentSelectionData.length, 'originales');
         
             const convertedData = await this.finalizePartnerSelectionData(filteredData, 'Paiement partenaire');
         
@@ -6386,7 +6050,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         } else if (this.isExcelFile(fileName)) {
             // Utiliser la méthode alternative pour les très gros fichiers Excel
             if (fileSizeMB > 50) {
-                console.log(`🔄 Fichier Excel très volumineux détecté (${fileSizeMB.toFixed(1)} MB), utilisation de la méthode alternative`);
                 this.parseAutoXLSXLargeFile(file, isBo);
             } else {
                 this.parseAutoXLSX(file, isBo);
@@ -6424,7 +6087,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             });
 
             const data = rows as Record<string, string>[];
-            console.log('Première ligne lue:', data[0]);
 
             if (isBo) {
                 this.autoBoSourceFormat = 'csv';
@@ -6450,7 +6112,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             }
             this.cd.detectChanges();
         } catch (error) {
-            console.error('Erreur lors de la lecture du fichier CSV:', error);
             this.cd.detectChanges();
         } finally {
             if (showProgress) {
@@ -6477,7 +6138,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const startTime = Date.now();
         
         if (fileSizeMB > 5) {
-            console.log(`📁 Fichier volumineux détecté (${fileSizeMB.toFixed(1)} MB). Traitement optimisé en cours...`);
             this.progressIndicatorService.showProgress(
                 'Lecture du fichier Excel en cours...',
                 file.name,
@@ -6488,7 +6148,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const reader = new FileReader();
         reader.onload = (e: ProgressEvent<FileReader>) => {
             try {
-                console.log('🔄 Début lecture fichier Excel automatique pour réconciliation');
                 
                 // Options optimisées pour les fichiers volumineux
                 const options: XLSX.ParsingOptions = {
@@ -6507,17 +6166,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 const worksheet = workbook.Sheets[firstSheetName];
                 
                 // Vérifier si la feuille est valide avant de continuer
-                console.log('🔍 Informations sur la feuille Excel:', {
-                    sheetName: firstSheetName,
-                    hasWorksheet: !!worksheet,
-                    hasRef: !!worksheet?.['!ref'],
-                    ref: worksheet?.['!ref'],
-                    range: worksheet?.['!range'],
-                    workbookSheets: workbook.SheetNames.length
-                });
 
                 if (!worksheet) {
-                    console.log('❌ Feuille Excel non trouvée');
                     if (fileSizeMB > 5) {
                         this.progressIndicatorService.hideProgress();
                     }
@@ -6527,7 +6177,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
                 // Pour les gros fichiers, on essaie de lire même sans !ref
                 if (!worksheet['!ref'] && fileSizeMB < 10) {
-                    console.log('❌ Feuille Excel vide (petit fichier)');
                     if (fileSizeMB > 5) {
                         this.progressIndicatorService.hideProgress();
                     }
@@ -6544,7 +6193,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         raw: false // Convertir les dates en strings
                     }) as any[][];
                 } catch (error) {
-                    console.log('⚠️ Erreur lors de la conversion JSON, tentative avec options alternatives:', error);
                     // Tentative alternative avec options plus permissives
                     jsonData = XLSX.utils.sheet_to_json(worksheet, { 
                         header: 1,
@@ -6555,7 +6203,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 }
                 
                 if (!jsonData || jsonData.length === 0) {
-                    console.log('❌ Fichier Excel vide ou aucune donnée trouvée');
                     if (fileSizeMB > 5) {
                         this.progressIndicatorService.hideProgress();
                     }
@@ -6576,11 +6223,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     return;
                 }
                 
-                console.log(`📊 Données Excel brutes: ${jsonData.length} lignes`);
                 
                 // Pour les très gros fichiers, informer l'utilisateur de la limitation
                 if (fileSizeMB > 50 && jsonData.length === 10000) {
-                    console.log('⚠️ Fichier très volumineux : seulement les 10,000 premières lignes ont été lues');
                     this.progressIndicatorService.updateMessage(
                         'Fichier très volumineux détecté. Traitement des 10,000 premières lignes seulement...'
                     );
@@ -6591,11 +6236,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 const headers = headerDetection.headerRow;
                 const headerRowIndex = headerDetection.headerRowIndex;
                 
-                console.log(`✅ En-têtes détectés à la ligne ${headerRowIndex}:`, headers);
                 
                 // Vérifier si des en-têtes valides ont été trouvés
                 if (!headers || headers.length === 0 || headers.every(h => !h || h.trim() === '')) {
-                    console.log('⚠️ Aucun en-tête valide détecté, utilisation de la première ligne');
                     const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
                     const correctedHeaders = fallbackHeaders.map(header => this.normalizeColumnName(header));
                     
@@ -6620,7 +6263,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         // Log de progression pour gros fichiers
                         if (fileSizeMB > 5 && i % (chunkSize * 10) === 1) {
                             const progress = ((i - 1) / jsonData.length * 100);
-                            console.log(`📈 Progression: ${progress.toFixed(1)}% (${i}/${jsonData.length} lignes traitées)`);
                             this.progressIndicatorService.updateProgress(
                                 progress,
                                 `Traitement des données: ${progress.toFixed(1)}%`
@@ -6644,7 +6286,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 } else {
                     // Corriger les caractères spéciaux dans les en-têtes
                     const correctedHeaders = headers.map(header => this.normalizeColumnName(header));
-                    console.log(`🔧 En-têtes Excel corrigés:`, correctedHeaders);
                     
                     // Créer les lignes de données en commençant après la ligne d'en-tête
                     const rows: any[] = [];
@@ -6668,7 +6309,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         // Log de progression pour gros fichiers
                         if (fileSizeMB > 5 && i % (chunkSize * 10) === headerRowIndex + 1) {
                             const progress = ((i - headerRowIndex - 1) / (jsonData.length - headerRowIndex - 1) * 100);
-                            console.log(`📈 Progression: ${progress.toFixed(1)}% (${i - headerRowIndex}/${jsonData.length - headerRowIndex - 1} lignes traitées)`);
                             this.progressIndicatorService.updateProgress(
                                 progress,
                                 `Traitement des données: ${progress.toFixed(1)}%`
@@ -6676,7 +6316,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         }
                     }
                     
-                    console.log(`📊 Lignes de données créées: ${rows.length}`);
                     
                     if (isBo) {
                         this.autoBoData = rows;
@@ -6702,7 +6341,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     this.cd.detectChanges();
                 }
                 
-                console.log(`✅ Fichier Excel traité: ${isBo ? this.autoBoData.length : this.autoPartnerData.length} lignes`);
                 
                 // Masquer l'indicateur de progression
                 if (fileSizeMB > 5) {
@@ -6717,19 +6355,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.applyAutomaticOrangeMoneyFilterForFileUpload(file.name, isBo);
                 
             } catch (error) {
-                console.error('❌ Erreur lors de la lecture du fichier Excel:', error);
                 // Masquer l'indicateur de progression en cas d'erreur
                 if (fileSizeMB > 5) {
                     this.progressIndicatorService.hideProgress();
                 }
                 // En cas d'erreur avec un gros fichier, suggérer des solutions
                 if (file.size > 10 * 1024 * 1024) { // > 10MB
-                    console.log('💡 Suggestion: Le fichier est très volumineux. Considérez diviser le fichier ou utiliser le mode de traitement par lots.');
                 }
             }
         };
         reader.onerror = (e) => {
-            console.error('Erreur lors de la lecture du fichier (FileReader):', e);
         };
         reader.readAsArrayBuffer(file);
     }
@@ -6740,7 +6375,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
      */
     private async parseAutoXLSXLargeFile(file: File, isBo: boolean): Promise<void> {
         const fileSizeMB = file.size / (1024 * 1024);
-        console.log(`🔄 Traitement fichier très volumineux (${fileSizeMB.toFixed(1)} MB) avec méthode alternative`);
         
         this.progressIndicatorService.showProgress(
             'Lecture du fichier Excel volumineux...',
@@ -6772,8 +6406,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             };
 
             const workbook = XLSX.read(data, options);
-            console.log('📋 Toutes les feuilles disponibles:', workbook.SheetNames);
-            console.log('🔍 Workbook.Sheets existe:', !!workbook.Sheets);
             
             // Vérifier si les feuilles sont chargées
             if (!workbook.Sheets || workbook.SheetNames.length === 0) {
@@ -6783,31 +6415,21 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             let firstSheetName = workbook.SheetNames[0];
             let worksheet = workbook.Sheets[firstSheetName];
 
-            console.log('🔍 Informations workbook volumineux:', {
-                sheetName: firstSheetName,
-                hasWorksheet: !!worksheet,
-                hasRef: !!worksheet?.['!ref'],
-                ref: worksheet?.['!ref'],
-                workbookSheets: workbook.SheetNames.length
-            });
 
             // Si la première feuille n'est pas accessible, essayer les autres
             if (!worksheet && workbook.SheetNames.length > 1) {
-                console.log('⚠️ Première feuille inaccessible, tentative avec les autres feuilles...');
                 for (let i = 1; i < workbook.SheetNames.length; i++) {
                     const sheetName = workbook.SheetNames[i];
                     const testWorksheet = workbook.Sheets[sheetName];
                     if (testWorksheet) {
                         firstSheetName = sheetName;
                         worksheet = testWorksheet;
-                        console.log(`✅ Feuille alternative trouvée: ${sheetName}`);
                         break;
                     }
                 }
             }
 
             if (!worksheet) {
-                console.log('❌ Aucune feuille accessible trouvée');
                 throw new Error('Impossible de lire la feuille Excel');
             }
 
@@ -6820,7 +6442,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     raw: true
                 }) as any[][];
             } catch (error) {
-                console.log('⚠️ Erreur lors de la lecture avec range, tentative sans range:', error);
                 // Tentative sans limitation de range
                 jsonData = XLSX.utils.sheet_to_json(worksheet, { 
                     header: 1,
@@ -6834,7 +6455,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 throw new Error('Aucune donnée trouvée dans le fichier');
             }
 
-            console.log(`📊 Données Excel volumineux: ${jsonData.length} lignes (limitées)`);
 
             // Traitement standard des données
             const headerDetection = this.detectExcelHeadersImproved(jsonData);
@@ -6897,7 +6517,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             // Forcer la détection des changements pour mettre à jour la vue
             this.cd.detectChanges();
             
-            console.log(`✅ Fichier Excel volumineux traité: ${isBo ? this.autoBoData.length : this.autoPartnerData.length} lignes`);
             this.progressIndicatorService.updateProgress(100, 'Traitement terminé avec succès !');
             
             setTimeout(() => {
@@ -6908,11 +6527,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this._canProceedCache = null;
 
         } catch (error) {
-            console.error('❌ Erreur lors du traitement du fichier volumineux, tentative de fallback ultime:', error);
             
             // Tentative de fallback ultime avec options minimales
             try {
-                console.log('🔄 Tentative de fallback ultime avec options minimales...');
                 const arrayBuffer = await this.readFileAsArrayBuffer(file);
                 const data = new Uint8Array(arrayBuffer);
                 
@@ -6930,8 +6547,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 };
 
                 const workbook = XLSX.read(data, minimalOptions);
-                console.log('📋 Feuilles disponibles (fallback):', workbook.SheetNames);
-                console.log('🔍 Workbook.Sheets existe (fallback):', !!workbook.Sheets);
                 
                 if (!workbook.Sheets || workbook.SheetNames.length === 0) {
                     throw new Error('Aucune feuille chargée en fallback');
@@ -6942,7 +6557,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     const worksheet = workbook.Sheets[sheetName];
                     
                     if (worksheet) {
-                        console.log(`✅ Feuille trouvée en fallback: ${sheetName}`);
                         
                         // Lecture ultra-simple
                         const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
@@ -6952,7 +6566,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         }) as any[][];
 
                         if (jsonData && jsonData.length > 0) {
-                            console.log(`📊 Données fallback: ${jsonData.length} lignes`);
                             
                             // Traitement simplifié
                             const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
@@ -6982,7 +6595,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                                 this.handleAutoPartnerSelectionFlow();
                             }
 
-                            console.log(`✅ Fallback réussi: ${rows.length} lignes traitées`);
                             this.progressIndicatorService.updateProgress(100, 'Traitement réussi en mode fallback !');
                             
                             setTimeout(() => {
@@ -7000,7 +6612,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 throw new Error('Fallback ultime échoué');
                 
             } catch (fallbackError) {
-                console.error('❌ Fallback ultime échoué, tentative du fallback final:', fallbackError);
                 // Dernière tentative avec la méthode de fallback ultime
                 await this.parseAutoXLSXUltimateFallback(file, isBo);
             }
@@ -7025,7 +6636,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
      */
     private async parseAutoXLSXUltimateFallback(file: File, isBo: boolean): Promise<void> {
         const fileSizeMB = file.size / (1024 * 1024);
-        console.log(`🔄 Fallback ultime pour fichier Excel (${fileSizeMB.toFixed(1)} MB)`);
         
         this.progressIndicatorService.showProgress(
             'Tentative de lecture alternative...',
@@ -7076,18 +6686,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
             for (const approach of approaches) {
                 try {
-                    console.log(`🔍 Tentative: ${approach.name}`);
                     const workbook = XLSX.read(data, approach.options);
                     
-                    console.log(`📋 ${approach.name} - Feuilles:`, workbook.SheetNames);
-                    console.log(`📋 ${approach.name} - Sheets existe:`, !!workbook.Sheets);
                     
                     if (workbook.Sheets && workbook.SheetNames.length > 0) {
                         const sheetName = workbook.SheetNames[0];
                         const worksheet = workbook.Sheets[sheetName];
                         
                         if (worksheet) {
-                            console.log(`✅ Succès avec ${approach.name}: ${sheetName}`);
                             
                             // Lecture des données avec options permissives
                             const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
@@ -7098,7 +6704,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                             }) as any[][];
 
                             if (jsonData && jsonData.length > 0) {
-                                console.log(`📊 Données lues: ${jsonData.length} lignes`);
                                 
                                 // Traitement simplifié
                                 const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
@@ -7128,7 +6733,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                                     this.handleAutoPartnerSelectionFlow();
                                 }
 
-                                console.log(`✅ Fallback ultime réussi avec ${approach.name}: ${rows.length} lignes`);
                                 this.progressIndicatorService.updateProgress(100, 'Lecture réussie avec méthode alternative !');
                                 
                                 setTimeout(() => {
@@ -7143,7 +6747,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         }
                     }
                 } catch (approachError) {
-                    console.log(`❌ ${approach.name} échoué:`, approachError);
                     continue;
                 }
             }
@@ -7151,7 +6754,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             throw new Error('Toutes les approches de lecture ont échoué');
             
         } catch (error) {
-            console.error('❌ Fallback ultime complètement échoué:', error);
             this.progressIndicatorService.hideProgress();
             this.popupService.showError(
                 `Impossible de traiter ce fichier Excel de ${fileSizeMB.toFixed(1)} MB. 
@@ -7252,12 +6854,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         boFileName = (boFileName || this.getResolvedAutoBoFileName()).trim();
         partnerFileName = (partnerFileName || this.getResolvedAutoPartnerFileName()).trim();
 
-        console.log('🔍 Début de la détection des clés de réconciliation');
-        console.log('📄 Fichiers:', { boFileName, partnerFileName });
 
         try {
             const models = await this.autoProcessingService.getAllModelsUnrestricted();
-            console.log(`📋 ${models.length} modèles disponibles`);
 
             // Priorité 0 : modèle partenaire mémorisé lors du traitement assisté
             if (this.assistedPartnerReconciliationModelId) {
@@ -7267,7 +6866,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 if (preselected) {
                     const fromTreatment = this.resolveKeysFromPartnerModel(preselected, boData, partnerData);
                     if (fromTreatment) {
-                        console.log(`✅ Modèle partenaire (traitement assisté): ${preselected.name}`);
                         return fromTreatment;
                     }
                 }
@@ -7279,7 +6877,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 partnerFileName &&
                 this.matchesFilePattern(partnerFileName, model.filePattern)
             );
-            console.log(`🔍 ${partnerModels.length} modèle(s) partenaire(s) pour ${partnerFileName || '(nom vide)'}`);
 
             // Priorité 2 : correspondance par nom de fichier BO (ex. TRXBO lié au modèle partenaire)
             if (partnerModels.length === 0 && boFileName) {
@@ -7287,7 +6884,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     (model.fileType === 'partner' || model.fileType === 'both') &&
                     this.matchesFilePattern(boFileName, model.filePattern)
                 );
-                console.log(`🔍 ${partnerModels.length} modèle(s) via fichier BO ${boFileName}`);
             }
 
             // Priorité 3 : fallback par présence des clés dans les données
@@ -7296,23 +6892,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     (m.fileType === 'partner' || m.fileType === 'both') &&
                     !!m.reconciliationKeys?.partnerKeys?.length
                 );
-                console.log(`🔍 Fallback: test de ${partnerModels.length} modèle(s) partenaire(s) par clés`);
             }
 
             for (const model of partnerModels) {
                 const resolved = this.resolveKeysFromPartnerModel(model, boData, partnerData);
                 if (resolved) {
-                    console.log(`🎉 Modèle partenaire sélectionné: ${model.name}`);
                     return resolved;
                 }
             }
 
-            console.log('❌ Aucun modèle partenaire valide trouvé');
         } catch (error) {
-            console.warn('⚠️ Erreur lors de la recherche de modèles:', error);
         }
 
-        console.log('🚫 AUCUN MODÈLE TROUVÉ - RÉCONCILIATION IMPOSSIBLE');
         throw new Error(
             `Aucun modèle de réconciliation trouvé pour les fichiers ${boFileName || 'BO'} et ${partnerFileName || 'Partenaire'}. ` +
             `Veuillez configurer un modèle de traitement automatique dans la section "Modèles de Traitement".`
@@ -7326,10 +6917,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         boData: Record<string, string>[], 
         boTreatments: any
     ): Record<string, string>[] {
-        console.log('🔧 Application des traitements BO:', boTreatments);
         
         if (!boTreatments || Object.keys(boTreatments).length === 0) {
-            console.log('⚠️ Aucun traitement BO à appliquer');
             return boData;
         }
         
@@ -7338,17 +6927,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         
         const logSample = (phase: string, column: string, data: Record<string, string>[]) => {
             const sampleValues = data.slice(0, MAX_LOG_SAMPLES).map(row => row?.[column]);
-            console.log(`   ${phase} (${column})`, sampleValues, data.length > MAX_LOG_SAMPLES ? '...' : '');
         };
         
         // Appliquer les traitements pour chaque modèle BO
         Object.entries(boTreatments).forEach(([modelId, treatments]) => {
-            console.log(`🔧 Application des traitements pour le modèle BO ${modelId}:`, treatments);
             
             if (Array.isArray(treatments)) {
                 treatments.forEach((treatment: any) => {
                     if (!treatment?.type || !treatment?.column) {
-                        console.log('⚠️ Traitement invalide, paramètres manquants:', treatment);
                         return;
                     }
                     
@@ -7358,11 +6944,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         case 'removeSuffix': {
                             const suffix = treatment.suffix;
                             if (typeof suffix !== 'string' || !suffix.length) {
-                                console.log(`⚠️ Suffixe invalide pour removeSuffix: "${suffix}"`);
                                 return;
                             }
                             
-                            console.log(`🔧 Suppression du suffixe "${suffix}" de la colonne "${column}"`);
                             logSample('🔍 Valeurs avant traitement', column, processedData);
                             
                             processedData = processedData.map(row => {
@@ -7377,7 +6961,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                             break;
                         }
                         case 'toNumber': {
-                            console.log(`🔧 Conversion en nombre de la colonne "${column}"`);
                             logSample('🔍 Valeurs avant conversion', column, processedData);
                             
                             processedData = processedData.map(row => {
@@ -7395,7 +6978,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                             break;
                         }
                         case 'toString': {
-                            console.log(`🔧 Conversion en texte de la colonne "${column}"`);
                             logSample('🔍 Valeurs avant conversion', column, processedData);
                             
                             processedData = processedData.map(row => {
@@ -7410,13 +6992,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                             break;
                         }
                         default:
-                            console.log('⚠️ Type de traitement non supporté:', treatment.type);
                     }
                 });
             }
         });
         
-        console.log(`✅ Traitements BO appliqués: ${processedData.length} lignes`);
         return processedData;
     }
 
@@ -7432,7 +7012,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     private matchesFilePattern(fileName: string, pattern: string): boolean {
         if (!pattern || !fileName) return false;
         
-        console.log(`🔍 Test de correspondance: "${fileName}" vs pattern "${pattern}"`);
         
         const lowerName = fileName.toLowerCase();
         const lowerPattern = pattern.toLowerCase();
@@ -7470,19 +7049,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     if (patternExt && acceptedExtensions.includes(patternExt)) {
                         // Le pattern spécifie une extension, accepter les extensions équivalentes
                         const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
-                        console.log(`🔍 Test wildcard (sans extension): ✅ - Extension fichier: ${fileNameExt}, Extension acceptée: ${fileExtAccepted ? '✅' : '❌'}`);
                         return fileExtAccepted;
                     } else {
                         // Le pattern n'a pas d'extension spécifique, accepter n'importe quelle extension
-                        console.log(`🔍 Test wildcard (sans extension): ✅`);
                         return true;
                     }
                 } else {
-                    console.log(`🔍 Test wildcard (sans extension): ❌`);
                     return false;
                 }
             } catch (error) {
-                console.warn('⚠️ Pattern wildcard invalide:', pattern);
                 return false;
             }
         }
@@ -7494,13 +7069,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             if (nameNoExt === patternNoExt) {
                 // Correspondance exacte du nom, vérifier que l'extension est acceptée
                 const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
-                console.log(`🔍 Test correspondance exacte avec extension: ${fileExtAccepted ? '✅' : '❌'}`);
                 return fileExtAccepted;
             }
         } else if (patternExt) {
             // Extension non standard, correspondance exacte stricte
             const exactMatch = lowerName === lowerPattern;
-            console.log(`🔍 Test correspondance exacte avec extension: ${exactMatch ? '✅' : '❌'}`);
             if (exactMatch) {
                 return true;
             }
@@ -7509,7 +7082,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         // Mode 3: Pattern simple - détection par inclusion (sans extension)
         // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
         const containsPattern = nameNoExt.includes(patternNoExt);
-        console.log(`🔍 Test inclusion (sans extension): "${nameNoExt}" contient "${patternNoExt}": ${containsPattern ? '✅' : '❌'}`);
         
         if (containsPattern) {
             // Si le pattern avait une extension acceptée, vérifier que l'extension du fichier est aussi acceptée
@@ -7523,7 +7095,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         // Mode 4: Détection par préfixe (optionnel, pour plus de flexibilité)
         // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
         const startsWithPattern = nameNoExt.startsWith(patternNoExt);
-        console.log(`🔍 Test préfixe (sans extension): "${nameNoExt}" commence par "${patternNoExt}": ${startsWithPattern ? '✅' : '❌'}`);
         
         if (startsWithPattern) {
             // Si le pattern avait une extension acceptée, vérifier que l'extension du fichier est aussi acceptée
@@ -7542,12 +7113,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
      */
     private findExistingColumn(data: Record<string, string>[], candidateKeys: string[]): string | null {
         if (!data || data.length === 0) {
-            console.log('❌ Données manquantes ou vides');
             return null;
         }
         
         if (!candidateKeys || candidateKeys.length === 0) {
-            console.log('❌ Clés candidates manquantes ou vides');
             return null;
         }
 
@@ -7564,8 +7133,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             columnMapping.set(normalizedCol, originalCol);
         });
 
-        console.log('📊 Colonnes disponibles (normalisées):', normalizedColumns);
-        console.log('🔑 Clés candidates (normalisées):', normalizedCandidates);
 
         // PRIORITÉ 1: Chercher des correspondances exactes
         for (let i = 0; i < normalizedCandidates.length; i++) {
@@ -7573,9 +7140,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             if (candidateIndex !== -1) {
                 // ⚠️ IMPORTANT: Retourner la colonne ORIGINALE (non normalisée) car c'est celle qui existe dans les données
                 const foundColumn = availableColumns[candidateIndex];
-                console.log(`✅ Correspondance exacte trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
-                console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${normalizedColumns[candidateIndex]}"`);
-                console.log(`   Colonne originale retournée: "${foundColumn}"`);
                 return foundColumn;
             }
         }
@@ -7588,9 +7152,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 if (candidate === column) {
                     // ⚠️ IMPORTANT: Retourner la colonne ORIGINALE (non normalisée) car c'est celle qui existe dans les données
                     const foundColumn = availableColumns[j];
-                    console.log(`✅ Correspondance exacte (insensible à la casse) trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
-                    console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${normalizedColumns[j]}"`);
-                    console.log(`   Colonne originale retournée: "${foundColumn}"`);
                     return foundColumn;
                 }
             }
@@ -7605,9 +7166,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 if (candidate === column) {
                     // ⚠️ IMPORTANT: Retourner la colonne ORIGINALE (non normalisée) car c'est celle qui existe dans les données
                     const foundColumn = availableColumns[j];
-                    console.log(`✅ Correspondance sans espaces trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
-                    console.log(`   Sans espaces: "${candidate}" = "${column}"`);
-                    console.log(`   Colonne originale retournée: "${foundColumn}"`);
                     return foundColumn;
                 }
             }
@@ -7624,21 +7182,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     // Vérification spéciale pour éviter les correspondances incorrectes
                     // Si on cherche "id" et qu'on trouve "Provider category", c'est incorrect
                     if (candidate.toLowerCase() === 'id' && column.toLowerCase().includes('provider')) {
-                        console.log(`❌ Correspondance partielle rejetée: ${candidateKeys[i]} -> ${normalizedColumns[j]} (évite Provider category)`);
                         continue;
                     }
                     
                     // Vérification spéciale pour éviter les correspondances trop courtes
                     if (candidate.length < 3 && column.length > candidate.length * 3) {
-                        console.log(`❌ Correspondance partielle rejetée: ${candidateKeys[i]} -> ${normalizedColumns[j]} (clé trop courte)`);
                         continue;
                     }
                     
                     // ⚠️ IMPORTANT: Retourner la colonne ORIGINALE (non normalisée) car c'est celle qui existe dans les données
                     const foundColumn = availableColumns[j];
-                    console.log(`✅ Correspondance partielle trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
-                    console.log(`   Normalisé: "${candidate}" contient ou est contenu dans "${column}"`);
-                    console.log(`   Colonne originale retournée: "${foundColumn}"`);
                     return foundColumn;
                 }
                 
@@ -7647,9 +7200,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 if (similarity > 0.8) {
                     // ⚠️ IMPORTANT: Retourner la colonne ORIGINALE (non normalisée) car c'est celle qui existe dans les données
                     const foundColumn = availableColumns[j];
-                    console.log(`✅ Correspondance par similarité trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
-                    console.log(`   Similarité: ${similarity} (${candidate} ~ ${column})`);
-                    console.log(`   Colonne originale retournée: "${foundColumn}"`);
                     return foundColumn;
                 }
             }
@@ -7664,8 +7214,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 // Cas spécial pour "Référence" vs "R f rence"
                 if (candidate.toLowerCase().includes('référence') || candidate.toLowerCase().includes('reference')) {
                     if (column.toLowerCase().includes('r') && column.toLowerCase().includes('f') && column.toLowerCase().includes('rence')) {
-                        console.log(`✅ Correspondance Orange Money spéciale trouvée: ${candidate} -> ${column}`);
-                        console.log(`   Cas spécial: Référence mal encodée`);
                         return column;
                     }
                 }
@@ -7673,8 +7221,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 // Cas spécial pour "Compte Orange Money" vs "Compte Orange Money" mal encodé
                 if (candidate.toLowerCase().includes('compte') && candidate.toLowerCase().includes('orange')) {
                     if (column.toLowerCase().includes('compte') && column.toLowerCase().includes('orange')) {
-                        console.log(`✅ Correspondance Orange Money spéciale trouvée: ${candidate} -> ${column}`);
-                        console.log(`   Cas spécial: Compte Orange Money`);
                         return column;
                     }
                 }
@@ -7682,8 +7228,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 // Cas spécial pour "Tête de réseau" vs "T te de r seau"
                 if (candidate.toLowerCase().includes('tête') || candidate.toLowerCase().includes('tete')) {
                     if (column.toLowerCase().includes('t') && column.toLowerCase().includes('te') && column.toLowerCase().includes('seau')) {
-                        console.log(`✅ Correspondance Orange Money spéciale trouvée: ${candidate} -> ${column}`);
-                        console.log(`   Cas spécial: Tête de réseau mal encodée`);
                         return column;
                     }
                 }
@@ -7708,8 +7252,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     .replace(/[^a-z0-9]/g, '');
                 
                 if (cleanCandidate === cleanColumn && cleanCandidate.length > 0) {
-                    console.log(`✅ Correspondance après nettoyage des accents trouvée: ${candidate} -> ${column}`);
-                    console.log(`   Nettoyé: "${cleanCandidate}" = "${cleanColumn}"`);
                     return column;
                 }
             }
@@ -7748,8 +7290,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     }
                     
                     if (hasReferenceLikeData) {
-                        console.log(`✅ Correspondance CIOMCM alternative trouvée: ${candidate} -> ${column}`);
-                        console.log(`   Cas spécial: Colonne alternative pour référence CIOMCM`);
                         return column;
                     }
                 }
@@ -7763,20 +7303,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         !column.toLowerCase().includes('compte') && 
                         !column.toLowerCase().includes('orange')) {
                         
-                        console.log(`✅ Correspondance CIOMCM fallback trouvée: ${candidate} -> ${column}`);
-                        console.log(`   Cas spécial: Fallback pour référence CIOMCM`);
                         return column;
                     }
                 }
             }
         }
 
-        console.log('❌ Aucune correspondance trouvée');
-        console.log('🔍 Détails de debug:');
-        console.log('   - Colonnes disponibles:', availableColumns);
-        console.log('   - Clés candidates:', candidateKeys);
-        console.log('   - Colonnes normalisées:', normalizedColumns);
-        console.log('   - Clés candidates normalisées:', normalizedCandidates);
         return null;
     }
 
@@ -7897,17 +7429,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.cd.detectChanges();
             await this.yieldToMainThread(true);
 
-            console.log('🚀 Démarrage de la réconciliation automatique...');
-            console.log('📊 Données BO:', this.autoBoData.length, 'lignes');
-            console.log('📊 Données Partenaire:', this.autoPartnerData.length, 'lignes');
 
             // Récupérer les noms de fichiers (upload direct ou via traitement assisté)
             const boFileName = this.getResolvedAutoBoFileName();
             const partnerFileName = this.getResolvedAutoPartnerFileName();
 
-            console.log('🔍 Vérification des modèles de traitement automatique...');
-            console.log('📄 Fichier BO:', boFileName);
-            console.log('📄 Fichier Partenaire:', partnerFileName);
 
             try {
                 // Détecter intelligemment les clés de réconciliation
@@ -7919,17 +7445,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 );
 
                 // Afficher les résultats de la détection
-                console.log('🎯 Résultat de la détection des clés:', {
-                    boKeyColumn: keyDetectionResult.boKeyColumn,
-                    partnerKeyColumn: keyDetectionResult.partnerKeyColumn,
-                    source: keyDetectionResult.source,
-                    confidence: keyDetectionResult.confidence,
-                    modelId: keyDetectionResult.modelId
-                });
 
                 // Afficher un message informatif pour le modèle
                 const detectionMessage = `✅ Clés trouvées via modèle (${keyDetectionResult.modelId}) - Confiance: ${Math.round(keyDetectionResult.confidence * 100)}%`;
-                console.log(detectionMessage);
 
                 // Traiter les données
                 let processedBoData = this.autoBoData;
@@ -7942,11 +7460,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         const usedModel = models.find(m => m.id === keyDetectionResult.modelId);
                         
                         if (usedModel && usedModel.reconciliationKeys?.boTreatments) {
-                            console.log('🔧 Application des boTreatments du modèle:', usedModel.reconciliationKeys.boTreatments);
                             processedBoData = this.applyBoTreatments(processedBoData, usedModel.reconciliationKeys.boTreatments);
                         }
                     } catch (error) {
-                        console.warn('⚠️ Erreur lors de l\'application des boTreatments:', error);
                     }
                 }
 
@@ -7956,27 +7472,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     partnerColumn: keyDetectionResult.partnerKeyColumn
             }];
 
-                    console.log('🔗 Colonnes de comparaison configurées:', comparisonColumns);
-                console.log('🔑 Clé BO utilisée:', keyDetectionResult.boKeyColumn);
-                console.log('🔑 Clé Partenaire utilisée:', keyDetectionResult.partnerKeyColumn);
                 
                 // 🔍 VÉRIFICATION CRITIQUE: Vérifier que les colonnes existent dans les données
                 if (processedBoData.length > 0) {
                     const boColumns = Object.keys(processedBoData[0]);
                     const boKeyExists = boColumns.includes(keyDetectionResult.boKeyColumn);
-                    console.log('🔍 VÉRIFICATION - Colonnes disponibles dans les données BO:', boColumns);
-                    console.log(`🔍 VÉRIFICATION - Colonne clé BO "${keyDetectionResult.boKeyColumn}" existe? ${boKeyExists}`);
                     if (!boKeyExists) {
-                        console.error(`❌ ERREUR CRITIQUE: La colonne "${keyDetectionResult.boKeyColumn}" n'existe pas dans les données BO!`);
-                        console.error('  Colonnes disponibles:', boColumns);
                         // Chercher des colonnes similaires
                         const similarColumns = boColumns.filter(col => 
                             col.toLowerCase().includes(keyDetectionResult.boKeyColumn.toLowerCase()) ||
                             keyDetectionResult.boKeyColumn.toLowerCase().includes(col.toLowerCase())
                         );
                         if (similarColumns.length > 0) {
-                            console.warn('  ⚠️ Colonnes similaires trouvées:', similarColumns);
-                            console.warn(`  💡 Suggestion: Utiliser "${similarColumns[0]}" au lieu de "${keyDetectionResult.boKeyColumn}"`);
                         }
                         throw new Error(`Colonne clé BO "${keyDetectionResult.boKeyColumn}" introuvable dans les données. Colonnes disponibles: ${boColumns.join(', ')}`);
                     }
@@ -7985,19 +7492,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 if (processedPartnerData.length > 0) {
                     const partnerColumns = Object.keys(processedPartnerData[0]);
                     const partnerKeyExists = partnerColumns.includes(keyDetectionResult.partnerKeyColumn);
-                    console.log('🔍 VÉRIFICATION - Colonnes disponibles dans les données Partner:', partnerColumns);
-                    console.log(`🔍 VÉRIFICATION - Colonne clé Partner "${keyDetectionResult.partnerKeyColumn}" existe? ${partnerKeyExists}`);
                     if (!partnerKeyExists) {
-                        console.error(`❌ ERREUR CRITIQUE: La colonne "${keyDetectionResult.partnerKeyColumn}" n'existe pas dans les données Partner!`);
-                        console.error('  Colonnes disponibles:', partnerColumns);
                         // Chercher des colonnes similaires
                         const similarColumns = partnerColumns.filter(col => 
                             col.toLowerCase().includes(keyDetectionResult.partnerKeyColumn.toLowerCase()) ||
                             keyDetectionResult.partnerKeyColumn.toLowerCase().includes(col.toLowerCase())
                         );
                         if (similarColumns.length > 0) {
-                            console.warn('  ⚠️ Colonnes similaires trouvées:', similarColumns);
-                            console.warn(`  💡 Suggestion: Utiliser "${similarColumns[0]}" au lieu de "${keyDetectionResult.partnerKeyColumn}"`);
                         }
                         throw new Error(`Colonne clé Partner "${keyDetectionResult.partnerKeyColumn}" introuvable dans les données. Colonnes disponibles: ${partnerColumns.join(', ')}`);
                     }
@@ -8014,12 +7515,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             const normalizedBoData = prepared.bo;
             const normalizedPartnerData = prepared.partner;
             
-            console.log('🔍 Données prêtes pour réconciliation:', {
-                boDataLength: normalizedBoData.length,
-                partnerDataLength: normalizedPartnerData.length,
-                boSample: normalizedBoData[0],
-                partnerSample: normalizedPartnerData[0]
-            });
             
             // Créer la requête de réconciliation
                     const reconciliationRequest = {
@@ -8035,31 +7530,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             if (totalRows <= 20000) {
                 try {
                     const jsonTest = JSON.stringify(reconciliationRequest);
-                    console.log('✅ Requête JSON valide, taille:', (jsonTest.length / 1024 / 1024).toFixed(2), 'MB');
                 } catch (error) {
-                    console.error('❌ Erreur de sérialisation JSON:', error);
                     throw new Error('Erreur: Les données ne peuvent pas être sérialisées en JSON. Vérifiez la structure des données.');
                 }
             } else {
-                console.log(`📦 Payload volumineux (${totalRows.toLocaleString('fr-FR')} lignes) — envoi direct au moteur de réconciliation`);
             }
 
             await this.yieldToMainThread(true);
-            console.log('🔄 Lancement de la réconciliation...');
 
                     this.loading = false;
                     this.reconciliationProgress = {
                         ...this.reconciliationProgress,
                         step: 'Initialisation de la réconciliation...',
                     };
-                    console.log('📊 Barre de progression activée:', this.showReconciliationProgress);
                     this.cd.detectChanges();
 
                     // S'abonner aux mises à jour de progression
-                    console.log('📡 Abonnement à la progression...');
                     this.reconciliationProgressSubscription = this.reconciliationService.progress$.subscribe(
                         (progress) => {
-                            console.log('📊 Mise à jour de progression reçue:', progress);
                             this.reconciliationProgress = {
                                 percentage: progress.percentage || 0,
                                 step: progress.step || '',
@@ -8074,15 +7562,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                             this.cd.detectChanges();
                         },
                         (error) => {
-                            console.error('❌ Erreur dans l\'abonnement à la progression:', error);
                         }
                     );
 
                     // Lancer la réconciliation
-                    console.log('🚀 Appel à reconciliationService.reconcile()...');
                     this.reconciliationService.reconcile(reconciliationRequest).subscribe({
                         next: (result) => {
-                            console.log('✅ Réconciliation terminée');
                             this.autoProceedBusy = false;
                             this.loading = false;
                             // NE PAS fermer automatiquement le popup - l'utilisateur le fermera manuellement
@@ -8099,7 +7584,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                                 this.reconciliationProgressSubscription.unsubscribe();
                             }
                             
-                            console.log('✅ Réconciliation automatique réussie:', result);
                             
                             // Sauvegarder les données traitées dans le service d'état
                             this.appStateService.setReconciliationData(processedBoData, processedPartnerData);
@@ -8128,7 +7612,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                                 this.reconciliationProgressSubscription.unsubscribe();
                             }
                             
-                            console.error('❌ Erreur lors de la réconciliation automatique:', error);
                             this.errorMessage = `Erreur lors de la réconciliation automatique: ${error.message}`;
                         }
                     });
@@ -8136,7 +7619,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             } catch (error: any) {
                 this.autoProceedBusy = false;
                 this.loading = false;
-                console.error('❌ Erreur lors de la détection des clés:', error);
                 this.errorMessage = '';
 
                 const bo = this.getResolvedAutoBoFileName() || 'BO';
@@ -8164,7 +7646,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         );
         
         if (hasServiceColumn) {
-            console.log('🔍 Fichier TRXBO détecté en mode manuel, extraction des services...');
             
             // Trouver la colonne service
             const serviceColumn = columns.find(col => 
@@ -8178,8 +7659,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.manualAvailableServices = services.sort();
                 this.manualServiceSelectionData = data;
                 
-                console.log('📋 Services disponibles (mode manuel):', this.manualAvailableServices);
-                console.log('📊 Nombre total de lignes (mode manuel):', data.length);
                 
                 return true;
             }
@@ -8200,7 +7679,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
-        console.log('✅ Services sélectionnés (mode manuel):', this.manualSelectedServices);
         
         // Filtrer les données pour ne garder que les lignes des services sélectionnés
         const serviceColumn = Object.keys(this.manualServiceSelectionData[0]).find(col => 
@@ -8213,7 +7691,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.manualSelectedServices.includes(row[serviceColumn])
             );
             
-            console.log('📊 Données filtrées (mode manuel):', filteredData.length, 'lignes sur', this.manualServiceSelectionData.length, 'originales');
             
             // Si une colonne statut existe, extraire les statuts et afficher la sélection
             if (this.manualStatusColumn && filteredData.length > 0) {
@@ -8226,7 +7703,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.manualAvailableStatuses = statuses.sort();
                 this.manualStatusSelectionData = filteredData;
                 
-                console.log('📋 Statuts disponibles (mode manuel):', this.manualAvailableStatuses);
                 
                 // Masquer la sélection des services et afficher la sélection des statuts
                 this.showManualServiceSelection = false;
@@ -8292,20 +7768,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     private continueWithManualReconciliation(): void {
-        console.log('✅ Navigation vers la sélection des colonnes après sélection de service...');
-        console.log('Données BO filtrées:', this.boData.length, 'lignes');
-        console.log('Données Partenaire:', this.partnerData.length, 'lignes');
         
         // Vérifier si le fichier partenaire est uploadé
         if (!this.partnerFile) {
-            console.log('⚠️ Fichier partenaire manquant - retour à l\'upload');
             this.errorMessage = 'Veuillez d\'abord uploader le fichier partenaire avant de continuer.';
             return;
         }
         
         // Vérifier si les données partenaire sont chargées
         if (this.partnerData.length === 0) {
-            console.log('⚠️ Données partenaire non chargées - traitement du fichier partenaire');
             this.processFileWithAutoProcessing(this.partnerFile, 'partner');
             return;
         }
@@ -8395,7 +7866,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
-        console.log('✅ Statuts sélectionnés (mode manuel):', this.manualSelectedStatuses);
         
         if (!this.manualStatusColumn || !this.manualStatusSelectionData || this.manualStatusSelectionData.length === 0) {
             this.errorMessage = 'Erreur: colonne statut non trouvée.';
@@ -8407,7 +7877,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.manualSelectedStatuses.includes(row[this.manualStatusColumn!])
         );
         
-        console.log('📊 Données filtrées par statut (mode manuel):', filteredData.length, 'lignes sur', this.manualStatusSelectionData.length, 'originales');
         
         // Mettre à jour les données BO avec les données filtrées
         this.boData = filteredData;
@@ -8501,7 +7970,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
             return;
         }
-        console.log('🔧 Navigation vers la configuration des modèles...');
         this.router.navigate(['/auto-processing-models']);
     }
 
@@ -8534,65 +8002,43 @@ export class FileUploadComponent implements OnInit, OnDestroy {
      */
     closeReconciliationProgress(): void {
         const clickStartTime = performance.now();
-        console.log('🔵 [CLIC_SUIVANT] ============================================');
-        console.log('🔵 [CLIC_SUIVANT] Clic sur "Suivant" détecté', `[${new Date().toISOString()}]`);
-        console.log('🔵 [CLIC_SUIVANT] Temps depuis chargement page:', `${(clickStartTime - (window as any).pageLoadTime || 0).toFixed(2)}ms`);
         
         const step1Start = performance.now();
-        console.log('🔵 [CLIC_SUIVANT] Étape 1: Fermeture du popup...');
         this.showReconciliationProgress = false;
         const step1Duration = performance.now() - step1Start;
-        console.log(`🔵 [CLIC_SUIVANT] Étape 1 terminée: ${step1Duration.toFixed(2)}ms`);
         
         // Nettoyer l'abonnement si toujours actif
         const step2Start = performance.now();
-        console.log('🔵 [CLIC_SUIVANT] Étape 2: Nettoyage des abonnements...');
         if (this.reconciliationProgressSubscription) {
             this.reconciliationProgressSubscription.unsubscribe();
-            console.log('🔵 [CLIC_SUIVANT] Abonnement nettoyé');
         }
         const step2Duration = performance.now() - step2Start;
-        console.log(`🔵 [CLIC_SUIVANT] Étape 2 terminée: ${step2Duration.toFixed(2)}ms`);
         
         // Si la réconciliation est terminée (step à 100%), naviguer vers les résultats
         const step3Start = performance.now();
-        console.log('🔵 [CLIC_SUIVANT] Étape 3: Vérification conditions navigation...');
-        console.log('🔵 [CLIC_SUIVANT] Pourcentage:', this.reconciliationProgress.percentage);
-        console.log('🔵 [CLIC_SUIVANT] Résultats disponibles:', !!this.appStateService.getReconciliationResults());
         
         if (this.reconciliationProgress.percentage === 100) {
             const navStart = performance.now();
             const targetRoute = this.certificationMode ? '/certification-solde' : '/results';
-            console.log(`🔵 [CLIC_SUIVANT] Étape 4: Début navigation vers ${targetRoute}...`);
             this.appStateService.reconciliationResult$.pipe(take(1)).subscribe(results => {
                 if (!results) {
-                    console.log('🔵 [CLIC_SUIVANT] Pas de résultats, navigation annulée');
                     return;
                 }
                 this.router.navigate([targetRoute]).then(() => {
                     const navDuration = performance.now() - navStart;
-                    console.log(`🔵 [CLIC_SUIVANT] Navigation réussie: ${navDuration.toFixed(2)}ms`);
-                    console.log('🔵 [CLIC_SUIVANT] ============================================');
                 }).catch((error) => {
                     const navDuration = performance.now() - navStart;
-                    console.error(`🔵 [CLIC_SUIVANT] Erreur navigation: ${navDuration.toFixed(2)}ms`, error);
-                    console.log('🔵 [CLIC_SUIVANT] ============================================');
                 });
             });
         } else {
-            console.log('🔵 [CLIC_SUIVANT] Conditions non remplies, pas de navigation');
         }
         const step3Duration = performance.now() - step3Start;
-        console.log(`🔵 [CLIC_SUIVANT] Étape 3 terminée: ${step3Duration.toFixed(2)}ms`);
         
         const step4Start = performance.now();
-        console.log('🔵 [CLIC_SUIVANT] Étape 5: detectChanges()...');
         this.cd.detectChanges();
         const step4Duration = performance.now() - step4Start;
-        console.log(`🔵 [CLIC_SUIVANT] Étape 5 terminée: ${step4Duration.toFixed(2)}ms`);
         
         const totalDuration = performance.now() - clickStartTime;
-        console.log(`🔵 [CLIC_SUIVANT] Durée totale closeReconciliationProgress: ${totalDuration.toFixed(2)}ms`);
     }
 
     ngOnDestroy(): void {

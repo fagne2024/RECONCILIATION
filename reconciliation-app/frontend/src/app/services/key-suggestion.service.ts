@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+﻿import { Injectable } from '@angular/core';
 
 export interface KeySuggestion {
     boColumn: string;
@@ -54,7 +54,6 @@ export class KeySuggestionService {
         const messageLevel = levels[level as keyof typeof levels] || 1;
         
         if (messageLevel >= currentLevel) {
-            console.log(message, ...args);
         }
     }
 
@@ -368,26 +367,18 @@ export class KeySuggestionService {
                 col.toLowerCase().includes('external')
             );
             
-            console.log('🎯 Colonnes BO importantes:', importantBoCols);
-            console.log('🎯 Colonnes Partner importantes:', importantPartnerCols);
             
             // Log détaillé de toutes les colonnes
-            console.log('📋 TOUTES les colonnes BO:', boColumns);
-            console.log('📋 TOUTES les colonnes Partner:', partnerColumns);
             
             // Rechercher spécifiquement les colonnes IDTransaction et id
             const idTransactionCol = boColumns.find(col => col.toLowerCase().includes('idtransaction'));
             const idCol = partnerColumns.find(col => col.toLowerCase() === 'id');
             
-            console.log('🔍 Colonne IDTransaction trouvée:', idTransactionCol);
-            console.log('🔍 Colonne id trouvée:', idCol);
             
             // Log des premières lignes de données pour debug
             if (boData.length > 0) {
-                console.log('📊 Première ligne BO:', boData[0]);
             }
             if (partnerData.length > 0) {
-                console.log('📊 Première ligne Partner:', partnerData[0]);
             }
             
             // ANALYSE EXHAUSTIVE : Toutes les paires possibles de colonnes
@@ -434,24 +425,12 @@ export class KeySuggestionService {
             const highConfidenceSuggestions = suggestions.filter(s => s.confidence > 0.5); // Seuil réduit pour debug
             const topSuggestions = highConfidenceSuggestions.slice(0, 5); // Plus de suggestions pour debug
             
-            console.log('🔍 DEBUG - Toutes les suggestions:', suggestions.map(s => ({
-                pair: `${s.boColumn} ↔ ${s.partnerColumn}`,
-                confidence: s.confidence,
-                reason: s.reason,
-                transformation: s.transformation ? s.transformation.description : 'Aucune'
-            })));
             
             // Log détaillé des suggestions importantes
             const importantSuggestions = suggestions.filter(s => 
                 s.boColumn.toLowerCase().includes('id') || s.partnerColumn.toLowerCase().includes('id') ||
                 s.boColumn.toLowerCase().includes('transaction') || s.partnerColumn.toLowerCase().includes('transaction')
             );
-            console.log('🎯 Suggestions importantes:', importantSuggestions.map(s => ({
-                pair: `${s.boColumn} ↔ ${s.partnerColumn}`,
-                confidence: s.confidence,
-                reason: s.reason,
-                transformation: s.transformation ? s.transformation.description : 'Aucune'
-            })));
             
             // Calculer la confiance globale
             const overallConfidence = topSuggestions.length > 0 
@@ -462,12 +441,6 @@ export class KeySuggestionService {
             const recommendedKeys = topSuggestions
                 .map(s => `${s.boColumn} ↔ ${s.partnerColumn}`);
             
-            console.log('✅ Analyse terminée:', {
-                suggestionsCount: suggestions.length,
-                topSuggestions: topSuggestions.length,
-                overallConfidence: overallConfidence,
-                recommendedKeys: recommendedKeys
-            });
             
             return {
                 suggestions: topSuggestions,
@@ -476,7 +449,6 @@ export class KeySuggestionService {
             };
             
         } catch (error) {
-            console.error('❌ Erreur générale dans analyzeAndSuggestKeys:', error);
             return {
                 suggestions: [],
                 overallConfidence: 0,
@@ -520,12 +492,6 @@ export class KeySuggestionService {
             // Log détaillé si les colonnes sont importantes
             if (boColumn.toLowerCase().includes('id') || partnerColumn.toLowerCase().includes('id') ||
                 boColumn.toLowerCase().includes('transaction') || partnerColumn.toLowerCase().includes('transaction')) {
-                console.log(`🔍 DEBUG IMPORTANT - "${boColumn}" vs "${partnerColumn}":`, {
-                    boValuesCount: boValues.size,
-                    partnerValuesCount: partnerValues.size,
-                    boSample: boSample,
-                    partnerSample: partnerSample
-                });
             }
             
             // Analyser les transformations possibles de manière exhaustive
@@ -596,7 +562,6 @@ export class KeySuggestionService {
             };
             
         } catch (error) {
-            console.error(`❌ Erreur dans analyzeColumnPair pour "${boColumn}" vs "${partnerColumn}":`, error);
             
             // Retourner une suggestion avec confiance minimale en cas d'erreur
             return {
@@ -749,21 +714,18 @@ export class KeySuggestionService {
             const idMatch = boValue.match(/idtransaction(\d+)/i);
             if (idMatch && partnerArray.includes(idMatch[1])) {
                 extractIdCount++;
-                console.log(`🔍 ID extrait: "${boValue}" → "${idMatch[1]}"`);
             }
             
             // Extraire la transaction d'une valeur comme "TransactionABC" → "ABC"
             const transactionMatch = boValue.match(/transaction([a-zA-Z0-9]+)/i);
             if (transactionMatch && partnerArray.includes(transactionMatch[1])) {
                 extractTransactionCount++;
-                console.log(`🔍 Transaction extraite: "${boValue}" → "${transactionMatch[1]}"`);
             }
             
             // Extraire les chiffres d'une valeur
             const numericMatch = boValue.match(/(\d+)/);
             if (numericMatch && partnerArray.includes(numericMatch[1])) {
                 extractNumericCount++;
-                console.log(`🔍 Numérique extrait: "${boValue}" → "${numericMatch[1]}"`);
             }
         }
         
@@ -772,11 +734,6 @@ export class KeySuggestionService {
         const extractTransactionScore = extractTransactionCount / total;
         const extractNumericScore = extractNumericCount / total;
         
-        console.log(`📊 Scores d'extraction de mots-clés:`, {
-            extractId: extractIdScore.toFixed(2),
-            extractTransaction: extractTransactionScore.toFixed(2),
-            extractNumeric: extractNumericScore.toFixed(2)
-        });
         
         if (extractIdScore > 0.3) {
             return {
@@ -838,11 +795,6 @@ export class KeySuggestionService {
         const lowerToUpperScore = lowerToUpperCount / total;
         const normalizeScore = normalizeCount / total;
         
-        console.log(`📊 Scores de transformation de casse:`, {
-            upperToLower: upperToLowerScore.toFixed(2),
-            lowerToUpper: lowerToUpperScore.toFixed(2),
-            normalize: normalizeScore.toFixed(2)
-        });
         
         if (upperToLowerScore > 0.3) {
             return {
@@ -924,7 +876,6 @@ export class KeySuggestionService {
             addUnderscores: addUnderscoresCount / total
         };
         
-        console.log(`📊 Scores de transformation de format:`, scores);
         
         // Trouver la meilleure transformation
         const bestTransform = Object.entries(scores).reduce((best, [key, score]) => 
@@ -1112,7 +1063,6 @@ export class KeySuggestionService {
         const boLower = boColumn.toLowerCase();
         const partnerLower = partnerColumn.toLowerCase();
         
-        console.log(`🔍 Comparaison: "${boColumn}" vs "${partnerColumn}"`);
         
         // Correspondances exactes ou très similaires
         if (boLower === partnerLower) return 1.0;
@@ -1171,7 +1121,6 @@ export class KeySuggestionService {
         const commonWords = boWords.filter(word => partnerWords.includes(word));
         
         if (commonWords.length > 0) {
-            console.log(`🔍 Mots-clés communs trouvés: ${commonWords.join(', ')}`);
             return 0.6 + (commonWords.length * 0.1); // Score basé sur le nombre de mots communs
         }
         
@@ -1246,7 +1195,6 @@ export class KeySuggestionService {
             const partnerHasKey = partnerNormalized.includes(key) || synonymList.some(syn => partnerNormalized.includes(syn));
             
             if (boHasKey && partnerHasKey) {
-                console.log(`🔍 Correspondance sémantique trouvée: "${boColumn}" ↔ "${partnerColumn}" (clé: ${key})`);
                 return 0.8;
             }
         }
@@ -1269,7 +1217,6 @@ export class KeySuggestionService {
 
         if (semanticMatches > 0) {
             const score = Math.min(0.7, 0.5 + (semanticMatches * 0.1));
-            console.log(`🔍 Correspondances sémantiques partielles: ${semanticMatches} pour "${boColumn}" ↔ "${partnerColumn}"`);
             return score;
         }
 
@@ -1529,7 +1476,6 @@ export class KeySuggestionService {
             normalizeDecimals: normalizeDecimalsCount / total
         };
         
-        console.log(`📊 Scores de transformation numérique:`, scores);
         
         const bestTransform = Object.entries(scores).reduce((best, [key, score]) => 
             score > best.score ? { key, score } : best, { key: '', score: 0 }
@@ -1597,7 +1543,6 @@ export class KeySuggestionService {
             removeTime: removeTimeCount / total
         };
         
-        console.log(`📊 Scores de transformation de date:`, scores);
         
         const bestTransform = Object.entries(scores).reduce((best, [key, score]) => 
             score > best.score ? { key, score } : best, { key: '', score: 0 }
@@ -1681,7 +1626,6 @@ export class KeySuggestionService {
         }
         
         if (bestTransform) {
-            console.log(`🔧 Transformation multi-étapes trouvée: ${bestTransform.name} (${(bestScore * 100).toFixed(0)}% des valeurs)`);
             return {
                 type: 'multi_step',
                 pattern: bestTransform.name,

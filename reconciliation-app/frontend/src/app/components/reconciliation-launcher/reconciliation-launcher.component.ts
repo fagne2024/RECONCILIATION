@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+﻿import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -646,7 +646,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     try {
       slot.data = await this.readFileData(file);
     } catch (error) {
-      console.error('Erreur lecture partenaire:', error);
       slot.data = [];
     } finally {
       slot.loading = false;
@@ -808,7 +807,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
 
   // Méthodes de sélection du mode
   selectMode(mode: 'manual' | 'assisted' | 'magic'): void {
-    console.log('🎯 Mode sélectionné:', mode);
     this.selectedMode = mode;
     this.appStateService.setReconciliationLaunchMode(mode);
     this.appStateService.setReconciliationEntryPath('/reconciliation-launcher');
@@ -904,7 +902,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       await this.popupService.showSuccess(successMsg, 'Réconciliation magique');
       this.router.navigate(['/results']);
     } catch (error) {
-      console.error('❌ Erreur réconciliation magique:', error);
       await this.popupService.showError(
         error instanceof Error ? error.message : 'Erreur lors de la réconciliation magique',
         'Réconciliation magique'
@@ -925,7 +922,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
 
     this.isLoading = true;
 
-    console.log('🚀 Lancement de la réconciliation magique (flux robuste)...');
 
     // Sauvegarder les fichiers dans l'état
     this.appStateService.setUploadedFiles({
@@ -934,7 +930,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     });
 
     // Récupérer les modèles et leurs règles de traitement
-    console.log('🔍 Récupération des modèles et règles de traitement...');
     let columnProcessingRules: any[] = [];
     
     try {
@@ -951,44 +946,29 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
         this.matchesFilePattern(this.partnerFile?.name || '', m.filePattern)
       );
       
-      console.log('📋 Modèle BO trouvé:', boModel?.name);
-      console.log('📋 Modèle Partenaire trouvé:', partnerModel?.name);
       
       // Récupérer les règles de traitement
       if (boModel?.modelId) {
         try {
           const boRules = await this.autoProcessingService.getColumnProcessingRules(boModel.modelId, AutoProcessingService.RECONCILIATION_MODULE);
-          console.log('🔧 Règles BO récupérées:', boRules.length);
           columnProcessingRules.push(...boRules);
         } catch (error) {
-          console.warn('⚠️ Erreur lors de la récupération des règles BO:', error);
         }
       }
       
       if (partnerModel?.modelId) {
         try {
           const partnerRules = await this.autoProcessingService.getColumnProcessingRules(partnerModel.modelId, AutoProcessingService.RECONCILIATION_MODULE);
-          console.log('🔧 Règles Partenaire récupérées:', partnerRules.length);
           columnProcessingRules.push(...partnerRules);
         } catch (error) {
-          console.warn('⚠️ Erreur lors de la récupération des règles Partenaire:', error);
         }
       }
       
-      console.log(`✅ ${columnProcessingRules.length} règles de traitement prêtes à appliquer`);
       if (columnProcessingRules.length > 0) {
-        console.log('📋 Règles de traitement à appliquer:');
         columnProcessingRules.forEach((rule, index) => {
-          console.log(`  ${index + 1}. Colonne: ${rule.sourceColumn}`);
-          console.log(`     - Supprimer caractères spéciaux: ${rule.removeSpecialChars}`);
-          console.log(`     - Nettoyer espaces: ${rule.trimSpaces}`);
-          console.log(`     - Majuscules: ${rule.toUpperCase}`);
-          console.log(`     - Minuscules: ${rule.toLowerCase}`);
-          console.log(`     - Supprimer accents: ${rule.removeAccents}`);
         });
       }
     } catch (error) {
-      console.warn('⚠️ Erreur lors de la récupération des modèles:', error);
       // Fallback: règles par défaut
       columnProcessingRules = [
         {
@@ -1009,7 +989,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
 
     try {
       // Étape 1: Analyse des clés de réconciliation
-      console.log('🔍 Étape 1: Analyse des clés de réconciliation...');
       const analysisResponse = await this.reconciliationService.analyzeReconciliationKeys(formData).toPromise();
       
       if (!analysisResponse || !analysisResponse.suggestions || analysisResponse.suggestions.length === 0) {
@@ -1021,62 +1000,45 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
          suggestion.boColumn === 'CLE' || suggestion.partnerColumn === 'CLE'
        );
        
-       console.log(`🔍 Vérification de la clé CLE: ${hasCLE ? 'Trouvée' : 'Non trouvée dans les suggestions'}`);
        
        // Prendre la meilleure suggestion basée sur le score de confiance
        const bestSuggestion = analysisResponse.suggestions.reduce((best, current) => 
          (current.confidence || current.confidenceScore || 0) > (best.confidence || best.confidenceScore || 0) ? current : best
        );
       
-             console.log('🎯 Meilleure suggestion trouvée:', bestSuggestion);
-       console.log('📊 Toutes les suggestions d\'analyse:', analysisResponse.suggestions);
-       console.log('📊 Réponse complète du backend:', analysisResponse);
-       console.log('📊 Nombre total de suggestions:', analysisResponse.suggestions?.length);
        
               // Afficher toutes les suggestions avec leurs scores
        if (analysisResponse.suggestions) {
          analysisResponse.suggestions.forEach((suggestion, index) => {
-           console.log(`📊 Suggestion ${index + 1}:`, {
-             boColumn: suggestion.boColumn,
-             partnerColumn: suggestion.partnerColumn,
-             confidence: suggestion.confidence || suggestion.confidenceScore,
-             isCLE: suggestion.boColumn === 'CLE' || suggestion.partnerColumn === 'CLE'
-           });
          });
        }
        
        // Étape 2: Décision intelligente basée sur les meilleures pratiques
        const confidence = bestSuggestion.confidence || bestSuggestion.confidenceScore || 0;
-       console.log(`🎯 Meilleure clé détectée: ${bestSuggestion.boColumn} ↔ ${bestSuggestion.partnerColumn} (confiance: ${(confidence * 100).toFixed(1)}%)`);
        
        // Vérifier s'il y a une transformation disponible pour améliorer la correspondance
        let finalBoKey = bestSuggestion.boColumn;
        let finalPartnerKey = bestSuggestion.partnerColumn;
        let transformationToApply = bestSuggestion.transformation;
        
-       console.log(`🔍 Transformation disponible:`, transformationToApply ? transformationToApply.description : 'Aucune');
        
        // Si CLE n'est pas dans les suggestions mais qu'on sait qu'elle existe, l'utiliser
        if (!hasCLE && confidence < 0.85) {
-         console.log('⚠️ Confiance modérée et CLE non détectée - vérification des en-têtes de fichiers...');
          
          // Vérifier si CLE existe dans les deux fichiers en lisant les en-têtes
          const boHeaders = await this.getFileHeaders(this.boFile!);
          const partnerHeaders = await this.getFileHeaders(this.partnerFile!);
          
          if (boHeaders.includes('CLE') && partnerHeaders.includes('CLE')) {
-           console.log('✅ CLE trouvée dans les deux fichiers - utilisation prioritaire');
            finalBoKey = 'CLE';
            finalPartnerKey = 'CLE';
            transformationToApply = null; // Pas de transformation pour CLE
          } else {
-           console.log('❌ CLE non trouvée dans les fichiers');
          }
        }
        
        // Test intelligent avec différents formats pour améliorer la correspondance
        // Toujours essayer d'améliorer, même avec une confiance élevée
-       console.log('🔍 Test de formatage intelligent pour améliorer la correspondance...');
        const bestFormattedMatch = await this.testFormattingForBetterMatch(
          this.boFile!,
          this.partnerFile!,
@@ -1086,7 +1048,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        );
        
        if (bestFormattedMatch) {
-         console.log('✅ Meilleur match trouvé avec formatage:', bestFormattedMatch);
          finalBoKey = bestFormattedMatch.boKey;
          finalPartnerKey = bestFormattedMatch.partnerKey;
          transformationToApply = bestFormattedMatch.transformation;
@@ -1094,26 +1055,21 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        
        // Logique stricte : besoin d'une confiance >70% pour la réconciliation
        if (confidence < 0.70) {
-         console.log('🔍 Confiance insuffisante (<70%), tentative d\'amélioration agressive...');
-         console.log('🚨 APPEL DE findImprovedMatch - Test spécifique IDTransaction ↔ Id');
          
          // Essayer d'autres stratégies de correspondance
          const improvedMatch = await this.findImprovedMatch(analysisResponse.suggestions);
          
          if (improvedMatch && improvedMatch.confidence >= 0.70) {
-           console.log('✅ Correspondance améliorée trouvée avec confiance suffisante:', improvedMatch);
            finalBoKey = improvedMatch.boKey;
            finalPartnerKey = improvedMatch.partnerKey;
            transformationToApply = improvedMatch.transformation;
          } else {
-           console.warn('⚠️ Aucune amélioration suffisante trouvée (confiance <70%)');
            this.popupService.showWarning(`Échec de la détection automatique : Confiance insuffisante (${(confidence * 100).toFixed(1)}%). Une confiance >70% est requise. Veuillez utiliser le Mode Assisté pour choisir les clés manuellement.`);
            this.isLoading = false;
            return;
          }
        }
        
-       console.log(`✅ Utilisation de la clé: ${finalBoKey} ↔ ${finalPartnerKey}`);
        
        // Créer la configuration de réconciliation
        const config: any = {
@@ -1126,13 +1082,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
          transformation: transformationToApply
        };
         
-               console.log('⚙️ Configuration créée:', config);
        
        // Appliquer la transformation si nécessaire avant la réconciliation
        if (transformationToApply) {
-         console.log('🔧 Application de la transformation avant réconciliation...');
-         console.log(`📋 Type de transformation: ${transformationToApply.type}`);
-         console.log(`📋 Description: ${transformationToApply.description}`);
          
          const transformedData = await this.applyTransformationToFile(
            this.boFile!,
@@ -1140,44 +1092,34 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
            transformationToApply
          );
          config.boFileContent = transformedData;
-         console.log('✅ Transformation appliquée aux données BO');
          
          // Afficher quelques exemples de transformation
          if (transformedData.length > 0) {
            const sampleOriginal = await this.readFileContent(this.boFile!);
-           console.log('🔍 Exemples de transformations:');
            for (let i = 0; i < Math.min(3, transformedData.length); i++) {
              const original = sampleOriginal[i][finalBoKey];
              const transformed = transformedData[i][finalBoKey];
-             console.log(`  "${original}" → "${transformed}"`);
            }
            
            // Afficher des statistiques de formatage
            if (transformationToApply && transformationToApply.type === 'format') {
-             console.log(`📊 Formatage appliqué: ${transformationToApply.format}`);
-             console.log(`🎯 Amélioration de correspondance détectée automatiquement`);
            }
          }
        }
        
        // Appliquer les règles de traitement des colonnes aux données
-       console.log('🔧 Application des règles de traitement des colonnes...');
        let processedBoData = await this.readFileContent(this.boFile!);
        let processedPartnerData = await this.readFileContent(this.partnerFile!);
        
        if (columnProcessingRules.length > 0) {
-         console.log('📋 Application des règles de traitement...');
          
          // Appliquer les règles aux données BO
          processedBoData = this.applyColumnProcessingRules(processedBoData, columnProcessingRules);
-         console.log('✅ Règles appliquées aux données BO');
          
          // Appliquer les règles aux données Partenaire
          processedPartnerData = this.applyColumnProcessingRules(processedPartnerData, columnProcessingRules);
-         console.log('✅ Règles appliquées aux données Partenaire');
          
          // Afficher quelques exemples de transformation
-         console.log('🔍 Exemples de transformations appliquées:');
          const originalBoData = await this.readFileContent(this.boFile!);
          const originalPartnerData = await this.readFileContent(this.partnerFile!);
          
@@ -1189,10 +1131,8 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
              const processedPartnerValue = processedPartnerData[i][rule.sourceColumn];
              
              if (originalBoValue !== processedBoValue) {
-               console.log(`  BO "${originalBoValue}" → "${processedBoValue}"`);
              }
              if (originalPartnerValue !== processedPartnerValue) {
-               console.log(`  Partner "${originalPartnerValue}" → "${processedPartnerValue}"`);
              }
            });
          }
@@ -1200,7 +1140,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        
        // Lancer la réconciliation avec les données traitées
        let reconciliationResponse;
-       console.log('🚀 Lancement de la réconciliation avec données traitées...');
        
        const reconciliationRequest = {
          boFileContent: processedBoData,
@@ -1215,7 +1154,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        reconciliationResponse = await this.reconciliationService.reconcile(reconciliationRequest).toPromise();
          
          if (reconciliationResponse) {
-           console.log('✅ Réconciliation terminée avec succès:', reconciliationResponse);
            this.reconciliationTabsService.clearAllData();
            // Stocker les résultats dans l'état et naviguer directement vers les résultats
            this.appStateService.setReconciliationResults(reconciliationResponse);
@@ -1225,7 +1163,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
          }
        
      } catch (error) {
-       console.error('❌ Erreur lors du démarrage du mode magique:', error);
        this.popupService.showError('Erreur lors du démarrage du mode magique: ' + (error instanceof Error ? error.message : 'Erreur inconnue'));
         this.isLoading = false;
       }
@@ -1309,7 +1246,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
      partnerKey: string,
      originalSuggestion: any
    ): Promise<{ boKey: string; partnerKey: string; transformation: any; confidence: number } | null> {
-     console.log('🔧 Test de formatage intelligent...');
      
      // Lire les données originales
      const boData = await this.readFileContent(boFile);
@@ -1344,7 +1280,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
      // Tester chaque format
      for (const test of formattingTests) {
        try {
-         console.log(`🔍 Test du formatage: ${test.name}`);
          
          // Appliquer le formatage aux données BO
          const formattedBoData = test.transform(boData, boKey);
@@ -1353,7 +1288,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
          const matchCount = this.calculateMatchCount(formattedBoData, partnerData, boKey, partnerKey);
          const confidence = matchCount / Math.max(boData.length, partnerData.length);
          
-         console.log(`📊 Formatage ${test.name}: ${matchCount} correspondances (confiance: ${(confidence * 100).toFixed(1)}%)`);
          
          if (confidence > bestMatch.confidence) {
            bestMatch = {
@@ -1362,23 +1296,19 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
              transformation: { type: 'format', format: test.name },
              confidence
            };
-           console.log(`✅ Amélioration détectée avec ${test.name}!`);
          }
          
        } catch (error) {
-         console.warn(`⚠️ Erreur lors du test ${test.name}:`, error);
        }
      }
      
      // Retourner la meilleure amélioration trouvée, même si elle est minime
      if (bestMatch.confidence > (originalSuggestion.confidence || originalSuggestion.confidenceScore || 0)) {
-       console.log(`🎯 Amélioration de confiance: ${((bestMatch.confidence - (originalSuggestion.confidence || originalSuggestion.confidenceScore || 0)) * 100).toFixed(1)}%`);
        return bestMatch;
      }
      
      // Si aucune amélioration, retourner quand même le meilleur match trouvé
      if (bestMatch.confidence > 0.05) { // Seuil très bas pour accepter des correspondances faibles
-       console.log(`⚠️ Aucune amélioration trouvée, mais utilisation du meilleur match disponible (confiance: ${(bestMatch.confidence * 100).toFixed(1)}%)`);
        return bestMatch;
      }
      
@@ -1514,7 +1444,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
      boKey: string,
      partnerKey: string
    ): Promise<{ boKey: string; partnerKey: string; transformation: any; confidence: number } | null> {
-     console.log('🔧 Test de combinaisons de transformations...');
      
      const boData = await this.readFileContent(boFile);
      const partnerData = await this.readFileContent(partnerFile);
@@ -1532,7 +1461,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
      let bestConfidence = 0;
      
      for (const combination of combinations) {
-       console.log(`🔧 Test de la combinaison: ${combination.join(' + ')}`);
        
        // Appliquer la combinaison de transformations
        let transformedBoData = [...boData];
@@ -1550,7 +1478,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        const matchCount = this.calculateMatchCount(transformedBoData, transformedPartnerData, boKey, partnerKey);
        const confidence = matchCount / Math.max(transformedBoData.length, transformedPartnerData.length);
        
-       console.log(`📊 Combinaison ${combination.join(' + ')}: ${(confidence * 100).toFixed(1)}%`);
        
        if (confidence > bestConfidence) {
          bestConfidence = confidence;
@@ -1564,7 +1491,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        
                 // Si on atteint >70%, on s'arrête
          if (confidence >= 0.70) {
-           console.log('🎯 Confiance >70% atteinte avec combinaison!');
            break;
          }
      }
@@ -1597,7 +1523,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
 
    // Méthode pour trouver des correspondances de dernier recours
    private async findLastResortMatch(boData: any[], partnerData: any[]): Promise<{ boKey: string; partnerKey: string; transformation: any; confidence: number } | null> {
-     console.log('🔍 Stratégies de dernier recours...');
      
      const boHeaders = Object.keys(boData[0] || {});
      const partnerHeaders = Object.keys(partnerData[0] || {});
@@ -1657,11 +1582,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        for (const boCol of boHeaders) {
          for (const partnerCol of partnerHeaders) {
            if (strategy.test(boCol, partnerCol)) {
-             console.log(`🔍 Test stratégie de dernier recours "${strategy.name}": ${boCol} ↔ ${partnerCol}`);
              
              // Si c'est la stratégie spéciale IDTransaction ↔ Id, appliquer directement la transformation _CM
              if (strategy.specialTransform === 'removeSuffix_CM') {
-               console.log('🔧 Application de la transformation spéciale _CM dans le dernier recours');
                
                // Appliquer la transformation _CM aux données BO
                const transformedBoData = this.applyRemoveSuffixCM(boData, boCol);
@@ -1670,10 +1593,8 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
                const matchCount = this.calculateMatchCount(transformedBoData, partnerData, boCol, partnerCol);
                const confidence = matchCount / Math.max(transformedBoData.length, partnerData.length);
                
-               console.log(`📊 Confiance avec transformation _CM: ${(confidence * 100).toFixed(1)}%`);
                
                if (confidence >= 0.70) {
-                 console.log(`🎯 Correspondance >70% trouvée avec transformation _CM!`);
                  return {
                    boKey: boCol,
                    partnerKey: partnerCol,
@@ -1691,7 +1612,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
                );
                
                if (result && result.confidence >= 0.70) {
-                 console.log(`🎯 Correspondance trouvée avec stratégie de dernier recours!`);
                  return result;
                }
              }
@@ -1713,9 +1633,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
    
    // Méthode pour trouver une correspondance améliorée avec des stratégies avancées
    private async findImprovedMatch(suggestions: any[]): Promise<{ boKey: string; partnerKey: string; transformation: any; confidence: number } | null> {
-     console.log('🚨 ===== DÉBUT findImprovedMatch =====');
-     console.log('🔍 Recherche de correspondance améliorée...');
-     console.log('🚨 ATTENTION: Cette méthode devrait donner 73% comme le mode assisté!');
      
      // Lire les données des deux fichiers
      const boData = await this.readFileContent(this.boFile!);
@@ -1725,48 +1642,29 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
      const boHeaders = Object.keys(boData[0] || {});
      const partnerHeaders = Object.keys(partnerData[0] || {});
      
-     console.log('📊 En-têtes BO:', boHeaders);
-     console.log('📊 En-têtes Partenaire:', partnerHeaders);
-     console.log('🔍 Recherche de colonnes IDTransaction et Id...');
      
      // 🚨 TEST SPÉCIFIQUE IDTransaction ↔ Id EN PREMIER (PRIORITÉ MAXIMALE)
-     console.log('🚨 ===== TEST SPÉCIFIQUE IDTransaction ↔ Id (PRIORITÉ MAXIMALE) =====');
-     console.log('🔍 Test spécifique pour IDTransaction ↔ Id...');
-     console.log('🚨 ATTENTION: Ce test devrait donner 73% comme le mode assisté!');
      const idTransactionCol = boHeaders.find(col => col.toLowerCase().includes('idtransaction'));
      const idCol = partnerHeaders.find(col => col.toLowerCase() === 'id');
      
-     console.log('🔍 Recherche des colonnes:');
-     console.log('  - Colonnes BO disponibles:', boHeaders);
-     console.log('  - Colonnes Partenaire disponibles:', partnerHeaders);
-     console.log('  - IDTransaction trouvé:', idTransactionCol);
-     console.log('  - Id trouvé:', idCol);
        
-     console.log('📊 Colonnes trouvées:');
-     console.log('  - IDTransaction:', idTransactionCol);
-     console.log('  - Id:', idCol);
          
      // Test spécifique IDTransaction ↔ Id en PRIORITÉ
      if (idTransactionCol && idCol) {
-       console.log(`🎯 Test spécifique PRIORITAIRE: ${idTransactionCol} ↔ ${idCol}`);
        
        // Afficher quelques exemples de données
-       console.log('📊 Exemples de données BO:');
        const boSample = boData.slice(0, 5).map(row => row[idTransactionCol]);
        boSample.forEach((value, index) => console.log(`  ${index + 1}: "${value}"`));
        
-       console.log('📊 Exemples de données Partenaire:');
        const partnerSample = partnerData.slice(0, 5).map(row => row[idCol]);
        partnerSample.forEach((value, index) => console.log(`  ${index + 1}: "${value}"`));
        
        // Test SANS transformation _CM (comme dans le mode assisté)
        const dataMatchScore = this.calculateDataMatchScore(boData, partnerData, idTransactionCol, idCol);
        
-       console.log(`📊 Score IDTransaction ↔ Id SANS _CM: ${(dataMatchScore * 100).toFixed(1)}%`);
        
        // Si on atteint >70% sans transformation, c'est parfait !
        if (dataMatchScore >= 0.70) {
-         console.log(`🎯 SUCCÈS! Confiance >70% atteinte SANS transformation: ${(dataMatchScore * 100).toFixed(1)}%`);
          return {
            boKey: idTransactionCol,
            partnerKey: idCol,
@@ -1779,11 +1677,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        const transformedBoData = this.applyRemoveSuffixCM(boData, idTransactionCol);
        const dataMatchScoreWithCM = this.calculateDataMatchScore(transformedBoData, partnerData, idTransactionCol, idCol);
        
-       console.log(`📊 Score IDTransaction ↔ Id AVEC _CM: ${(dataMatchScoreWithCM * 100).toFixed(1)}%`);
        
        // Si on atteint >70% avec transformation, c'est parfait !
        if (dataMatchScoreWithCM >= 0.70) {
-         console.log(`🎯 SUCCÈS! Confiance >70% atteinte AVEC transformation _CM: ${(dataMatchScoreWithCM * 100).toFixed(1)}%`);
          return {
            boKey: idTransactionCol,
            partnerKey: idCol,
@@ -1797,7 +1693,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        const bestTransformation = dataMatchScoreWithCM > dataMatchScore ? 
          { type: 'remove_suffix', pattern: '_CM' } : null;
        
-       console.log(`📊 Meilleur score IDTransaction ↔ Id: ${(bestScore * 100).toFixed(1)}%`);
        
        // Retourner le meilleur résultat trouvé pour IDTransaction ↔ Id
        return {
@@ -1807,7 +1702,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
          confidence: bestScore
        };
      } else {
-       console.log('❌ Colonnes IDTransaction ou Id non trouvées');
      }
      
      // Stratégies de correspondance avancées
@@ -1887,16 +1781,12 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
      // Tester toutes les combinaisons de colonnes
      for (const boCol of boHeaders) {
        for (const partnerCol of partnerHeaders) {
-         console.log(`🔍 Test de correspondance: ${boCol} ↔ ${partnerCol}`);
          for (const strategy of strategies) {
            const testResult = strategy.test(boCol, partnerCol);
            if (testResult) {
-             console.log(`✅ Stratégie "${strategy.name}" détectée pour ${boCol} ↔ ${partnerCol}`);
-             console.log(`🔍 Test ${strategy.name}: ${boCol} ↔ ${partnerCol}`);
              
              // Si c'est la stratégie spéciale IDTransaction ↔ Id, appliquer la transformation _CM
              if (strategy.specialTransform === 'removeSuffix_CM') {
-               console.log('🔧 Application de la transformation spéciale: suppression _CM');
                
                // Appliquer la transformation _CM aux données BO
                const transformedBoData = this.applyRemoveSuffixCM(boData, boCol);
@@ -1905,7 +1795,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
                const dataMatchScore = this.calculateDataMatchScore(transformedBoData, partnerData, boCol, partnerCol);
                const totalScore = strategy.priority * dataMatchScore;
                
-               console.log(`📊 Score avec transformation _CM: ${(dataMatchScore * 100).toFixed(1)}% (total: ${totalScore.toFixed(3)})`);
                
                if (totalScore > bestScore) {
                  bestScore = totalScore;
@@ -1916,14 +1805,12 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
                    confidence: dataMatchScore // Utiliser directement le score de correspondance
                  };
                  
-                 console.log(`✅ Nouvelle meilleure correspondance trouvée avec transformation _CM!`);
                }
              } else {
                // Calculer un score basé sur la stratégie et la correspondance des données
                const dataMatchScore = this.calculateDataMatchScore(boData, partnerData, boCol, partnerCol);
                const totalScore = strategy.priority * dataMatchScore;
                
-               console.log(`📊 Score sans transformation: ${(dataMatchScore * 100).toFixed(1)}% (total: ${totalScore.toFixed(3)})`);
                
                if (totalScore > bestScore) {
                  bestScore = totalScore;
@@ -1944,7 +1831,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
      
      // Si on a trouvé une correspondance, essayer d'améliorer avec des transformations
      if (bestMatch && bestMatch.confidence > 0.1) {
-       console.log('🔧 Tentative d\'amélioration agressive avec transformations...');
        
        // Essayer toutes les transformations possibles pour atteindre >90%
        const improvedWithTransform = await this.testFormattingForBetterMatch(
@@ -1956,11 +1842,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        );
        
        if (improvedWithTransform && improvedWithTransform.confidence > bestMatch.confidence) {
-         console.log('✅ Amélioration trouvée avec transformation');
          
          // Si on atteint >70%, c'est parfait
          if (improvedWithTransform.confidence >= 0.70) {
-           console.log('🎯 Confiance >70% atteinte avec transformation!');
            return improvedWithTransform;
          }
          
@@ -1973,7 +1857,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
          );
          
          if (superImproved && superImproved.confidence >= 0.70) {
-           console.log('🎯 Confiance >70% atteinte avec combinaison de transformations!');
            return superImproved;
          }
          
@@ -1982,11 +1865,8 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
      }
      
      // Si aucune correspondance trouvée, essayer des stratégies de dernier recours
-     console.log('🔍 Tentative de stratégies de dernier recours...');
      const lastResortMatch = await this.findLastResortMatch(boData, partnerData);
      
-     console.log('🚨 ===== FIN findImprovedMatch =====');
-     console.log('🎯 Résultat final:', lastResortMatch || bestMatch);
      
      return lastResortMatch || bestMatch;
    }
@@ -2027,15 +1907,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
      );
      
      // Logs détaillés pour le débogage
-     console.log(`🔍 Calcul de correspondance amélioré ${boCol} ↔ ${partnerCol}:`);
-     console.log(`  - Total BO: ${boValues.length} valeurs`);
-     console.log(`  - Total Partenaire: ${partnerValues.length} valeurs`);
-     console.log(`  - Correspondances exactes: ${matches}`);
-     console.log(`  - Score exact: ${(exactMatchScore * 100).toFixed(1)}%`);
-     console.log(`  - Similarité des noms: ${(nameSimilarity * 100).toFixed(1)}%`);
-     console.log(`  - Compatibilité format: ${(formatScore * 100).toFixed(1)}%`);
-     console.log(`  - Score d'unicité: ${(uniquenessScore * 100).toFixed(1)}%`);
-     console.log(`  - Score combiné: ${(combinedScore * 100).toFixed(1)}%`);
      
      return combinedScore;
    }
@@ -2216,7 +2087,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
                        break;
                    }
                    
-                   console.log(`🔧 Transformation: "${originalValue}" → "${value}"`);
                  }
                  
                  row[header] = value;
@@ -2239,7 +2109,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     * Applique les règles de traitement des colonnes aux données
     */
    private applyColumnProcessingRules(data: Record<string, string>[], rules: any[]): Record<string, string>[] {
-     console.log('🔧 Application des règles de traitement des colonnes...');
      
      return data.map(row => {
        const processedRow = { ...row };
@@ -2288,7 +2157,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
            // Mettre à jour la valeur si elle a changé
            if (value !== originalValue) {
              processedRow[columnName] = value;
-             console.log(`🔧 Transformation ${columnName}: "${originalValue}" → "${value}"`);
            }
          }
        });
@@ -2315,7 +2183,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     );
     
     if (confirmed) {
-      console.log('🔄 Réinitialisation des données...');
       
       // Réinitialiser le mode sélectionné
       this.selectedMode = null;
@@ -2334,7 +2201,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       this.clearBoSelections();
       this.clearPartnerSelections();
       
-      console.log('✅ Données réinitialisées avec succès');
       
       // Afficher un message de confirmation
       this.popupService.showSuccess('Données réinitialisées avec succès');
@@ -2930,7 +2796,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   private matchesFilePattern(fileName: string, pattern: string): boolean {
     if (!pattern || !fileName) return false;
     
-    console.log(`🔍 Test de correspondance: "${fileName}" vs pattern "${pattern}"`);
     
     const lowerName = fileName.toLowerCase();
     const lowerPattern = pattern.toLowerCase();
@@ -2968,19 +2833,15 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
           if (patternExt && acceptedExtensions.includes(patternExt)) {
             // Le pattern spécifie une extension, accepter les extensions équivalentes
             const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
-            console.log(`🔍 Test wildcard (sans extension): ✅ - Extension fichier: ${fileNameExt}, Extension acceptée: ${fileExtAccepted ? '✅' : '❌'}`);
             return fileExtAccepted;
           } else {
             // Le pattern n'a pas d'extension spécifique, accepter n'importe quelle extension
-            console.log(`🔍 Test wildcard (sans extension): ✅`);
             return true;
           }
         } else {
-          console.log(`🔍 Test wildcard (sans extension): ❌`);
           return false;
         }
       } catch (error) {
-        console.warn('⚠️ Pattern wildcard invalide:', pattern);
         return false;
       }
     }
@@ -2992,13 +2853,11 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       if (nameNoExt === patternNoExt) {
         // Correspondance exacte du nom, vérifier que l'extension est acceptée
         const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
-        console.log(`🔍 Test correspondance exacte avec extension: ${fileExtAccepted ? '✅' : '❌'}`);
         return fileExtAccepted;
       }
     } else if (patternExt) {
       // Extension non standard, correspondance exacte stricte
       const exactMatch = lowerName === lowerPattern;
-      console.log(`🔍 Test correspondance exacte avec extension: ${exactMatch ? '✅' : '❌'}`);
       if (exactMatch) {
         return true;
       }
@@ -3007,7 +2866,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     // Mode 3: Pattern simple - détection par inclusion (sans extension)
     // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
     const containsPattern = nameNoExt.includes(patternNoExt);
-    console.log(`🔍 Test inclusion (sans extension): "${nameNoExt}" contient "${patternNoExt}": ${containsPattern ? '✅' : '❌'}`);
     
     if (containsPattern) {
       // Si le pattern avait une extension acceptée, vérifier que l'extension du fichier est aussi acceptée
@@ -3021,7 +2879,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     // Mode 4: Détection par préfixe (optionnel, pour plus de flexibilité)
     // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
     const startsWithPattern = nameNoExt.startsWith(patternNoExt);
-    console.log(`🔍 Test préfixe (sans extension): "${nameNoExt}" commence par "${patternNoExt}": ${startsWithPattern ? '✅' : '❌'}`);
     
     if (startsWithPattern) {
       // Si le pattern avait une extension acceptée, vérifier que l'extension du fichier est aussi acceptée

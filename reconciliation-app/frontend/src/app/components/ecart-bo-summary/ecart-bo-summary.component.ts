@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription, firstValueFrom } from 'rxjs';
 import { finalize, take } from 'rxjs/operators';
@@ -48,16 +48,30 @@ export interface EcartBoSummaryItem {
   duplicateHint?: string;
 }
 
+type SummaryGroupAccumulator = {
+  agence: string;
+  service: string;
+  pays: string;
+  date: string;
+  recordCount: number;
+  totalMontant: number;
+  multiAgenceRecords?: Record<string, string>[];
+};
+
 @Component({
   selector: 'app-ecart-bo-summary',
   templateUrl: './ecart-bo-summary.component.html',
-  styleUrls: ['./ecart-bo-summary.component.scss']
+  styleUrls: ['./ecart-bo-summary.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   response: ReconciliationResponse | null = null;
   summaryItems: EcartBoSummaryItem[] = [];
   filteredItems: EcartBoSummaryItem[] = [];
   pagedItems: EcartBoSummaryItem[] = [];
+  /** Totaux pré-calculés pour éviter des reduce() à chaque cycle de détection de changements. */
+  filteredTotalNombre = 0;
+  filteredTotalVolume = 0;
   private subscription = new Subscription();
   private savedDataMode = false;
   private lastSavedFetchKey = '';
@@ -98,6 +112,14 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   filterOptionsEnvCodes: string[] = [];
 
   isLoading = false;
+  loadingStep = '';
+  cachedVisibleDuplicateCount = 0;
+  allFilteredSelected = false;
+  someFilteredSelected = false;
+  selectedSavableCountCached = 0;
+  selectedDeletableCountCached = 0;
+  private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly SUMMARY_BUILD_CHUNK_SIZE = 500;
   isSaving = false;
   isDeleting = false;
   deletingItemId: number | null = null;
@@ -203,7 +225,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           return;
         }
         if (response) {
-          this.response = response;
+          this.response = this.slimResponseForEcarts(response);
           this.prefillBuffer = prefill;
           this.awaitingEnvChoice = true;
           this.pendingEnvSelection = this.sessionDefaultEnvCode || '';
@@ -226,6 +248,9 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   get envPreloadHint(): string {
+    if (this.prefillBuffer) {
+      return `Les correspondances sélectionnées (${this.prefillBuffer.nombre.toLocaleString('fr-FR')} transactions) seront préparées pour sauvegarde.`;
+    }
     if (this.pendingLinesBuffer && this.pendingLinesBuffer.length > 0) {
       return `${this.pendingLinesBuffer.length} ligne(s) en attente depuis les écarts BO.`;
     }
@@ -237,19 +262,28 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
    */
   confirmEnvAndLoadData(): void {
     this.sessionDefaultEnvCode = (this.pendingEnvSelection || '').trim();
-    this.awaitingEnvChoice = false;
     const prefill = this.prefillBuffer;
     this.prefillBuffer = null;
 
     if (this.pendingLinesBuffer && this.pendingLinesBuffer.length > 0) {
+      this.awaitingEnvChoice = false;
       const lines = this.pendingLinesBuffer;
       this.pendingLinesBuffer = null;
       this.applyPendingLinesFromEcartBo(lines);
       this.popupService.showSuccess(
         `${lines.length} ligne(s) prêtes (ENV : ${this.sessionDefaultEnvCode || 'T-E / non renseigné'}). Utilisez « Sauvegarder » pour enregistrer.`
       );
+    } else if (this.response && prefill) {
+      // Depuis /matches : ne pas agréger les milliers d'écarts BO — uniquement la ligne de correspondances.
+      this.awaitingEnvChoice = false;
+      this.response = null;
     } else if (this.response) {
+      this.isLoading = true;
+      this.awaitingEnvChoice = false;
+      this.cdr.markForCheck();
       this.loadSummaryData();
+    } else {
+      this.awaitingEnvChoice = false;
     }
 
     this.syncMagicServiceFilterFromContext();
@@ -476,20 +510,27 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
     this.ecartBoSummaryService
       .getEcartBoSummaries(filter)
-      .pipe(
-        finalize(() => {
-          this.isLoading = false;
-          this.cdr.markForCheck();
-        })
-      )
       .subscribe({
         next: (savedData) => {
           this.savedDataMode = true;
           this.lastSavedFetchKey = key;
-          this.applySavedDataToSummary(savedData);
-          this.applyFilters();
+          // Laisser Angular afficher le spinner avant le traitement lourd (linking, filtres).
+          setTimeout(() => {
+            try {
+              this.applySavedDataToSummary(savedData);
+              this.applyFilters();
+            } catch (processingError) {
+              console.error('Erreur lors du traitement des données sauvegardées:', processingError);
+              this.popupService.showError('❌ Erreur lors du traitement des données sauvegardées.');
+            } finally {
+              this.isLoading = false;
+              this.cdr.markForCheck();
+            }
+          }, 0);
         },
         error: (error) => {
+          this.isLoading = false;
+          this.cdr.markForCheck();
           console.error('Erreur lors du chargement des données sauvegardées:', error);
           if (this.response) {
             this.loadSummaryData();
@@ -499,131 +540,170 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.searchDebounceTimer) {
+      clearTimeout(this.searchDebounceTimer);
+    }
     this.subscription.unsubscribe();
+  }
+
+  private slimResponseForEcarts(response: ReconciliationResponse): ReconciliationResponse {
+    return {
+      ...response,
+      matches: []
+    };
   }
 
   private loadSummaryData(): void {
     this.savedDataMode = false;
     this.lastSavedFetchKey = '';
     this.isLoading = true;
+    this.loadingStep = 'Préparation des écarts…';
     this.cdr.markForCheck();
-    
-    try {
-      const mismatches = this.response?.mismatches || [];
-      const boOnly = this.response?.boOnly || [];
-      let allData = this.applyMagicReconciliationFilter([...mismatches, ...boOnly]);
-      
-      // Fonction helper pour extraire les valeurs (colonnes FR / EN)
-      const getValue = (record: Record<string, string>, aliasGroup: readonly string[]): string =>
-        getRecordValueByAliases(record, aliasGroup);
 
-      // Regrouper par agence + service + pays : une ligne par combinaison (agrégat nombre + volume)
-      const dateKeys = BILINGUAL_COLUMN_ALIASES.date;
-      const montantKeys = BILINGUAL_COLUMN_ALIASES.montant;
-      const agenceKeys = BILINGUAL_COLUMN_ALIASES.agence;
-      const serviceKeys = BILINGUAL_COLUMN_ALIASES.service;
-      const paysKeys = BILINGUAL_COLUMN_ALIASES.pays;
+    void this.buildSummaryItemsFromReconciliationResponseAsync()
+      .catch(error => {
+        console.error('Erreur lors du chargement des écarts de réconciliation:', error);
+        this.popupService.showError('❌ Erreur lors du chargement des écarts.');
+      })
+      .finally(() => {
+        this.isLoading = false;
+        this.loadingStep = '';
+        this.cdr.markForCheck();
+      });
+  }
 
-      const groupedByAgence = new Map<string, {
-        agence: string;
-        service: string;
-        pays: string;
-        date: string;
-        records: Record<string, string>[];
-        totalMontant: number;
-      }>();
+  /** Construit summaryItems par lots pour ne pas bloquer le thread UI. */
+  private async buildSummaryItemsFromReconciliationResponseAsync(): Promise<void> {
+    const mismatches = this.applyMagicReconciliationFilter(this.response?.mismatches ?? []);
+    const boOnly = this.applyMagicReconciliationFilter(this.response?.boOnly ?? []);
+    const records = mismatches.concat(boOnly);
+    const groupedByAgence = new Map<string, SummaryGroupAccumulator>();
+    const chunkSize = EcartBoSummaryComponent.SUMMARY_BUILD_CHUNK_SIZE;
 
-      allData.forEach(record => {
-        const agence = getValue(record, agenceKeys) || 'Non spécifié';
-        const service = getValue(record, serviceKeys) || 'Non spécifié';
-        const pays = getValue(record, paysKeys) || 'Non spécifié';
-        const date = getValue(record, dateKeys) || '';
-        const montantStr = getValue(record, montantKeys);
-        const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
-        const key = `${agence}|${service}|${pays}`;
+    for (let start = 0; start < records.length; start += chunkSize) {
+      const end = Math.min(start + chunkSize, records.length);
+      for (let i = start; i < end; i++) {
+        this.accumulateSummaryRecord(records[i], groupedByAgence);
+      }
+      this.loadingStep = records.length
+        ? `Agrégation ${end.toLocaleString('fr-FR')} / ${records.length.toLocaleString('fr-FR')} écarts…`
+        : 'Finalisation…';
+      this.cdr.markForCheck();
+      if (end < records.length) {
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+      }
+    }
 
-        if (!groupedByAgence.has(key)) {
-          groupedByAgence.set(key, {
+    this.finalizeSummaryFromGroups(groupedByAgence);
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    this.linkMatchingPairs(false);
+    this.applyFilters();
+  }
+
+  private accumulateSummaryRecord(
+    record: Record<string, string>,
+    groupedByAgence: Map<string, SummaryGroupAccumulator>
+  ): void {
+    const getValue = (row: Record<string, string>, aliasGroup: readonly string[]): string =>
+      getRecordValueByAliases(row, aliasGroup);
+
+    const agence = getValue(record, BILINGUAL_COLUMN_ALIASES.agence) || 'Non spécifié';
+    const service = getValue(record, BILINGUAL_COLUMN_ALIASES.service) || 'Non spécifié';
+    const pays = getValue(record, BILINGUAL_COLUMN_ALIASES.pays) || 'Non spécifié';
+    const date = getValue(record, BILINGUAL_COLUMN_ALIASES.date) || '';
+    const montantStr = getValue(record, BILINGUAL_COLUMN_ALIASES.montant);
+    const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
+    const key = `${agence}|${service}|${pays}`;
+    const isMultiAgence = agence === 'multiAgence';
+
+    let group = groupedByAgence.get(key);
+    if (!group) {
+      group = {
+        agence,
+        service,
+        pays,
+        date,
+        recordCount: 0,
+        totalMontant: 0,
+        ...(isMultiAgence ? { multiAgenceRecords: [] } : {})
+      };
+      groupedByAgence.set(key, group);
+    }
+
+    if (isMultiAgence) {
+      group.multiAgenceRecords!.push(record);
+    } else {
+      group.recordCount += 1;
+    }
+    group.totalMontant += Number.isFinite(montant) ? montant : 0;
+  }
+
+  private finalizeSummaryFromGroups(groupedByAgence: Map<string, SummaryGroupAccumulator>): void {
+    const getValue = (record: Record<string, string>, aliasGroup: readonly string[]): string =>
+      getRecordValueByAliases(record, aliasGroup);
+
+    const items: EcartBoSummaryItem[] = [];
+    for (const group of groupedByAgence.values()) {
+      if (group.agence === 'multiAgence' && group.multiAgenceRecords?.length) {
+        for (const record of group.multiAgenceRecords) {
+          const agence = getValue(record, BILINGUAL_COLUMN_ALIASES.agence) || group.agence;
+          const service = getValue(record, BILINGUAL_COLUMN_ALIASES.service) || group.service;
+          const pays = getValue(record, BILINGUAL_COLUMN_ALIASES.pays) || group.pays;
+          const date = getValue(record, BILINGUAL_COLUMN_ALIASES.date) || group.date;
+          const montantStr = getValue(record, BILINGUAL_COLUMN_ALIASES.montant);
+          const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
+          items.push({
+            selectionKey: this.createSelectionKey('generated'),
+            date,
             agence,
             service,
             pays,
-            date,
-            records: [],
-            totalMontant: 0
-          });
-        }
-        const group = groupedByAgence.get(key)!;
-        group.records.push(record);
-        group.totalMontant += isNaN(montant) ? 0 : montant;
-      });
-
-      // Pour multiAgence : une ligne par enregistrement (pas de regroupement). Sinon : une ligne par groupe.
-      const items: EcartBoSummaryItem[] = [];
-      for (const group of groupedByAgence.values()) {
-        if (group.agence === 'multiAgence' && group.records.length > 0) {
-          for (const record of group.records) {
-            const agence = getValue(record, agenceKeys) || group.agence;
-            const service = getValue(record, serviceKeys) || group.service;
-            const pays = getValue(record, paysKeys) || group.pays;
-            const date = getValue(record, dateKeys) || group.date;
-            const montantStr = getValue(record, montantKeys);
-            const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
-            items.push({
-              selectionKey: this.createSelectionKey('generated'),
-              date,
-              agence,
-              service,
-              pays,
-              nombre: 1,
-              montant,
-              statut: 'en cours',
-              env: 'BO',
-              envCode: this.getEnvCodeForNewRows(),
-              originalRecords: [record],
-              token: undefined
-            } as EcartBoSummaryItem);
-          }
-        } else {
-          items.push({
-            selectionKey: this.createSelectionKey('generated'),
-            date: group.date,
-            agence: group.agence,
-            service: group.service,
-            pays: group.pays,
-            nombre: group.records.length,
-            montant: group.totalMontant,
+            nombre: 1,
+            montant,
             statut: 'en cours',
             env: 'BO',
             envCode: this.getEnvCodeForNewRows(),
-            originalRecords: group.records,
+            originalRecords: [],
             token: undefined
           } as EcartBoSummaryItem);
         }
+      } else {
+        items.push({
+          selectionKey: this.createSelectionKey('generated'),
+          date: group.date,
+          agence: group.agence,
+          service: group.service,
+          pays: group.pays,
+          nombre: group.recordCount,
+          montant: group.totalMontant,
+          statut: 'en cours',
+          env: 'BO',
+          envCode: this.getEnvCodeForNewRows(),
+          originalRecords: [],
+          token: undefined
+        } as EcartBoSummaryItem);
       }
-      this.selectedRowKeys.clear();
-      this.summaryItems = items;
-
-      this.markAndFilterDuplicateSummaryItems(false);
-
-      // Lier les paires correspondantes (BO/PARTENAIRE) et mettre à jour les statuts
-      this.linkMatchingPairs(false);
-
-      // Extraire les valeurs uniques pour les filtres
-      this.uniqueAgencies = [...new Set(this.summaryItems.map(item => item.agence).filter(a => a))].sort();
-      this.uniqueServices = [...new Set(this.summaryItems.map(item => item.service).filter(s => s))].sort();
-      this.uniquePays = [...new Set(this.summaryItems.map(item => item.pays).filter(p => p))].sort();
-      this.refreshUniqueEnvCodes();
-
-      this.syncMagicServiceFilterFromContext();
-      this.applyFilters();
-    } finally {
-      this.isLoading = false;
-      this.cdr.markForCheck();
     }
+
+    this.selectedRowKeys.clear();
+    this.summaryItems = items;
+    this.markAndFilterDuplicateSummaryItems(false);
+
+    this.uniqueAgencies = [...new Set(this.summaryItems.map(item => item.agence).filter(Boolean))].sort();
+    this.uniqueServices = [...new Set(this.summaryItems.map(item => item.service).filter(Boolean))].sort();
+    this.uniquePays = [...new Set(this.summaryItems.map(item => item.pays).filter(Boolean))].sort();
+    this.refreshUniqueEnvCodes();
+    this.syncMagicServiceFilterFromContext();
   }
 
   onSearch(): void {
-    this.applyFilters();
+    if (this.searchDebounceTimer) {
+      clearTimeout(this.searchDebounceTimer);
+    }
+    this.searchDebounceTimer = setTimeout(() => {
+      this.searchDebounceTimer = null;
+      this.applyFilters();
+    }, 250);
   }
 
   toggleSavedHistoryScope(): void {
@@ -790,41 +870,63 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   private rebuildFilterOptionLists(): void {
-    this.filterOptionsPays = [
-      ...new Set(
-        this.summaryItems
-          .filter(i => this.itemMatchesFilters(i, { skipPays: true, skipService: true, skipEnvCode: true }))
-          .map(i => i.pays)
-          .filter((p): p is string => !!p)
-      )
-    ].sort((a, b) => a.localeCompare(b, 'fr'));
+    const paysSet = new Set<string>();
+    const serviceSet = new Set<string>();
+    const envSet = new Set<string>();
 
-    this.filterOptionsServices = [
-      ...new Set(
-        this.summaryItems
-          .filter(i => this.itemMatchesFilters(i, { skipService: true, skipEnvCode: true }))
-          .map(i => i.service)
-          .filter((v): v is string => !!v)
-      )
-    ].sort((a, b) => a.localeCompare(b, 'fr'));
+    for (const item of this.summaryItems) {
+      if (this.itemMatchesFilters(item, { skipPays: true, skipService: true, skipEnvCode: true }) && item.pays) {
+        paysSet.add(item.pays);
+      }
+      if (this.itemMatchesFilters(item, { skipService: true, skipEnvCode: true }) && item.service) {
+        serviceSet.add(item.service);
+      }
+      if (this.itemMatchesFilters(item, { skipEnvCode: true })) {
+        envSet.add(normalizeReconciliationReportEnv(item.envCode));
+      }
+    }
 
-    const envKeys = new Set(
-      this.summaryItems
-        .filter(i => this.itemMatchesFilters(i, { skipEnvCode: true }))
-        .map(i => normalizeReconciliationReportEnv(i.envCode))
-    );
+    this.filterOptionsPays = [...paysSet].sort((a, b) => a.localeCompare(b, 'fr'));
+    this.filterOptionsServices = [...serviceSet].sort((a, b) => a.localeCompare(b, 'fr'));
+
     const ordered: string[] = [];
     for (const code of this.envCodePresetOptions) {
-      if (envKeys.has(code)) {
+      if (envSet.has(code)) {
         ordered.push(code);
       }
     }
-    for (const k of [...envKeys].sort((a, b) => a.localeCompare(b, 'fr'))) {
+    for (const k of [...envSet].sort((a, b) => a.localeCompare(b, 'fr'))) {
       if (!ordered.includes(k)) {
         ordered.push(k);
       }
     }
     this.filterOptionsEnvCodes = ordered;
+  }
+
+  private refreshSelectionCache(): void {
+    let selectableCount = 0;
+    let selectedSelectable = 0;
+    let duplicateCount = 0;
+
+    for (const item of this.filteredItems) {
+      if (item.isDuplicate) {
+        duplicateCount++;
+      }
+      const canSelect = item.id != null || item.statut === 'en cours';
+      if (!canSelect) {
+        continue;
+      }
+      selectableCount++;
+      if (this.selectedRowKeys.has(item.selectionKey)) {
+        selectedSelectable++;
+      }
+    }
+
+    this.cachedVisibleDuplicateCount = duplicateCount;
+    this.allFilteredSelected = selectableCount > 0 && selectedSelectable === selectableCount;
+    this.someFilteredSelected = selectedSelectable > 0 && selectedSelectable < selectableCount;
+    this.selectedSavableCountCached = this.getSelectedSavableItems().length;
+    this.selectedDeletableCountCached = this.getSelectedDeletableItems().length;
   }
 
   applyFilters(): void {
@@ -836,7 +938,20 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.rebuildFilterOptionLists();
     this.filteredItems = this.summaryItems.filter(item => this.itemMatchesFilters(item));
     this.currentPage = 1;
+    this.refreshFilteredTotals();
     this.updatePagination();
+    this.refreshSelectionCache();
+  }
+
+  private refreshFilteredTotals(): void {
+    let nombre = 0;
+    let volume = 0;
+    for (const item of this.filteredItems) {
+      nombre += item.nombre || 0;
+      volume += item.montant || 0;
+    }
+    this.filteredTotalNombre = nombre;
+    this.filteredTotalVolume = volume;
   }
 
   onStatutChange(item: EcartBoSummaryItem, newStatut: 'ok' | 'en cours'): void {
@@ -997,7 +1112,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
   /** Nombre de doublons visibles après filtrage. */
   get visibleDuplicateCount(): number {
-    return this.filteredItems.filter(item => item.isDuplicate).length;
+    return this.cachedVisibleDuplicateCount;
   }
 
   getDuplicateCriteriaText(): string {
@@ -1257,17 +1372,6 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       }
     }
 
-    for (let i = 0; i < this.summaryItems.length; i++) {
-      for (let j = i + 1; j < this.summaryItems.length; j++) {
-        const itemA = this.summaryItems[i];
-        const itemB = this.summaryItems[j];
-        if (this.areLinkedCounterparts(itemA, itemB)) {
-          promote(itemA, true);
-          promote(itemB, true);
-        }
-      }
-    }
-
     const tokenGroups = new Map<string, EcartBoSummaryItem[]>();
     for (const item of this.summaryItems) {
       const token = (item.token || '').trim();
@@ -1415,6 +1519,23 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     // Réinitialiser les liens mémoire avant recalcul
     for (const item of this.summaryItems) {
       item.linkedId = undefined;
+    }
+
+    let hasBo = false;
+    let hasPartner = false;
+    for (const item of this.summaryItems) {
+      const env = this.normalizeSummaryEnv(item.env);
+      if (env === 'BO') {
+        hasBo = true;
+      } else if (env === 'PARTENAIRE') {
+        hasPartner = true;
+      }
+      if (hasBo && hasPartner) {
+        break;
+      }
+    }
+    if (!hasBo || !hasPartner) {
+      return;
     }
 
     // Étape 1 : paires 1-1 (même agence ou multiAgence impliqué)
@@ -1688,14 +1809,14 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
    * Calcule le total de la colonne "nombre" pour les items filtrés
    */
   getTotalNombre(): number {
-    return this.filteredItems.reduce((total, item) => total + (item.nombre || 0), 0);
+    return this.filteredTotalNombre;
   }
 
   /**
    * Calcule le total de la colonne "volume" pour les items filtrés
    */
   getTotalVolume(): number {
-    return this.filteredItems.reduce((total, item) => total + (item.montant || 0), 0);
+    return this.filteredTotalVolume;
   }
 
   clearFilters(): void {
@@ -2360,11 +2481,11 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   get selectedSavableCount(): number {
-    return this.getSelectedSavableItems().length;
+    return this.selectedSavableCountCached;
   }
 
   get selectedDeletableCount(): number {
-    return this.getSelectedDeletableItems().length;
+    return this.selectedDeletableCountCached;
   }
 
   isSelected(item: EcartBoSummaryItem): boolean {
@@ -2378,36 +2499,35 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     } else {
       this.selectedRowKeys.add(selectionKey);
     }
+    this.refreshSelectionCache();
     this.cdr.markForCheck();
   }
 
   /** True si tous les éléments sélectionnables (toutes les pages / filtrés) sont sélectionnés. */
   get isAllSelectedFiltered(): boolean {
-    const selectable = this.getSelectableItemsFiltered();
-    return selectable.length > 0 && selectable.every(item => this.selectedRowKeys.has(item.selectionKey));
+    return this.allFilteredSelected;
   }
 
   /** True si au moins une ligne (et pas toutes) parmi les filtrées est sélectionnée (checkbox indéterminée). */
   get isSomeSelectedFiltered(): boolean {
-    const selectable = this.getSelectableItemsFiltered();
-    if (selectable.length === 0) return false;
-    const selectedCount = selectable.filter(item => this.selectedRowKeys.has(item.selectionKey)).length;
-    return selectedCount > 0 && selectedCount < selectable.length;
+    return this.someFilteredSelected;
   }
 
   /** Sélectionne ou désélectionne tous les éléments sélectionnables (toutes les pages en cours). */
   toggleSelectAllFiltered(): void {
-    const selectable = this.getSelectableItemsFiltered();
-    if (this.isAllSelectedFiltered) {
+    const selectable = this.filteredItems.filter(item => item.id != null || item.statut === 'en cours');
+    if (this.allFilteredSelected) {
       selectable.forEach(item => this.selectedRowKeys.delete(item.selectionKey));
     } else {
       selectable.forEach(item => this.selectedRowKeys.add(item.selectionKey));
     }
+    this.refreshSelectionCache();
     this.cdr.markForCheck();
   }
 
   clearSelection(): void {
     this.selectedRowKeys.clear();
+    this.refreshSelectionCache();
     this.cdr.markForCheck();
   }
 
