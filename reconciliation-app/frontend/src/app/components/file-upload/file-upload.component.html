@@ -1387,7 +1387,8 @@
             suppression des lignes inutiles, traitement via le modèle choisi puis téléchargement.
             <ng-container *ngIf="traitementFiles.length > 1"> Fusion de plusieurs fichiers en un seul résultat.</ng-container>
             <ng-container *ngIf="embedTraitementSection">
-                Cochez plusieurs modèles : le ou les fichier(s) chargé(s) sera(ont) traité(s) par chaque modèle sélectionné, un par un, avec un fichier téléchargé par modèle.
+                Recherchez puis cochez les modèles à appliquer : seuls les modèles correspondant à la recherche sont sélectionnés automatiquement.
+                Le ou les fichier(s) chargé(s) sera(ont) traité(s) par chaque modèle coché, un par un, avec un fichier téléchargé par modèle.
             </ng-container>
         </p>
         <p class="traitement-upload-info" *ngIf="embedTraitementSection">

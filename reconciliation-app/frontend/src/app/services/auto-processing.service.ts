@@ -167,6 +167,20 @@ export interface ModelColumnValueMapping {
   enabled: boolean;
 }
 
+/** Règle : si la colonne condition a une valeur donnée, utiliser une autre colonne comme clé. */
+export interface PartnerConditionalKeyRule {
+  whenValue: string;
+  keyColumn: string;
+}
+
+/** Clés partenaire conditionnelles (optionnel) — ex. Type=api_checkout → colonne session. */
+export interface PartnerConditionalKeysConfig {
+  enabled: boolean;
+  conditionColumn: string;
+  rules: PartnerConditionalKeyRule[];
+  defaultKeyColumn?: string;
+}
+
 export interface AutoProcessingModel {
   id?: string; // Optionnel pour la création
   modelId?: string; // ID retourné par le backend
@@ -184,6 +198,7 @@ export interface AutoProcessingModel {
     boModels?: string[];
     boModelKeys?: any;
     boTreatments?: any;
+    partnerConditionalKeys?: PartnerConditionalKeysConfig;
   };
   boColumnFilters?: BOColumnFilter[]; // Filtres BO appliqués
   columnProcessingRules?: ColumnProcessingRule[]; // Règles de traitement des colonnes

@@ -1,4 +1,4 @@
-﻿import { Injectable, OnInit, OnDestroy } from '@angular/core';
+import { Injectable, OnInit, OnDestroy } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout, of, defer } from 'rxjs';
 import { catchError, tap, map, finalize, retry, takeUntil, switchMap, retryWhen, delay, concatMap } from 'rxjs/operators';
@@ -962,6 +962,56 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 catchError(this.handleError)
             )
         );
+    }
+
+    /** Polling progression temps réel pendant un appel /reconcile synchrone. */
+    reconcileWithLiveProgress(
+        request: ReconciliationRequest,
+        onStep?: (step: string, percentage?: number) => void
+    ): Observable<ReconciliationResponse> {
+        const sessionId = request.progressSessionId
+            || `magic-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        request.progressSessionId = sessionId;
+
+        const stopPolling$ = new Subject<void>();
+        const pollSub = timer(0, 450).pipe(
+            takeUntil(stopPolling$),
+            switchMap(() => this.http.get<{ progress?: { progress?: number; step?: string } }>(
+                `${this.apiUrl}/live-progress/${sessionId}`
+            ).pipe(catchError(() => of(null)))),
+            tap(res => {
+                const rawStep = res?.progress?.step;
+                const pct = res?.progress?.progress;
+                if (!rawStep) {
+                    return;
+                }
+                const step = this.sanitizeLiveProgressStep(rawStep);
+                onStep?.(step, typeof pct === 'number' ? pct : undefined);
+                this.updateProgress({
+                    percentage: typeof pct === 'number' ? pct : this.progressSubject.value.percentage,
+                    processed: this.progressSubject.value.processed,
+                    total: this.progressSubject.value.total,
+                    step,
+                    estimatedTimeRemaining: this.progressSubject.value.estimatedTimeRemaining
+                });
+            })
+        ).subscribe();
+
+        return this.reconcile(request).pipe(
+            finalize(() => {
+                stopPolling$.next();
+                stopPolling$.complete();
+                pollSub.unsubscribe();
+            })
+        );
+    }
+
+    private sanitizeLiveProgressStep(step: string): string {
+        const trimmed = step.trim();
+        if (!trimmed || /^en attente$/i.test(trimmed)) {
+            return 'En cours...';
+        }
+        return trimmed.replace(/en attente/gi, 'En cours');
     }
 
     /**

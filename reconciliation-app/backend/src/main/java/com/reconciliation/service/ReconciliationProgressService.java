@@ -14,7 +14,7 @@ public class ReconciliationProgressService {
     }
 
     public ReconciliationProgress getProgress(String sessionId) {
-        return progressMap.getOrDefault(sessionId, new ReconciliationProgress(0, "En attente", 0, 0));
+        return progressMap.getOrDefault(sessionId, new ReconciliationProgress(0, "En cours...", 0, 0));
     }
 
     public void clearProgress(String sessionId) {

@@ -1,4 +1,4 @@
-﻿import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -7,7 +7,7 @@ import { ReconciliationTabsService } from '../../services/reconciliation-tabs.se
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { PopupService } from '../../services/popup.service';
 import { AutoProcessingService } from '../../services/auto-processing.service';
-import { MagicReconciliationService } from '../../services/magic-reconciliation.service';
+import { MagicReconciliationService, MagicReconciliationProgress } from '../../services/magic-reconciliation.service';
 import { Subscription } from 'rxjs';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -426,7 +426,13 @@ import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../.
             </div>
           </div>
           <div class="magic-progress-body">
-            <p>{{ magicProgressMessage }}</p>
+            <div class="magic-progress-step" *ngIf="magicProgressTotal > 0">
+              <span class="magic-progress-badge">{{ magicProgressCurrent }} / {{ magicProgressTotal }}</span>
+            </div>
+            <div class="magic-progress-track" *ngIf="magicProgressPercentage > 0">
+              <div class="magic-progress-fill" [style.width.%]="magicProgressPercentage"></div>
+            </div>
+            <p class="magic-progress-detail">{{ magicProgressMessage }}</p>
           </div>
         </div>
       </div>
@@ -447,6 +453,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   magicPartnerSlots: Array<{ file: File; data: Record<string, string>[]; loading: boolean }> = [];
   magicPipelineRunning = false;
   magicProgressMessage = '';
+  magicProgressCurrent = 0;
+  magicProgressTotal = 0;
+  magicProgressPercentage = 0;
   private magicBoParsed = false;
 
   // Données parsées
@@ -844,6 +853,23 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     }
   }
 
+  private updateMagicProgress(progress: MagicReconciliationProgress): void {
+    if (progress.current != null && progress.total != null && progress.total > 0) {
+      this.magicProgressCurrent = progress.current;
+      this.magicProgressTotal = progress.total;
+    }
+    if (progress.percentage != null && progress.percentage > 0) {
+      this.magicProgressPercentage = Math.min(100, Math.round(progress.percentage));
+    }
+
+    let message = (progress.step ?? '').replace(/en attente/gi, 'En cours');
+    if (progress.percentage != null && progress.percentage > 0 && !/%\s*\)?\s*$/.test(message)) {
+      message = `${message} (${Math.round(progress.percentage)} %)`;
+    }
+    this.magicProgressMessage = message;
+    this.cdr.detectChanges();
+  }
+
   // Méthode pour la réconciliation magique
   private async launchMagicReconciliation(): Promise<void> {
     if (!this.boFile || !this.boData.length || !this.canLaunchMagic) {
@@ -853,6 +879,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
 
     this.magicPipelineRunning = true;
     this.magicProgressMessage = 'Préparation de la réconciliation magique...';
+    this.magicProgressCurrent = 0;
+    this.magicProgressTotal = 0;
+    this.magicProgressPercentage = 0;
     this.isLoading = true;
     this.cdr.detectChanges();
 
@@ -871,10 +900,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
         this.boFile.name,
         this.boData,
         partners,
-        progress => {
-          this.magicProgressMessage = progress.step;
-          this.cdr.detectChanges();
-        }
+        progress => this.updateMagicProgress(progress)
       );
 
       const modeLabel = result.mode === 'pattern'

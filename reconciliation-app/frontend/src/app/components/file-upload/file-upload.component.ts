@@ -1,6 +1,7 @@
-﻿import { Component, EventEmitter, Input, Output, ChangeDetectorRef, NgZone, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ChangeDetectorRef, NgZone, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, AutoProcessingModel, ProcessingResult, ColumnProcessingRule } from '../../services/auto-processing.service';
+import { PartnerConditionalKeysService, PARTNER_CONDITIONAL_KEY_COLUMN } from '../../services/partner-conditional-keys.service';
 import { ModelPreProcessingService } from '../../services/model-preprocessing.service';
 import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
@@ -262,6 +263,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         private progressIndicatorService: ProgressIndicatorService,
         private exportOptimizationService: ExportOptimizationService,
         private modelPreProcessingService: ModelPreProcessingService,
+        private partnerConditionalKeysService: PartnerConditionalKeysService,
         private fileWatcherService: FileWatcherService,
         private cd: ChangeDetectorRef,
         private ngZone: NgZone
@@ -375,12 +377,27 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     private autoSelectTraitementModelFromSearch(): void {
         const query = this.traitementModelSearch.trim().toLowerCase();
-        if (!query || !this.traitementModels.length) {
+        if (!this.traitementModels.length) {
+            return;
+        }
+
+        if (!query) {
+            if (this.isTraitementMultiModelMode) {
+                this.selectedTraitementModelIds.clear();
+                this.selectedTraitementModelId = '';
+                this.traitementAutoSelectedModelHint = '';
+            }
             return;
         }
 
         const filtered = this.filteredTraitementModels;
         if (!filtered.length) {
+            if (this.isTraitementMultiModelMode) {
+                this.selectedTraitementModelIds.clear();
+                this.selectedTraitementModelId = '';
+                this.traitementAutoSelectedModelHint =
+                    `Aucun modèle ne correspond à « ${query} ».`;
+            }
             return;
         }
 
@@ -408,34 +425,38 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Mode /traitement : la recherche ajoute les modèles visibles à la sélection
-     * sans retirer ceux déjà cochés (y compris hors filtre).
+     * Mode /traitement : la recherche remplace la sélection par les modèles visibles
+     * (seuls les résultats filtrés restent cochés).
      */
     private autoSelectTraitementModelsFromSearchMulti(
         query: string,
         filtered: AutoProcessingModel[]
     ): void {
-        let added = 0;
+        const nextSelection = new Set<string>();
         for (const model of filtered) {
             const id = this.getTraitementModelId(model);
-            if (!id || this.selectedTraitementModelIds.has(id)) {
-                continue;
+            if (id) {
+                nextSelection.add(id);
             }
-            this.selectedTraitementModelIds.add(id);
-            added++;
         }
+        this.selectedTraitementModelIds = nextSelection;
         this.syncTraitementPrimaryModelFromMultiSelection();
 
         const total = this.selectedTraitementModelIds.size;
-        if (added > 0) {
+        if (total === 0) {
             this.traitementAutoSelectedModelHint =
-                `${added} modèle(s) ajouté(s) pour « ${query} » — ${total} sélectionné(s) au total.`;
-        } else if (total > 0) {
-            this.traitementAutoSelectedModelHint =
-                `${total} modèle(s) déjà sélectionné(s) — aucun nouveau pour « ${query} ».`;
+                `Aucun modèle sélectionné pour « ${query} ».`;
+        } else if (total === 1) {
+            const model = filtered[0];
+            const preSummary = this.modelPreProcessingService.getPreProcessingSummary(model.preProcessingConfig);
+            let hint = `Modèle sélectionné : ${model.name} (pattern ${model.filePattern})`;
+            if (preSummary.summaryText) {
+                hint += ` — ${preSummary.summaryText} configurés`;
+            }
+            this.traitementAutoSelectedModelHint = hint;
         } else {
             this.traitementAutoSelectedModelHint =
-                `Aucun modèle sélectionné — cochez les modèles à appliquer sur le(s) fichier(s) chargé(s).`;
+                `${total} modèle(s) sélectionné(s) pour « ${query} ».`;
         }
     }
 
@@ -508,12 +529,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     private traitementModelMatchesSearch(model: AutoProcessingModel, query: string): boolean {
         const name = (model.name || '').toLowerCase();
         const pattern = (model.filePattern || '').toLowerCase();
+        if (name.includes(query) || pattern.includes(query)) {
+            return true;
+        }
+        if (query.length < 2) {
+            return false;
+        }
         const type = model.fileType === 'bo'
             ? 'bo back office'
             : model.fileType === 'partner'
                 ? 'partenaire partner'
                 : 'bo partenaire';
-        return name.includes(query) || pattern.includes(query) || type.includes(query);
+        return type.includes(query);
     }
 
     private pickBestTraitementModelForSearch(
@@ -600,7 +627,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.suggestTraitementModelFromFiles();
             } else if (this.traitementModelSearch.trim()) {
                 this.autoSelectTraitementModelFromSearch();
-            } else if (this.traitementModels.length === 1) {
+            } else if (this.traitementModels.length === 1 && !this.isTraitementMultiModelMode) {
                 this.selectedTraitementModelId = this.getTraitementModelId(this.traitementModels[0]);
             }
         } catch (error) {
@@ -6949,6 +6976,20 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         confidence: number;
         modelId?: string;
     } | null {
+        const conditional = this.partnerConditionalKeysService.tryResolveConditionalPartnerKey(
+            model,
+            boData,
+            partnerData
+        );
+        if (conditional) {
+            return {
+                ...conditional,
+                source: 'model',
+                confidence: 1.0,
+                modelId: model.modelId || model.id
+            };
+        }
+
         if (!model.reconciliationKeys?.partnerKeys?.length) {
             return null;
         }
@@ -7051,7 +7092,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             if (partnerModels.length === 0) {
                 partnerModels = models.filter(m =>
                     (m.fileType === 'partner' || m.fileType === 'both') &&
-                    !!m.reconciliationKeys?.partnerKeys?.length
+                    this.modelHasPartnerKeyConfig(m)
                 );
             }
 
@@ -7068,6 +7109,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         throw new Error(
             `Aucun modèle de réconciliation trouvé pour les fichiers ${boFileName || 'BO'} et ${partnerFileName || 'Partenaire'}. ` +
             `Veuillez configurer un modèle de traitement automatique dans la section "Modèles de Traitement".`
+        );
+    }
+
+    private modelHasPartnerKeyConfig(model: AutoProcessingModel): boolean {
+        return !!(
+            model.reconciliationKeys?.partnerKeys?.length ||
+            this.partnerConditionalKeysService.isEnabled(model.reconciliationKeys?.partnerConditionalKeys)
         );
     }
 
@@ -7613,15 +7661,30 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 // Traiter les données
                 let processedBoData = this.autoBoData;
                 let processedPartnerData = this.autoPartnerData;
+                let partnerKeyColumn = keyDetectionResult.partnerKeyColumn;
 
-                // Appliquer les boTreatments du modèle
+                // Appliquer les traitements du modèle (boTreatments + clés conditionnelles partenaire)
                 if (keyDetectionResult.modelId) {
                     try {
                         const models = await this.autoProcessingService.getAllModelsUnrestricted();
-                        const usedModel = models.find(m => m.id === keyDetectionResult.modelId);
-                        
-                        if (usedModel && usedModel.reconciliationKeys?.boTreatments) {
-                            processedBoData = this.applyBoTreatments(processedBoData, usedModel.reconciliationKeys.boTreatments);
+                        const usedModel = models.find(m =>
+                            (m.id || m.modelId) === keyDetectionResult.modelId
+                        );
+
+                        if (usedModel?.reconciliationKeys?.boTreatments) {
+                            processedBoData = this.applyBoTreatments(
+                                processedBoData,
+                                usedModel.reconciliationKeys.boTreatments
+                            );
+                        }
+
+                        const conditionalConfig = usedModel?.reconciliationKeys?.partnerConditionalKeys;
+                        if (this.partnerConditionalKeysService.isEnabled(conditionalConfig)) {
+                            processedPartnerData = this.partnerConditionalKeysService.applyPartnerConditionalKeys(
+                                processedPartnerData,
+                                conditionalConfig!
+                            );
+                            partnerKeyColumn = PARTNER_CONDITIONAL_KEY_COLUMN;
                         }
                     } catch (error) {
                     }
@@ -7630,7 +7693,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 // Configurer les colonnes de comparaison
                 const comparisonColumns = [{
                     boColumn: keyDetectionResult.boKeyColumn,
-                    partnerColumn: keyDetectionResult.partnerKeyColumn
+                    partnerColumn: partnerKeyColumn
             }];
 
                 
@@ -7652,16 +7715,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 
                 if (processedPartnerData.length > 0) {
                     const partnerColumns = Object.keys(processedPartnerData[0]);
-                    const partnerKeyExists = partnerColumns.includes(keyDetectionResult.partnerKeyColumn);
+                    const partnerKeyExists = partnerColumns.includes(partnerKeyColumn);
                     if (!partnerKeyExists) {
                         // Chercher des colonnes similaires
                         const similarColumns = partnerColumns.filter(col => 
-                            col.toLowerCase().includes(keyDetectionResult.partnerKeyColumn.toLowerCase()) ||
-                            keyDetectionResult.partnerKeyColumn.toLowerCase().includes(col.toLowerCase())
+                            col.toLowerCase().includes(partnerKeyColumn.toLowerCase()) ||
+                            partnerKeyColumn.toLowerCase().includes(col.toLowerCase())
                         );
                         if (similarColumns.length > 0) {
                         }
-                        throw new Error(`Colonne clé Partner "${keyDetectionResult.partnerKeyColumn}" introuvable dans les données. Colonnes disponibles: ${partnerColumns.join(', ')}`);
+                        throw new Error(`Colonne clé Partner "${partnerKeyColumn}" introuvable dans les données. Colonnes disponibles: ${partnerColumns.join(', ')}`);
                     }
                 }
                     
@@ -7682,7 +7745,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         boFileContent: normalizedBoData,
                         partnerFileContent: normalizedPartnerData,
                     boKeyColumn: keyDetectionResult.boKeyColumn,
-                    partnerKeyColumn: keyDetectionResult.partnerKeyColumn,
+                    partnerKeyColumn: partnerKeyColumn,
                         comparisonColumns: comparisonColumns,
                 boColumnFilters: []
             };

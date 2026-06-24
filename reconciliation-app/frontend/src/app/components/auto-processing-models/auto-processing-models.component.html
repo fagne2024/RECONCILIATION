@@ -67,7 +67,7 @@
 
   <!-- Formulaire de création/édition pour modèles autonomes -->
   <div class="form-section" *ngIf="editingModel || showCreateForm">
-    <h3>{{ editingModel ? 'Modifier le modèle autonome' : 'Créer un nouveau modèle autonome' }}</h3>
+    <h3>{{ isDuplicatingModel ? 'Dupliquer le modèle' : (editingModel ? 'Modifier le modèle autonome' : 'Créer un nouveau modèle autonome') }}</h3>
     <p class="form-description">
       <i class="fas fa-robot"></i> 
       Configurez un modèle autonome qui gérera automatiquement la réconciliation sans code dur.
@@ -173,6 +173,74 @@
             <small class="form-text text-muted">Sélectionnez les colonnes clés du fichier partenaire</small>
           </div>
 
+          <div class="form-group partner-conditional-keys">
+            <label class="conditional-keys-toggle">
+              <input type="checkbox"
+                     [(ngModel)]="partnerConditionalKeysEnabled"
+                     [ngModelOptions]="{standalone: true}">
+              Clés partenaire conditionnelles (optionnel)
+            </label>
+            <small class="form-text text-muted d-block">
+              Choisir une colonne clé selon la valeur d'une autre colonne.
+              Ex. si « Type de transaction » = <code>api_checkout</code> → « Identifiant de session API »,
+              si = <code>api_payout</code> → « Référence client ».
+            </small>
+
+            <div class="conditional-keys-panel" *ngIf="partnerConditionalKeysEnabled">
+              <div class="form-row">
+                <div class="form-group col-md-6">
+                  <label>Colonne condition</label>
+                  <select class="form-control"
+                          [(ngModel)]="partnerConditionColumn"
+                          [ngModelOptions]="{standalone: true}">
+                    <option value="">— Sélectionner —</option>
+                    <option *ngFor="let column of availableTemplateColumns" [value]="column">{{ column }}</option>
+                  </select>
+                </div>
+                <div class="form-group col-md-6">
+                  <label>Colonne clé par défaut (optionnel)</label>
+                  <select class="form-control"
+                          [(ngModel)]="partnerConditionalDefaultKeyColumn"
+                          [ngModelOptions]="{standalone: true}">
+                    <option value="">— Aucune —</option>
+                    <option *ngFor="let column of availableTemplateColumns" [value]="column">{{ column }}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="conditional-rules-list">
+                <div class="conditional-rule-row"
+                     *ngFor="let rule of partnerConditionalKeyRules; let i = index">
+                  <span>Si valeur =</span>
+                  <input type="text"
+                         class="form-control rule-value-input"
+                         [(ngModel)]="rule.whenValue"
+                         [ngModelOptions]="{standalone: true}"
+                         placeholder="api_checkout">
+                  <span>→ clé =</span>
+                  <select class="form-control"
+                          [(ngModel)]="rule.keyColumn"
+                          [ngModelOptions]="{standalone: true}">
+                    <option value="">— Colonne —</option>
+                    <option *ngFor="let column of availableTemplateColumns" [value]="column">{{ column }}</option>
+                  </select>
+                  <button type="button"
+                          class="btn btn-sm btn-outline-danger"
+                          (click)="removePartnerConditionalKeyRule(i)"
+                          title="Supprimer la règle">
+                    <i class="fas fa-trash"></i>
+                  </button>
+                </div>
+              </div>
+
+              <button type="button"
+                      class="btn btn-sm btn-outline-primary mt-2"
+                      (click)="addPartnerConditionalKeyRule()">
+                <i class="fas fa-plus"></i> Ajouter une règle
+              </button>
+            </div>
+          </div>
+
           <div class="form-group">
             <label>Modèles BO à utiliser</label>
             <div class="bo-model-selection" *ngIf="availableBOModels.length > 0">
@@ -241,11 +309,20 @@
 
 
         <!-- Résumé des sélections -->
-        <div class="selection-summary" *ngIf="selectedPartnerKeys.length > 0 || selectedBOModels.length > 0 || selectedBOKeys.length > 0">
+        <div class="selection-summary" *ngIf="selectedPartnerKeys.length > 0 || selectedBOModels.length > 0 || selectedBOKeys.length > 0 || isPartnerConditionalKeysConfigValid()">
           <h5><i class="fas fa-list"></i> Résumé des sélections</h5>
           <div class="summary-items">
             <div class="summary-item" *ngIf="selectedPartnerKeys.length > 0">
               <strong>Clés partenaire :</strong> {{ selectedPartnerKeys.join(', ') }}
+            </div>
+            <div class="summary-item" *ngIf="isPartnerConditionalKeysConfigValid()">
+              <strong>Clés conditionnelles :</strong>
+              {{ partnerConditionColumn }} →
+              <span *ngFor="let rule of partnerConditionalKeyRules; let last = last">
+                <ng-container *ngIf="rule.whenValue && rule.keyColumn">
+                  « {{ rule.whenValue }} » → {{ rule.keyColumn }}<span *ngIf="!last"> ; </span>
+                </ng-container>
+              </span>
             </div>
             <div class="summary-item" *ngIf="selectedBOModels.length > 0">
               <strong>Modèles BO :</strong> {{ getSelectedBOModelNames() }}
@@ -362,15 +439,24 @@
 
       <div class="info-message" *ngIf="modelForm.get('fileType')?.value === 'partner' && 
                                    modelForm.get('templateFile')?.value && 
-                                   availableColumns.length === 0">
+                                   isLoadingTemplateColumns">
         <div class="alert alert-warning">
           <i class="fas fa-exclamation-triangle"></i>
           <strong>Attention :</strong> Les colonnes du fichier modèle sont en cours de chargement...
         </div>
       </div>
 
+      <div class="info-message" *ngIf="modelForm.get('templateFile')?.value &&
+                                   !isLoadingTemplateColumns &&
+                                   getPreProcessingColumns().length === 0">
+        <div class="alert alert-warning">
+          <i class="fas fa-exclamation-triangle"></i>
+          <strong>Attention :</strong> Aucune colonne n'a pu être chargée pour ce fichier modèle. Vérifiez que le fichier est présent dans le dossier watch-folder.
+        </div>
+      </div>
+
       <!-- Message informatif pour les règles de traitement des colonnes -->
-      <div class="info-message" *ngIf="showColumnRulesSection && availableColumnsForTemplate.length === 0">
+      <div class="info-message" *ngIf="showColumnRulesSection && !isLoadingTemplateColumns && getPreProcessingColumns().length === 0 && !modelForm.get('templateFile')?.value">
         <div class="alert alert-info">
           <i class="fas fa-info-circle"></i>
           <strong>Information :</strong> Les colonnes du modèle seront automatiquement chargées pour tous les types (partner, bo, both) avec encodage et typage corrects.
@@ -1361,10 +1447,10 @@
 
       <div class="form-actions">
         <button type="submit" class="btn btn-primary" [disabled]="!isFormValid()">
-          {{ editingModel ? 'Modifier' : 'Créer' }}
+          {{ isDuplicatingModel ? 'Dupliquer' : (editingModel ? 'Modifier' : 'Créer') }}
         </button>
         <button type="button" class="btn btn-secondary" (click)="cancelEdit()">
-          {{ editingModel ? 'Annuler' : 'Fermer' }}
+          {{ editingModel || isDuplicatingModel ? 'Annuler' : 'Fermer' }}
         </button>
         
 
@@ -1375,8 +1461,9 @@
             <i class="fas fa-info-circle"></i>
             <strong>Pour activer le bouton "Créer" :</strong>
             <ul>
-              <li *ngIf="selectedPartnerKeys.length === 0">✅ Sélectionnez au moins une clé partenaire</li>
+              <li *ngIf="selectedPartnerKeys.length === 0 && !isPartnerConditionalKeysConfigValid()">✅ Sélectionnez au moins une clé partenaire ou configurez les clés conditionnelles</li>
               <li *ngIf="selectedPartnerKeys.length > 0">✅ Clés partenaire sélectionnées ({{ selectedPartnerKeys.length }})</li>
+              <li *ngIf="isPartnerConditionalKeysConfigValid()">✅ Clés conditionnelles configurées</li>
               <li *ngIf="selectedBOModels.length === 0">✅ Sélectionnez au moins un modèle BO</li>
               <li *ngIf="selectedBOModels.length > 0">✅ Modèles BO sélectionnés ({{ selectedBOModels.length }})</li>
             </ul>
@@ -1484,6 +1571,9 @@
             <div class="model-actions">
               <button (click)="editModel(model)" class="btn btn-sm btn-edit" title="Modifier">
                 <i class="fas fa-edit"></i>
+              </button>
+              <button (click)="duplicateModel(model)" class="btn btn-sm btn-duplicate" title="Dupliquer">
+                <i class="fas fa-copy"></i>
               </button>
               <button (click)="deleteModel(model)" class="btn btn-sm btn-delete" title="Supprimer">
                 <i class="fas fa-trash"></i>

@@ -1,7 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { FormBuilder, FormGroup, Validators, FormArray } from '@angular/forms';
-import { AutoProcessingService, AutoProcessingModel, DEFAULT_PRE_PROCESSING_SECTION_ORDER, ModelColumnMathRule, ModelFormatAction, ModelFormatActionType, ModelFormatColumnSettings, ModelPreProcessingConfig, ModelPreProcessingSectionId, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule } from '../../services/auto-processing.service';
+import { AutoProcessingService, AutoProcessingModel, DEFAULT_PRE_PROCESSING_SECTION_ORDER, ModelColumnMathRule, ModelFormatAction, ModelFormatActionType, ModelFormatColumnSettings, ModelPreProcessingConfig, ModelPreProcessingSectionId, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule, PartnerConditionalKeyRule, PartnerConditionalKeysConfig } from '../../services/auto-processing.service';
 import { FileWatcherService } from '../../services/file-watcher.service';
 import { ModelManagementService } from '../../services/model-management.service';
 import { PopupService } from '../../services/popup.service';
@@ -43,6 +43,7 @@ export class AutoProcessingModelsComponent implements OnInit {
   successMessage = '';
   editingModel: AutoProcessingModel | null = null;
   showCreateForm = false;
+  isDuplicatingModel = false;
   
   // Propriétés pour forcer la mise à jour des classes CSS
   forceUpdate = false;
@@ -118,9 +119,18 @@ export class AutoProcessingModelsComponent implements OnInit {
   selectedPartnerKeys: string[] = [];
   selectedBOModels: string[] = [];
   selectedBOKeys: string[] = [];
+
+  /** Clés partenaire conditionnelles (optionnel). */
+  partnerConditionalKeysEnabled = false;
+  partnerConditionColumn = '';
+  partnerConditionalDefaultKeyColumn = '';
+  partnerConditionalKeyRules: PartnerConditionalKeyRule[] = [];
   
   // Colonnes disponibles pour le fichier modèle
   availableTemplateColumns: string[] = [];
+
+  /** Évite les réinitialisations lors du chargement programmatique d'un modèle en édition. */
+  private isRestoringModelState = false;
   
   // Sélection multiple de colonnes
   selectedColumns: string[] = [];
@@ -693,50 +703,64 @@ export class AutoProcessingModelsComponent implements OnInit {
   }
 
   private loadColumnsForTemplateFile(templateFile: string): void {
-    console.log('🔍 Chargement des colonnes pour le fichier modèle:', templateFile);
-    
-    // Gestion spécifique pour OPPART.xls
-    if (templateFile.toLowerCase().includes('oppart')) {
-      console.log('🔍 Détection spécifique OPPART - Application des colonnes par défaut');
-      this.availableColumnsForTemplate = [
+    const fileType = this.modelForm.get('fileType')?.value || 'partner';
+    void this.resolveAndApplyTemplateColumns(templateFile, fileType).then(() => {
+      this.cdr.detectChanges();
+    });
+  }
+
+  private async ensureAvailableFilesLoaded(): Promise<void> {
+    if (!this.availableFiles?.length) {
+      await this.loadAvailableFiles();
+    }
+  }
+
+  private findAvailableFile(templateFile: string) {
+    const normalized = (templateFile || '').trim().toLowerCase();
+    if (!normalized) {
+      return undefined;
+    }
+    const exact = this.availableFiles.find(f => f.fileName === templateFile);
+    if (exact) {
+      return exact;
+    }
+    const caseInsensitive = this.availableFiles.find(
+      f => f.fileName.trim().toLowerCase() === normalized
+    );
+    if (caseInsensitive) {
+      return caseInsensitive;
+    }
+    const templateBase = normalized.replace(/\.[^.]+$/, '');
+    return this.availableFiles.find(f => {
+      const fileBase = f.fileName.trim().toLowerCase().replace(/\.[^.]+$/, '');
+      return fileBase === templateBase
+        || normalized.includes(fileBase)
+        || fileBase.includes(templateBase);
+    });
+  }
+
+  private getHardcodedColumnsForTemplate(templateFile: string): string[] | null {
+    const lower = templateFile.toLowerCase();
+    if (lower.includes('oppart')) {
+      return [
         'ID Opération', 'Type Opération', 'Montant', 'Solde avant', 'Solde après',
         'Code propriétaire', 'Téléphone', 'Statut', 'ID Transaction', 'Num bordereau',
         'Date opération', 'Date de versement', 'Banque appro', 'Login demandeur Appro',
         'Login valideur Appro', 'Motif rejet', 'Frais connexion', 'Numéro Trans GU',
         'Agent', 'Motif régularisation', 'groupe de réseau'
       ];
-      console.log('✅ Colonnes OPPART par défaut appliquées:', this.availableColumnsForTemplate);
-      
-      // S'assurer que les clés sélectionnées sont dans la liste
-      if (this.editingModel && this.editingModel.reconciliationKeys?.partnerKeys) {
-        this.editingModel.reconciliationKeys.partnerKeys.forEach(key => {
-          if (!this.availableColumnsForTemplate.includes(key)) {
-            this.availableColumnsForTemplate.push(key);
-            console.log(`✅ Clé OPPART "${key}" ajoutée à la liste`);
-          }
-        });
-      }
-      return;
     }
-    
-    // Gestion spécifique pour TRXBO.xls
-    if (templateFile.toLowerCase().includes('trxbo')) {
-      console.log('🔍 Détection spécifique TRXBO - Application des colonnes par défaut');
-      this.availableColumnsForTemplate = [
+    if (lower.includes('trxbo')) {
+      return [
         'ID', 'IDTransaction', 'téléphone client', 'montant', 'Service',
         'Moyen de Paiement', 'Agence', 'Agent', 'Type agent', 'PIXI',
         'Date', 'Numéro Trans GU', 'GRX', 'Statut', 'Latitude',
         'Longitude', 'ID Partenaire DIST', 'Expéditeur', 'Pays provenance',
         'Bénéficiaire', 'Canal de distribution'
       ];
-      console.log('✅ Colonnes TRXBO par défaut appliquées:', this.availableColumnsForTemplate);
-      return;
     }
-    
-    // Gestion spécifique pour USSDPART.xls
-    if (templateFile.toLowerCase().includes('ussdpart')) {
-      console.log('🔍 Détection spécifique USSDPART - Application des colonnes par défaut');
-      this.availableColumnsForTemplate = [
+    if (lower.includes('ussdpart')) {
+      return [
         'ID', 'Groupe Réseaux', 'Code réseau', 'Agence', 'Code PIXI',
         'Code de Proxy', 'Code service', 'Numéro Trans GU', 'Destinataire',
         'Login agent', 'Type agent', 'date de création', 'Date d\'envoi vers part',
@@ -745,56 +769,188 @@ export class AutoProcessingModelsComponent implements OnInit {
         'Longitude', 'Partenaire dist ID', 'Agence SC', 'Groupe reseau SC',
         'Agent SC', 'PDA SC'
       ];
-      console.log('✅ Colonnes USSDPART par défaut appliquées:', this.availableColumnsForTemplate);
-      
-      // S'assurer que les clés sélectionnées sont dans la liste
-      if (this.editingModel && this.editingModel.reconciliationKeys?.partnerKeys) {
-        this.editingModel.reconciliationKeys.partnerKeys.forEach(key => {
-          if (!this.availableColumnsForTemplate.includes(key)) {
-            this.availableColumnsForTemplate.push(key);
-            console.log(`✅ Clé USSDPART "${key}" ajoutée à la liste`);
-          }
-        });
-      }
-      return;
     }
-    
-    const selectedFile = this.availableFiles.find(file => file.fileName === templateFile);
-    if (selectedFile && selectedFile.columns) {
-      this.availableColumnsForTemplate = selectedFile.columns.map((col: string) => this.normalizeColumnName(col));
-      console.log('✅ Colonnes chargées pour le fichier modèle:', this.availableColumnsForTemplate);
-    } else {
-      console.warn('⚠️ Fichier modèle non trouvé ou sans colonnes:', templateFile);
-      this.availableColumnsForTemplate = [];
+    return null;
+  }
+
+  private async resolveTemplateColumnNames(templateFile: string): Promise<string[]> {
+    await this.ensureAvailableFilesLoaded();
+
+    const hardcoded = this.getHardcodedColumnsForTemplate(templateFile);
+    if (hardcoded?.length) {
+      return this.normalizeColumnNames(hardcoded);
+    }
+
+    const selectedFile = this.findAvailableFile(templateFile);
+    if (selectedFile?.columns?.length) {
+      return this.normalizeColumnNames(selectedFile.columns);
+    }
+
+    const simulated = await this.getFileColumns(templateFile);
+    return this.normalizeColumnNames(simulated);
+  }
+
+  private extractColumnsFromPreProcessingConfig(config?: ModelPreProcessingConfig | null): string[] {
+    if (!config) {
+      return [];
+    }
+    const columns = new Set<string>();
+    (config.rowFilters || []).forEach(filter => filter.column?.trim() && columns.add(filter.column.trim()));
+    (config.valueMappings || []).forEach(mapping => mapping.column?.trim() && columns.add(mapping.column.trim()));
+    (config.columnRenameRules || []).forEach(rule => {
+      if (rule.sourceColumn?.trim()) {
+        columns.add(rule.sourceColumn.trim());
+      }
+      if (rule.targetColumn?.trim()) {
+        columns.add(rule.targetColumn.trim());
+      }
+    });
+    (config.columnConcatRules || []).forEach(rule => {
+      rule.sourceColumns?.forEach(col => col?.trim() && columns.add(col.trim()));
+      if (rule.targetColumn?.trim()) {
+        columns.add(rule.targetColumn.trim());
+      }
+    });
+    (config.columnMathRules || []).forEach(rule => {
+      [rule.sourceColumnA, rule.sourceColumnB, rule.targetColumn].forEach(col => {
+        if (col?.trim()) {
+          columns.add(col.trim());
+        }
+      });
+    });
+    (config.formatActions || []).forEach(action => {
+      action.columns?.forEach(col => col?.trim() && columns.add(col.trim()));
+      Object.keys(action.columnSettings || {}).forEach(col => col?.trim() && columns.add(col.trim()));
+    });
+    return [...columns];
+  }
+
+  private extractColumnsFromConditionalKeys(config?: PartnerConditionalKeysConfig | null): string[] {
+    if (!config) {
+      return [];
+    }
+    const columns = new Set<string>();
+    if (config.conditionColumn?.trim()) {
+      columns.add(config.conditionColumn.trim());
+    }
+    if (config.defaultKeyColumn?.trim()) {
+      columns.add(config.defaultKeyColumn.trim());
+    }
+    (config.rules || []).forEach(rule => {
+      if (rule.keyColumn?.trim()) {
+        columns.add(rule.keyColumn.trim());
+      }
+    });
+    return [...columns];
+  }
+
+  private mergeTemplateColumnLists(base: string[], extra: string[]): string[] {
+    const merged = [...base];
+    for (const column of extra) {
+      const normalized = this.normalizeColumnName(column);
+      if (normalized && !merged.includes(normalized)) {
+        merged.push(normalized);
+      }
+    }
+    return merged.sort((a, b) => a.localeCompare(b, 'fr'));
+  }
+
+  private syncTemplateColumnLists(columns: string[]): void {
+    const normalized = this.normalizeColumnNames(columns.filter(Boolean));
+    this.availableTemplateColumns = [...normalized];
+    this.availableColumnsForTemplate = [...normalized];
+    this.availableColumns = [...normalized];
+  }
+
+  private async resolveAndApplyTemplateColumns(
+    templateFile: string,
+    fileType: string,
+    extras?: {
+      partnerKeys?: string[];
+      boKeys?: string[];
+      preProcessingConfig?: ModelPreProcessingConfig | null;
+      partnerConditionalKeys?: PartnerConditionalKeysConfig | null;
+    }
+  ): Promise<string[]> {
+    if (!templateFile?.trim()) {
+      this.syncTemplateColumnLists([]);
+      return [];
+    }
+
+    this.isLoadingTemplateColumns = true;
+    try {
+      const resolved = await this.resolveTemplateColumnNames(templateFile);
+      const extraColumns = [
+        ...(extras?.partnerKeys || []),
+        ...(extras?.boKeys || []),
+        ...this.extractColumnsFromPreProcessingConfig(extras?.preProcessingConfig),
+        ...this.extractColumnsFromConditionalKeys(extras?.partnerConditionalKeys)
+      ];
+      const columns = this.mergeTemplateColumnLists(resolved, extraColumns);
+      this.syncTemplateColumnLists(columns);
+      console.log('✅ Colonnes modèle appliquées:', {
+        templateFile,
+        fileType,
+        count: columns.length
+      });
+      return columns;
+    } catch (error) {
+      console.error('❌ Erreur lors du chargement des colonnes du fichier modèle:', error);
+      this.errorMessage = 'Erreur lors du chargement des colonnes du fichier modèle';
+      return [];
+    } finally {
+      this.isLoadingTemplateColumns = false;
     }
   }
 
   private onBOModelsChange(): void {
+    if (this.isRestoringModelState) {
+      return;
+    }
+
     const selectedBOModels = this.modelForm.get('reconciliationKeys.boModels')?.value || [];
     const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
     const boTreatmentsGroup = this.modelForm.get('reconciliationKeys.boTreatments') as FormGroup;
-    
+
+    const preservedKeys: Record<string, string[]> = {};
+    const preservedTreatments: Record<string, unknown> = {};
+    Object.keys(boModelKeysGroup.controls).forEach(key => {
+      preservedKeys[key] = boModelKeysGroup.get(key)?.value || [];
+    });
+    Object.keys(boTreatmentsGroup.controls).forEach(key => {
+      preservedTreatments[key] = boTreatmentsGroup.get(key)?.value || [];
+    });
+
     console.log('🔍 Modèles BO sélectionnés:', selectedBOModels);
-    
-    // Nettoyer les groupes existants
+
     Object.keys(boModelKeysGroup.controls).forEach(key => {
       boModelKeysGroup.removeControl(key);
     });
     Object.keys(boTreatmentsGroup.controls).forEach(key => {
       boTreatmentsGroup.removeControl(key);
     });
-    
-    // Charger les colonnes de tous les modèles BO sélectionnés
+
     this.loadBOColumnsFromSelectedModels(selectedBOModels);
-    
-    // Ajouter les nouveaux contrôles pour chaque modèle BO sélectionné
+
+    const fallbackKeys = this.selectedBOKeys.length > 0 ? [...this.selectedBOKeys] : [];
+
     selectedBOModels.forEach((modelId: string) => {
-      const model = this.models.find(m => m.id === modelId);
+      const model = this.models.find(m => m.id === modelId || m.modelId === modelId);
       if (model) {
-        boModelKeysGroup.addControl(modelId, this.fb.control([]));
-        boTreatmentsGroup.addControl(modelId, this.fb.control([]));
+        const keys = preservedKeys[modelId]?.length
+          ? preservedKeys[modelId]
+          : fallbackKeys;
+        boModelKeysGroup.addControl(modelId, this.fb.control(keys));
+        boTreatmentsGroup.addControl(
+          modelId,
+          this.fb.control(preservedTreatments[modelId] || [])
+        );
       }
     });
+
+    if (fallbackKeys.length > 0) {
+      this.selectedBOKeys = [...fallbackKeys];
+    }
   }
 
   getAvailableBOModels(): AutoProcessingModel[] {
@@ -845,6 +1001,12 @@ export class AutoProcessingModelsComponent implements OnInit {
     
     this.availableBOColumns = Array.from(allColumns).sort();
     console.log('📋 Toutes les colonnes BO disponibles:', this.availableBOColumns);
+
+    this.selectedBOKeys.forEach(key => {
+      if (key && !this.availableBOColumns.includes(key)) {
+        this.availableBOColumns.push(key);
+      }
+    });
     
     // S'assurer que les clés BO sélectionnées sont dans la liste
     if (this.editingModel && this.editingModel.reconciliationKeys?.boKeys) {
@@ -877,9 +1039,44 @@ export class AutoProcessingModelsComponent implements OnInit {
     return columnName;
   }
 
+  private extractBOKeysFromReconciliationKeys(reconciliationKeys: {
+    boKeys?: string[];
+    boModelKeys?: Record<string, string[]>;
+  }): string[] {
+    let allBOKeys: string[] = [];
+    if (reconciliationKeys.boModelKeys && Object.keys(reconciliationKeys.boModelKeys).length > 0) {
+      Object.values(reconciliationKeys.boModelKeys).forEach((keys: string[]) => {
+        if (Array.isArray(keys)) {
+          allBOKeys = allBOKeys.concat(keys);
+        }
+      });
+    }
+    if (allBOKeys.length === 0 && reconciliationKeys.boKeys?.length) {
+      allBOKeys = reconciliationKeys.boKeys;
+    }
+    return [...new Set(allBOKeys.map(key => this.normalizeColumnName(key)))];
+  }
+
+  /** Synchronise les sélections UI vers le formulaire avant sauvegarde. */
+  private syncReconciliationKeysBeforeSave(): void {
+    const boModelKeys: Record<string, string[]> = {};
+    this.selectedBOModels.forEach(modelId => {
+      boModelKeys[modelId] = [...this.selectedBOKeys];
+    });
+    this.modelForm.patchValue({
+      reconciliationKeys: {
+        partnerKeys: this.selectedPartnerKeys,
+        boModels: this.selectedBOModels,
+        boKeys: this.selectedBOKeys,
+        boModelKeys
+      }
+    }, { emitEvent: false });
+  }
+
   saveModel(): void {
     // Utiliser notre logique de validation personnalisée
     if (this.isFormValid()) {
+      this.syncReconciliationKeysBeforeSave();
       const formValue = this.modelForm.value;
       
       // Validation supplémentaire pour le pattern
@@ -900,7 +1097,8 @@ export class AutoProcessingModelsComponent implements OnInit {
           boKeys: formValue.reconciliationKeys.boKeys || [],
           boModels: formValue.reconciliationKeys.boModels || [],
           boModelKeys: formValue.reconciliationKeys.boModelKeys || {},
-          boTreatments: formValue.reconciliationKeys.boTreatments || {}
+          boTreatments: formValue.reconciliationKeys.boTreatments || {},
+          partnerConditionalKeys: this.buildPartnerConditionalKeysConfig()
         },
         columnProcessingRules: this.columnProcessingRules, // Ajouter les règles de traitement
         // Nouvelles configurations autonomes
@@ -963,6 +1161,10 @@ export class AutoProcessingModelsComponent implements OnInit {
       }
 
       savePromise.then(savedModel => {
+        const wasEdit = !!this.editingModel;
+        const wasDuplicate = this.isDuplicatingModel;
+        const actionLabel = wasEdit ? 'modifié' : (wasDuplicate ? 'dupliqué' : 'créé');
+
         // Sauvegarder les règles de traitement des colonnes si elles existent
         // Note: Les règles sont déjà incluses dans modelData.columnProcessingRules
         // mais on les sauvegarde séparément pour s'assurer qu'elles sont bien persistées
@@ -971,18 +1173,19 @@ export class AutoProcessingModelsComponent implements OnInit {
           this.autoProcessingService.saveColumnProcessingRulesBatch(finalModelId, this.columnProcessingRules)
             .then((savedRules) => {
               console.log('✅ Règles de traitement sauvegardées:', savedRules.length);
-              this.successMessage = `Modèle ${this.editingModel ? 'modifié' : 'créé'} avec ${this.columnProcessingRules.length} règle(s) de traitement`;
+              this.successMessage = `Modèle ${actionLabel} avec ${this.columnProcessingRules.length} règle(s) de traitement`;
             })
             .catch(error => {
               console.error('❌ Erreur lors de la sauvegarde des règles:', error);
-              this.successMessage = `Modèle ${this.editingModel ? 'modifié' : 'créé'} mais erreur lors de la sauvegarde des règles`;
+              this.successMessage = `Modèle ${actionLabel} mais erreur lors de la sauvegarde des règles`;
             });
         } else {
-          this.successMessage = `Modèle ${this.editingModel ? 'modifié' : 'créé'} avec succès`;
+          this.successMessage = `Modèle ${actionLabel} avec succès`;
         }
         
         this.showCreateForm = false;
         this.editingModel = null;
+        this.isDuplicatingModel = false;
         this.modelForm.reset({
           fileType: 'bo',
           autoApply: true,
@@ -1003,51 +1206,61 @@ export class AutoProcessingModelsComponent implements OnInit {
     }
   }
 
-  editModel(model: AutoProcessingModel): void {
-    console.log('🔍 editModel() appelé avec le modèle:', model);
-    console.log('🔍 filePattern du modèle:', model.filePattern);
-    
-    this.editingModel = model;
+  editModel(model: AutoProcessingModel, mode: 'edit' | 'duplicate' = 'edit'): void {
+    const isDuplicate = mode === 'duplicate';
+    this.isDuplicatingModel = isDuplicate;
+    this.editingModel = isDuplicate ? null : model;
+    this.showCreateForm = isDuplicate || !!this.editingModel;
+
+    const sourceModel = isDuplicate ? this.buildModelDuplicate(model) : model;
+
+    console.log('🔍 editModel() appelé avec le modèle:', sourceModel, 'mode:', mode);
+
+    this.isRestoringModelState = true;
     
     // S'assurer que les reconciliationKeys sont complètes
     const reconciliationKeys = {
-      partnerKeys: model.reconciliationKeys?.partnerKeys || [],
-      boKeys: model.reconciliationKeys?.boKeys || [],
-      boModels: model.reconciliationKeys?.boModels || [],
-      boModelKeys: model.reconciliationKeys?.boModelKeys || {},
-      boTreatments: model.reconciliationKeys?.boTreatments || {}
+      partnerKeys: sourceModel.reconciliationKeys?.partnerKeys || [],
+      boKeys: sourceModel.reconciliationKeys?.boKeys || [],
+      boModels: sourceModel.reconciliationKeys?.boModels || [],
+      boModelKeys: sourceModel.reconciliationKeys?.boModelKeys || {},
+      boTreatments: sourceModel.reconciliationKeys?.boTreatments || {},
+      partnerConditionalKeys: sourceModel.reconciliationKeys?.partnerConditionalKeys
     };
     
     console.log('🔍 Valeurs à patcher dans le formulaire:', {
-      name: model.name,
-      filePattern: model.filePattern,
-      fileType: model.fileType,
-      autoApply: model.autoApply,
-      templateFile: model.templateFile
+      name: sourceModel.name,
+      filePattern: sourceModel.filePattern,
+      fileType: sourceModel.fileType,
+      autoApply: sourceModel.autoApply,
+      templateFile: sourceModel.templateFile
     });
     
     // Debug: Afficher les valeurs de la logique de réconciliation avant le patchValue
     console.log('🔍 [DEBUG] Logique de réconciliation du modèle:', {
-      reconciliationLogic: model.reconciliationLogic,
-      type: model.reconciliationLogic?.type,
-      expectedRatio: model.reconciliationLogic?.parameters?.expectedRatio,
-      description: model.reconciliationLogic?.parameters?.description,
-      tolerance: model.reconciliationLogic?.parameters?.tolerance
+      reconciliationLogic: sourceModel.reconciliationLogic,
+      type: sourceModel.reconciliationLogic?.type,
+      expectedRatio: sourceModel.reconciliationLogic?.parameters?.expectedRatio,
+      description: sourceModel.reconciliationLogic?.parameters?.description,
+      tolerance: sourceModel.reconciliationLogic?.parameters?.tolerance
     });
     
     this.modelForm.patchValue({
-      name: model.name,
-      filePattern: model.filePattern,
-      fileType: model.fileType,
-      autoApply: model.autoApply,
-      templateFile: model.templateFile,
+      name: sourceModel.name,
+      filePattern: sourceModel.filePattern,
+      fileType: sourceModel.fileType,
+      autoApply: sourceModel.autoApply,
+      templateFile: sourceModel.templateFile,
       reconciliationKeys: reconciliationKeys,
       // Charger les configurations autonomes
-      logicType: model.reconciliationLogic?.type || 'STANDARD',
-      expectedRatio: model.reconciliationLogic?.parameters?.expectedRatio || '1:1',
-      logicDescription: model.reconciliationLogic?.parameters?.description || '',
-      tolerance: model.reconciliationLogic?.parameters?.tolerance || 0.0
-    });
+      logicType: sourceModel.reconciliationLogic?.type || 'STANDARD',
+      expectedRatio: sourceModel.reconciliationLogic?.parameters?.expectedRatio || '1:1',
+      logicDescription: sourceModel.reconciliationLogic?.parameters?.description || '',
+      tolerance: sourceModel.reconciliationLogic?.parameters?.tolerance || 0.0
+    }, { emitEvent: false });
+
+    this.selectedBOModels = reconciliationKeys.boModels || [];
+    this.selectedBOKeys = this.extractBOKeysFromReconciliationKeys(reconciliationKeys);
     
     // Debug: Vérifier les valeurs après le patchValue
     setTimeout(() => {
@@ -1074,33 +1287,20 @@ export class AutoProcessingModelsComponent implements OnInit {
     
     console.log('🔍 Valeur du filePattern après patchValue:', this.modelForm.get('filePattern')?.value);
     
-    // Charger les colonnes du fichier modèle si c'est un modèle partenaire
-    if (model.fileType === 'partner' && model.templateFile) {
-      this.loadColumnsForTemplateFile(model.templateFile);
-      
-      // Attendre que les colonnes soient chargées avant de continuer
-      setTimeout(() => {
-        console.log('📋 Colonnes disponibles après chargement:', this.availableColumnsForTemplate);
-        console.log('🔑 Clés partenaires du modèle:', reconciliationKeys.partnerKeys);
-        
-        // Vérifier si les clés sélectionnées sont dans la liste des colonnes disponibles
-        if (reconciliationKeys.partnerKeys && reconciliationKeys.partnerKeys.length > 0) {
-          reconciliationKeys.partnerKeys.forEach(key => {
-            if (!this.availableColumnsForTemplate.includes(key)) {
-              console.warn(`⚠️ Clé partenaire "${key}" non trouvée dans les colonnes disponibles`);
-              // Ajouter la clé manquante à la liste des colonnes disponibles
-              this.availableColumnsForTemplate.push(key);
-              console.log(`✅ Clé "${key}" ajoutée à la liste des colonnes disponibles`);
-            }
-          });
-        }
-        
-        // Forcer la mise à jour de l'affichage
-        this.cdr.detectChanges();
-      }, 500);
+    // Charger les règles de traitement des colonnes du modèle
+    if (isDuplicate) {
+      this.loadColumnProcessingRulesForDuplicate(model, sourceModel.columnProcessingRules);
+    } else {
+      this.loadColumnProcessingRules(model.id!);
     }
-    
-    // Charger les colonnes BO si des modèles BO sont sélectionnés
+
+    // Charger les configurations autonomes
+    this.correspondenceRules = sourceModel.correspondenceRules?.rules
+      ? sourceModel.correspondenceRules.rules.map(rule => ({ ...rule }))
+      : [];
+    this.comparisonColumns = sourceModel.comparisonColumns?.columns
+      ? sourceModel.comparisonColumns.columns.map(col => ({ ...col }))
+      : [];
     if (reconciliationKeys.boModels && reconciliationKeys.boModels.length > 0) {
       this.loadBOColumnsFromSelectedModels(reconciliationKeys.boModels);
       
@@ -1123,49 +1323,17 @@ export class AutoProcessingModelsComponent implements OnInit {
       });
     }
     
-    // Charger les règles de traitement des colonnes du modèle
-    this.loadColumnProcessingRules(model.id);
-    this.loadPreProcessingConfig(model.preProcessingConfig);
-    
-    // Charger les configurations autonomes
-    this.correspondenceRules = model.correspondenceRules?.rules || [];
-    this.comparisonColumns = model.comparisonColumns?.columns || [];
-    
-    // Charger les clés partenaires sélectionnées (avec normalisation)
     const correctedPartnerKeys = (reconciliationKeys.partnerKeys || []).map(key => {
       return this.normalizeColumnName(key);
     });
-    
+
     // Supprimer les doublons
     this.selectedPartnerKeys = [...new Set(correctedPartnerKeys)];
     console.log('✅ Clés partenaires chargées pour édition (corrigées):', this.selectedPartnerKeys);
-    
-    // Charger les modèles BO sélectionnés
-    this.selectedBOModels = reconciliationKeys.boModels || [];
+
+    this.loadPartnerConditionalKeysConfig(sourceModel.reconciliationKeys?.partnerConditionalKeys);
+
     console.log('✅ Modèles BO chargés pour édition:', this.selectedBOModels);
-    
-    // Charger les clés BO sélectionnées (avec correction des noms corrompus)
-    // Récupérer les clés depuis boModelKeys pour tous les modèles BO sélectionnés
-    let allBOKeys: string[] = [];
-    if (reconciliationKeys.boModelKeys && Object.keys(reconciliationKeys.boModelKeys).length > 0) {
-      Object.values(reconciliationKeys.boModelKeys).forEach((keys: any) => {
-        if (Array.isArray(keys)) {
-          allBOKeys = allBOKeys.concat(keys);
-        }
-      });
-    }
-    
-    // Si pas de clés dans boModelKeys, essayer boKeys comme fallback
-    if (allBOKeys.length === 0 && reconciliationKeys.boKeys) {
-      allBOKeys = reconciliationKeys.boKeys;
-    }
-    
-    const correctedBOKeys = allBOKeys.map(key => {
-      return this.normalizeColumnName(key);
-    });
-    
-    // Supprimer les doublons
-    this.selectedBOKeys = [...new Set(correctedBOKeys)];
     console.log('✅ Clés BO chargées pour édition (corrigées):', this.selectedBOKeys);
     console.log('🔍 boModelKeys original:', reconciliationKeys.boModelKeys);
     
@@ -1174,16 +1342,100 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.showReconciliationLogicSection = true;
     this.showCorrespondenceRulesSection = true;
     this.showComparisonColumnsSection = true;
-    
-    // Mettre en évidence les clés sélectionnées après un délai pour permettre le chargement
-    setTimeout(() => {
+
+    this.syncReconciliationKeysBeforeSave();
+
+    const finishEditRestore = () => {
       this.highlightSelectedKeys(reconciliationKeys);
-      // Forcer la mise à jour des classes CSS
       this.forceUpdate = true;
       setTimeout(() => {
         this.forceUpdate = false;
+        this.isRestoringModelState = false;
+        this.cdr.detectChanges();
       }, 100);
-    }, 500);
+    };
+
+    const loadColumnsAndPreProcessing = async () => {
+      if (sourceModel.templateFile) {
+        await this.resolveAndApplyTemplateColumns(
+          sourceModel.templateFile,
+          sourceModel.fileType || 'partner',
+          {
+            partnerKeys: reconciliationKeys.partnerKeys,
+            boKeys: this.selectedBOKeys,
+            preProcessingConfig: sourceModel.preProcessingConfig,
+            partnerConditionalKeys: sourceModel.reconciliationKeys?.partnerConditionalKeys
+          }
+        );
+      }
+      this.loadPreProcessingConfig(sourceModel.preProcessingConfig);
+      finishEditRestore();
+    };
+
+    void loadColumnsAndPreProcessing();
+  }
+
+  duplicateModel(model: AutoProcessingModel): void {
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.editModel(model, 'duplicate');
+  }
+
+  private buildDuplicateName(baseName: string): string {
+    const trimmed = (baseName || 'Modèle').trim();
+    let candidate = `${trimmed} (copie)`;
+    let index = 2;
+    while (this.models.some(m => m.name.trim().toLowerCase() === candidate.toLowerCase())) {
+      candidate = `${trimmed} (copie ${index})`;
+      index++;
+    }
+    return candidate;
+  }
+
+  private buildModelDuplicate(source: AutoProcessingModel): AutoProcessingModel {
+    const clone = JSON.parse(JSON.stringify(source)) as AutoProcessingModel;
+    delete clone.id;
+    delete clone.modelId;
+    delete clone.createdAt;
+    delete clone.updatedAt;
+    clone.name = this.buildDuplicateName(source.name);
+    clone.columnProcessingRules = (source.columnProcessingRules || []).map(rule => {
+      const { id, ...rest } = rule as ColumnProcessingRule & { id?: number };
+      return { ...rest };
+    });
+    return clone;
+  }
+
+  private loadColumnProcessingRulesForDuplicate(
+    sourceModel: AutoProcessingModel,
+    embeddedRules?: ColumnProcessingRule[]
+  ): void {
+    if (embeddedRules?.length) {
+      this.columnProcessingRules = embeddedRules.map(rule => {
+        const { id, ...rest } = rule as ColumnProcessingRule & { id?: number };
+        return { ...rest };
+      });
+      return;
+    }
+
+    const modelId = sourceModel.id || sourceModel.modelId;
+    if (!modelId) {
+      this.columnProcessingRules = [];
+      return;
+    }
+
+    this.autoProcessingService.getColumnProcessingRules(modelId, AutoProcessingService.MODELES_MODULE)
+      .then(rules => {
+        this.columnProcessingRules = rules
+          .sort((a, b) => (a.ruleOrder ?? 0) - (b.ruleOrder ?? 0))
+          .map(rule => {
+            const { id, ...rest } = rule as ColumnProcessingRule & { id?: number };
+            return { ...rest };
+          });
+      })
+      .catch(() => {
+        this.columnProcessingRules = [];
+      });
   }
     
   async deleteModel(model: AutoProcessingModel): Promise<void> {
@@ -1384,6 +1636,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       }
     });
     this.editingModel = null;
+    this.isDuplicatingModel = false;
     this.showCreateForm = false;
     this.errorMessage = '';
     this.successMessage = '';
@@ -1685,6 +1938,70 @@ export class AutoProcessingModelsComponent implements OnInit {
     }
   }
 
+  // ===== CLÉS PARTENAIRE CONDITIONNELLES (OPTIONNEL) =====
+
+  isPartnerConditionalKeysConfigValid(): boolean {
+    if (!this.partnerConditionalKeysEnabled) {
+      return false;
+    }
+    if (!this.partnerConditionColumn?.trim()) {
+      return false;
+    }
+    return this.partnerConditionalKeyRules.some(
+      rule => rule.whenValue?.trim() && rule.keyColumn?.trim()
+    );
+  }
+
+  buildPartnerConditionalKeysConfig() {
+    if (!this.partnerConditionalKeysEnabled) {
+      return { enabled: false, conditionColumn: '', rules: [] };
+    }
+    return {
+      enabled: true,
+      conditionColumn: this.partnerConditionColumn.trim(),
+      rules: this.partnerConditionalKeyRules
+        .filter(rule => rule.whenValue?.trim() && rule.keyColumn?.trim())
+        .map(rule => ({
+          whenValue: rule.whenValue.trim(),
+          keyColumn: rule.keyColumn.trim()
+        })),
+      defaultKeyColumn: this.partnerConditionalDefaultKeyColumn?.trim() || undefined
+    };
+  }
+
+  loadPartnerConditionalKeysConfig(config?: {
+    enabled?: boolean;
+    conditionColumn?: string;
+    rules?: PartnerConditionalKeyRule[];
+    defaultKeyColumn?: string;
+  }): void {
+    this.partnerConditionalKeysEnabled = !!config?.enabled;
+    this.partnerConditionColumn = config?.conditionColumn || '';
+    this.partnerConditionalDefaultKeyColumn = config?.defaultKeyColumn || '';
+    this.partnerConditionalKeyRules = config?.rules?.length
+      ? config.rules.map(rule => ({ ...rule }))
+      : [{ whenValue: '', keyColumn: '' }];
+  }
+
+  resetPartnerConditionalKeysConfig(): void {
+    this.partnerConditionalKeysEnabled = false;
+    this.partnerConditionColumn = '';
+    this.partnerConditionalDefaultKeyColumn = '';
+    this.partnerConditionalKeyRules = [{ whenValue: '', keyColumn: '' }];
+  }
+
+  addPartnerConditionalKeyRule(): void {
+    this.partnerConditionalKeyRules.push({ whenValue: '', keyColumn: '' });
+  }
+
+  removePartnerConditionalKeyRule(index: number): void {
+    if (this.partnerConditionalKeyRules.length <= 1) {
+      this.partnerConditionalKeyRules[0] = { whenValue: '', keyColumn: '' };
+      return;
+    }
+    this.partnerConditionalKeyRules.splice(index, 1);
+  }
+
   // ===== MÉTHODES POUR LES CLÉS DE RÉCONCILIATION =====
 
   /**
@@ -1694,46 +2011,31 @@ export class AutoProcessingModelsComponent implements OnInit {
   async loadTemplateColumns(): Promise<void> {
     const templateFile = this.modelForm.get('templateFile')?.value;
     if (!templateFile) {
-      this.availableTemplateColumns = [];
-      this.selectedPartnerKeys = [];
+      this.syncTemplateColumnLists([]);
+      if (!this.isRestoringModelState) {
+        this.selectedPartnerKeys = [];
+      }
       return;
     }
 
-    this.isLoadingTemplateColumns = true;
-    this.availableTemplateColumns = [];
-    this.selectedPartnerKeys = [];
+    const preservedPartnerKeys = [...this.selectedPartnerKeys];
+    const fileType = this.modelForm.get('fileType')?.value || 'partner';
 
-    try {
-      // Chercher le fichier dans les fichiers disponibles
-      const file = this.availableFiles.find(f => f.fileName === templateFile);
-      
-      if (file && file.columns && file.columns.length > 0) {
-        // Utiliser les colonnes du fichier réel avec gestion du typage et de l'encodage
-        this.availableTemplateColumns = this.normalizeColumnNames(file.columns);
-        console.log('✅ Colonnes du fichier modèle chargées (fichier réel):', this.availableTemplateColumns);
-        console.log('📊 Détails du fichier:', {
-          fileName: file.fileName,
-          fileType: file.fileType,
-          columnsCount: file.columns.length,
-          originalColumns: file.columns,
-          normalizedColumns: this.availableTemplateColumns
-        });
-      } else {
-        // Fallback vers la simulation si le fichier n'est pas trouvé
-        console.warn('⚠️ Fichier non trouvé dans availableFiles, utilisation de la simulation');
-        const columns = await this.getFileColumns(templateFile);
-        this.availableTemplateColumns = this.normalizeColumnNames(columns);
-        console.log('✅ Colonnes du fichier modèle chargées (simulation):', this.availableTemplateColumns);
-      }
-      
-      // Mettre à jour les autres sections qui utilisent les colonnes du modèle
-      this.updateAllSectionsWithModelColumns();
-      
-    } catch (error) {
-      console.error('❌ Erreur lors du chargement des colonnes du fichier modèle:', error);
-      this.errorMessage = 'Erreur lors du chargement des colonnes du fichier modèle';
-    } finally {
-      this.isLoadingTemplateColumns = false;
+    if (!this.isRestoringModelState) {
+      this.selectedPartnerKeys = [];
+    }
+
+    await this.resolveAndApplyTemplateColumns(templateFile, fileType, {
+      partnerKeys: preservedPartnerKeys
+    });
+
+    if (preservedPartnerKeys.length > 0) {
+      this.selectedPartnerKeys = preservedPartnerKeys.filter(key =>
+        this.availableTemplateColumns.includes(key) || key.length > 0
+      );
+      this.modelForm.patchValue({
+        reconciliationKeys: { partnerKeys: this.selectedPartnerKeys }
+      }, { emitEvent: false });
     }
   }
 
@@ -1766,13 +2068,16 @@ export class AutoProcessingModelsComponent implements OnInit {
   async loadBOColumns(): Promise<void> {
     if (this.selectedBOModels.length === 0) {
       this.availableBOColumns = [];
-      this.selectedBOKeys = [];
+      if (!this.isRestoringModelState) {
+        this.selectedBOKeys = [];
+      }
       return;
     }
 
+    const preservedBOKeys = [...this.selectedBOKeys];
+
     this.isLoadingBOColumns = true;
     this.availableBOColumns = [];
-    this.selectedBOKeys = [];
 
     try {
       // Récupérer les colonnes de tous les modèles BO sélectionnés
@@ -1849,6 +2154,13 @@ export class AutoProcessingModelsComponent implements OnInit {
       this.availableBOColumns.forEach((col, index) => {
         console.log(`  ${index + 1}. "${col}"`);
       });
+
+      if (preservedBOKeys.length > 0) {
+        this.selectedBOKeys = preservedBOKeys.filter(key =>
+          this.availableBOColumns.includes(key)
+        );
+        this.syncReconciliationKeysBeforeSave();
+      }
     } catch (error) {
       console.error('❌ Erreur lors du chargement des colonnes des modèles BO:', error);
       this.errorMessage = 'Erreur lors du chargement des colonnes des modèles BO';
@@ -1929,7 +2241,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       reconciliationKeys: {
         partnerKeys: this.selectedPartnerKeys
       }
-    });
+    }, { emitEvent: false });
   }
 
   toggleBOModel(modelId: string, event: any): void {
@@ -1939,24 +2251,22 @@ export class AutoProcessingModelsComponent implements OnInit {
         console.log('✅ Modèle BO ajouté:', modelId);
         console.log('📋 Modèles BO actuels:', this.selectedBOModels);
       }
-      // Charger les colonnes des modèles BO sélectionnés
-      this.loadBOColumns();
     } else {
       this.selectedBOModels = this.selectedBOModels.filter(id => id !== modelId);
       console.log('❌ Modèle BO supprimé:', modelId);
       console.log('📋 Modèles BO actuels:', this.selectedBOModels);
-      // Supprimer aussi les clés BO associées
-      this.selectedBOKeys = [];
-      // Recharger les colonnes BO
-      this.loadBOColumns();
+      if (this.selectedBOModels.length === 0) {
+        this.selectedBOKeys = [];
+      }
     }
-    
-    // Synchroniser avec le formulaire
+
     this.modelForm.patchValue({
       reconciliationKeys: {
         boModels: this.selectedBOModels
       }
-    });
+    }, { emitEvent: false });
+    this.onBOModelsChange();
+    this.loadBOColumns();
   }
 
   toggleBOKey(column: string, event: any): void {
@@ -1983,7 +2293,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       reconciliationKeys: {
         boModelKeys: boModelKeys
       }
-    });
+    }, { emitEvent: false });
     
     console.log('🔧 boModelKeys mis à jour:', boModelKeys);
   }
@@ -2571,8 +2881,9 @@ export class AutoProcessingModelsComponent implements OnInit {
       return basicValidation;
     }
     
-    // Pour les fichiers partenaires, nécessite clés partenaire ET modèles BO
-    const reconciliationKeysValid = hasPartnerKeys && hasBOModels;
+    // Pour les fichiers partenaires, nécessite modèles BO ET (clés partenaire OU clés conditionnelles)
+    const hasConditionalKeys = this.isPartnerConditionalKeysConfigValid();
+    const reconciliationKeysValid = hasBOModels && (hasPartnerKeys || hasConditionalKeys);
     
     // Vérifier si le groupe reconciliationKeys est valide en ignorant boKeys pour les partenaires
     const reconciliationKeysGroup = this.modelForm.get('reconciliationKeys');
@@ -2731,6 +3042,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.selectedPartnerKeys = [];
     this.selectedBOModels = [];
     this.selectedBOKeys = [];
+    this.resetPartnerConditionalKeysConfig();
     this.availableBOColumns = [];
     this.selectedColumns = []; // Réinitialiser la sélection multiple
     
@@ -2745,6 +3057,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.editingColumnProcessingRule = null;
     
     this.editingModel = null;
+    this.isDuplicatingModel = false;
     this.showCreateForm = true;
     this.errorMessage = '';
     this.successMessage = '';

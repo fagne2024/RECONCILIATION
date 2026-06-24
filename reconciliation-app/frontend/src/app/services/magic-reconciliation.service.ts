@@ -3,13 +3,22 @@ import { firstValueFrom } from 'rxjs';
 import { AutoProcessingService, AutoProcessingModel } from './auto-processing.service';
 import { ReconciliationService } from './reconciliation.service';
 import { KeySuggestionService } from './key-suggestion.service';
+import { PartnerConditionalKeysService, PARTNER_CONDITIONAL_KEY_COLUMN } from './partner-conditional-keys.service';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
 import { fixCellEncoding } from '../utils/encoding-fixer';
+
+export interface MagicServiceMatch {
+  /** Libellé canonique côté partenaire (ex. CASHINOMCI). */
+  partnerService: string;
+  /** Valeurs distinctes côté BO rattachées à ce service (ex. CASHINOMCIPART2, MYTP_CASHINOMCI). */
+  boServices: string[];
+}
 
 export interface MagicServiceSummary {
   service: string;
   partnerFileName?: string;
   partnerService?: string;
+  boServices?: string;
   boServiceColumn?: string;
   partnerServiceColumn?: string;
   totalMatches: number;
@@ -46,7 +55,14 @@ export interface MagicReconciliationProgress {
   step: string;
   current?: number;
   total?: number;
+  percentage?: number;
 }
+
+/** Concurrence max pour les réconciliations par service / partenaire. */
+const MAGIC_SERVICE_CONCURRENCY = 3;
+const MAGIC_PARTNER_CONCURRENCY = 2;
+/** Longueur minimale pour un rapprochement par sous-chaîne (évite les faux positifs courts). */
+const MIN_SERVICE_PARTIAL_TOKEN_LENGTH = 5;
 
 @Injectable({ providedIn: 'root' })
 export class MagicReconciliationService {
@@ -54,7 +70,8 @@ export class MagicReconciliationService {
   constructor(
     private autoProcessingService: AutoProcessingService,
     private reconciliationService: ReconciliationService,
-    private keySuggestionService: KeySuggestionService
+    private keySuggestionService: KeySuggestionService,
+    private partnerConditionalKeysService: PartnerConditionalKeysService
   ) {}
 
   async runMultiPartner(
@@ -67,12 +84,14 @@ export class MagicReconciliationService {
       throw new Error('Aucun fichier partenaire sélectionné.');
     }
     if (partners.length === 1) {
+      const models = await this.loadTraitementModels();
       const single = await this.run(
         boFileName,
         partners[0].fileName,
         boData,
         partners[0].data,
-        onProgress
+        onProgress,
+        models
       );
       return {
         ...single,
@@ -84,6 +103,7 @@ export class MagicReconciliationService {
       };
     }
 
+    const models = await this.loadTraitementModels();
     const merged = this.emptyResponse();
     const allSummaries: MagicServiceSummary[] = [];
     const warnings: string[] = [];
@@ -94,44 +114,63 @@ export class MagicReconciliationService {
     let usedPattern = false;
     let usedDiscovery = false;
 
-    for (let i = 0; i < partners.length; i++) {
-      const partner = partners[i];
-      onProgress?.({
-        step: `Fichier partenaire ${i + 1}/${partners.length} : ${partner.fileName}...`,
-        current: i + 1,
-        total: partners.length
-      });
+    const partnerResults = await this.runPool(
+      partners,
+      MAGIC_PARTNER_CONCURRENCY,
+      async (partner, i) => {
+        onProgress?.({
+          step: `Partenaire ${i + 1}/${partners.length} : ${partner.fileName} — En cours`,
+          current: i + 1,
+          total: partners.length
+        });
 
-      try {
-        const result = await this.run(
-          boFileName,
-          partner.fileName,
-          boData,
-          partner.data,
-          sub => onProgress?.({ step: `[${partner.fileName}] ${sub.step}` })
-        );
-
-        if (result.mode === 'pattern') {
-          usedPattern = true;
-        } else {
-          usedDiscovery = true;
+        try {
+          const result = await this.run(
+            boFileName,
+            partner.fileName,
+            boData,
+            partner.data,
+            sub => onProgress?.({
+              step: `[${partner.fileName}] ${sub.step}`,
+              percentage: sub.percentage
+            }),
+            models
+          );
+          return { partner, result, error: null as string | null };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { partner, result: null, error: msg };
         }
-
-        this.mergeResponses(merged, this.tagResponseWithPartnerFile(result.response, partner.fileName));
-        allSummaries.push(
-          ...result.serviceSummaries.map(s => ({
-            ...s,
-            partnerFileName: partner.fileName
-          }))
-        );
-        lastBoKey = result.boKeyColumn;
-        lastPartnerKey = result.partnerKeyColumn;
-        lastBoModel = result.boModelName;
-        lastPartnerModel = result.partnerModelName;
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        warnings.push(`${partner.fileName} : ${msg}`);
       }
+    );
+
+    for (const entry of partnerResults) {
+      if (entry.error || !entry.result) {
+        warnings.push(`${entry.partner.fileName} : ${entry.error ?? 'erreur inconnue'}`);
+        continue;
+      }
+
+      const result = entry.result;
+      if (result.mode === 'pattern') {
+        usedPattern = true;
+      } else {
+        usedDiscovery = true;
+      }
+
+      this.mergeResponses(
+        merged,
+        this.tagResponseWithPartnerFile(result.response, entry.partner.fileName)
+      );
+      allSummaries.push(
+        ...result.serviceSummaries.map(s => ({
+          ...s,
+          partnerFileName: entry.partner.fileName
+        }))
+      );
+      lastBoKey = result.boKeyColumn;
+      lastPartnerKey = result.partnerKeyColumn;
+      lastBoModel = result.boModelName;
+      lastPartnerModel = result.partnerModelName;
     }
 
     if (!allSummaries.length) {
@@ -160,11 +199,12 @@ export class MagicReconciliationService {
     partnerFileName: string,
     boData: Record<string, string>[],
     partnerData: Record<string, string>[],
-    onProgress?: (p: MagicReconciliationProgress) => void
+    onProgress?: (p: MagicReconciliationProgress) => void,
+    preloadedModels?: AutoProcessingModel[]
   ): Promise<MagicReconciliationResult> {
     onProgress?.({ step: `Analyse de ${partnerFileName}...` });
 
-    const models = await this.autoProcessingService.getAllModels(AutoProcessingService.RECONCILIATION_MODULE);
+    const models = preloadedModels ?? await this.loadTraitementModels();
     const boModel = this.findModelForFile(models, boFileName, 'bo');
     const partnerModel = this.findModelForFile(models, partnerFileName, 'partner');
 
@@ -196,57 +236,62 @@ export class MagicReconciliationService {
       processedBo = this.applyBoTreatments(processedBo, usedModel.reconciliationKeys.boTreatments);
     }
 
-    const serviceColumns = this.findServiceColumnsByContent(processedBo, partnerData);
-    const commonServices = serviceColumns
-      ? this.findCommonServices(processedBo, partnerData, serviceColumns.boColumn, serviceColumns.partnerColumn)
+    const { partnerData: processedPartner, partnerKeyColumn } =
+      this.preparePartnerDataForReconciliation(partnerData, usedModel, keyResult.partnerKeyColumn);
+
+    const serviceColumns =
+      this.findServiceColumnsByHeader(processedBo, processedPartner)
+      ?? this.findServiceColumnsByContent(processedBo, processedPartner);
+    const serviceMatches = serviceColumns
+      ? this.findServiceMatches(processedBo, processedPartner, serviceColumns.boColumn, serviceColumns.partnerColumn)
       : [];
 
     onProgress?.({
-      step: commonServices.length > 1
-        ? `Réconciliation par service (${commonServices.length} communs aux deux fichiers)...`
-        : commonServices.length === 1
-          ? `Réconciliation du service « ${commonServices[0]} »...`
-          : 'Lancement de la réconciliation...',
+      step: serviceMatches.length > 1
+        ? `Réconciliation par service (${serviceMatches.length} communs) — En cours`
+        : serviceMatches.length === 1
+          ? `Réconciliation du service « ${serviceMatches[0].partnerService} » — En cours`
+          : 'Lancement de la réconciliation — En cours',
       current: 0,
-      total: Math.max(commonServices.length, 1)
+      total: Math.max(serviceMatches.length, 1)
     });
 
-    if (commonServices.length >= 1 && serviceColumns) {
+    if (serviceMatches.length >= 1 && serviceColumns) {
       const merged = await this.reconcilePerService(
         processedBo,
-        partnerData,
-        commonServices,
+        processedPartner,
+        serviceMatches,
         serviceColumns.boColumn,
         serviceColumns.partnerColumn,
         keyResult.boKeyColumn,
-        keyResult.partnerKeyColumn,
+        partnerKeyColumn,
         partnerFileName,
         onProgress
       );
       return {
-        response: this.tagResponseWithPartnerFile(merged.response, partnerFileName),
+        response: merged.response,
         mode,
         serviceSummaries: merged.summaries.map(s => ({ ...s, partnerFileName })),
         boKeyColumn: keyResult.boKeyColumn,
-        partnerKeyColumn: keyResult.partnerKeyColumn,
+        partnerKeyColumn,
         boModelName: boModel?.name,
         partnerModelName: partnerModel?.name
       };
     }
 
-    if (serviceColumns && commonServices.length === 0) {
+    if (serviceColumns && serviceMatches.length === 0) {
       throw new Error(
         'Aucun service commun trouvé entre les fichiers BO et Partenaire. ' +
-        'Vérifiez que les colonnes de service/type contiennent les mêmes valeurs dans les deux fichiers.'
+        'Vérifiez que les colonnes de service/type se correspondent (égalité ou inclusion, ex. CASHINOMCIPART2 ↔ CASHINOMCI).'
       );
     }
 
     const response = this.tagResponseWithPartnerFile(
       await this.reconcileOnce(
         processedBo,
-        partnerData,
+        processedPartner,
         keyResult.boKeyColumn,
-        keyResult.partnerKeyColumn
+        partnerKeyColumn
       ),
       partnerFileName
     );
@@ -264,16 +309,31 @@ export class MagicReconciliationService {
         totalPartnerRecords: response.totalPartnerRecords
       }],
       boKeyColumn: keyResult.boKeyColumn,
-      partnerKeyColumn: keyResult.partnerKeyColumn,
+      partnerKeyColumn,
       boModelName: boModel?.name,
       partnerModelName: partnerModel?.name
     };
   }
 
+  private preparePartnerDataForReconciliation(
+    partnerData: Record<string, string>[],
+    usedModel: AutoProcessingModel | undefined,
+    defaultPartnerKeyColumn: string
+  ): { partnerData: Record<string, string>[]; partnerKeyColumn: string } {
+    const config = usedModel?.reconciliationKeys?.partnerConditionalKeys;
+    if (this.partnerConditionalKeysService.isEnabled(config)) {
+      return {
+        partnerData: this.partnerConditionalKeysService.applyPartnerConditionalKeys(partnerData, config!),
+        partnerKeyColumn: PARTNER_CONDITIONAL_KEY_COLUMN
+      };
+    }
+    return { partnerData, partnerKeyColumn: defaultPartnerKeyColumn };
+  }
+
   private async reconcilePerService(
     boData: Record<string, string>[],
     partnerData: Record<string, string>[],
-    services: string[],
+    serviceMatches: MagicServiceMatch[],
     boServiceCol: string,
     partnerServiceCol: string,
     boKeyColumn: string,
@@ -295,29 +355,51 @@ export class MagicReconciliationService {
       totalPartnerOnly: 0
     };
 
-    for (let i = 0; i < services.length; i++) {
-      const service = services[i];
-      onProgress?.({
-        step: `Service « ${service} » (${i + 1}/${services.length})...`,
-        current: i + 1,
-        total: services.length
-      });
+    const serviceResults = await this.runPool(
+      serviceMatches,
+      MAGIC_SERVICE_CONCURRENCY,
+      async (match, i) => {
+        const service = match.partnerService;
+        const serviceIndex = i + 1;
+        onProgress?.(this.buildServiceProgress(service, serviceIndex, serviceMatches.length, 'En cours'));
 
-      const boSlice = boData.filter(r => (r[boServiceCol] || '').trim() === service);
-      const partnerSlice = partnerData.filter(r => (r[partnerServiceCol] || '').trim() === service);
+        const boServiceSet = new Set(match.boServices);
+        const boSlice = boData.filter(row => boServiceSet.has((row[boServiceCol] || '').trim()));
+        const partnerSlice = partnerData.filter(row =>
+          this.serviceValuesMatch((row[partnerServiceCol] || '').trim(), match.partnerService)
+        );
+        if (!boSlice.length && !partnerSlice.length) {
+          return null;
+        }
 
-      if (!boSlice.length && !partnerSlice.length) {
+        const taggedBo = this.tagRowsForMagic(boSlice, service, partnerFileName);
+        const taggedPartner = this.tagRowsForMagic(partnerSlice, service, partnerFileName);
+
+        const result = await this.reconcileOnce(
+          taggedBo,
+          taggedPartner,
+          boKeyColumn,
+          partnerKeyColumn,
+          (step, percentage) => onProgress?.(
+            this.buildServiceProgress(service, serviceIndex, serviceMatches.length, step, percentage)
+          )
+        );
+
+        return { match, result };
+      }
+    );
+
+    for (const entry of serviceResults) {
+      if (!entry) {
         continue;
       }
-
-      const taggedBo = boSlice.map(r => ({ ...r, _magicService: service, _magicPartnerFile: partnerFileName }));
-      const taggedPartner = partnerSlice.map(r => ({ ...r, _magicService: service, _magicPartnerFile: partnerFileName }));
-
-      const result = await this.reconcileOnce(taggedBo, taggedPartner, boKeyColumn, partnerKeyColumn);
+      const { match, result } = entry;
+      const service = match.partnerService;
       summaries.push({
         service,
         partnerFileName,
         partnerService: service,
+        boServices: match.boServices.join(', '),
         boServiceColumn: boServiceCol,
         partnerServiceColumn: partnerServiceCol,
         totalMatches: result.totalMatches,
@@ -326,31 +408,48 @@ export class MagicReconciliationService {
         totalBoRecords: result.totalBoRecords,
         totalPartnerRecords: result.totalPartnerRecords
       });
-
-      merged.matches.push(...result.matches.map(m => ({
-        ...m,
-        boData: { ...m.boData, _magicService: service, _magicPartnerFile: partnerFileName },
-        partnerData: { ...m.partnerData, _magicService: service, _magicPartnerFile: partnerFileName }
-      })));
-      merged.boOnly.push(...result.boOnly.map(r => ({ ...r, _magicService: service, _magicPartnerFile: partnerFileName })));
-      merged.partnerOnly.push(...result.partnerOnly.map(r => ({ ...r, _magicService: service, _magicPartnerFile: partnerFileName })));
-      merged.mismatches.push(...(result.mismatches || []).map(r => ({ ...r, _magicService: service, _magicPartnerFile: partnerFileName })));
-      merged.totalBoRecords += result.totalBoRecords;
-      merged.totalPartnerRecords += result.totalPartnerRecords;
-      merged.totalMatches += result.totalMatches;
-      merged.totalMismatches += result.totalMismatches;
-      merged.totalBoOnly += result.totalBoOnly;
-      merged.totalPartnerOnly += result.totalPartnerOnly;
+      this.appendReconcileResult(merged, result, service, partnerFileName);
     }
 
     return { response: merged, summaries };
+  }
+
+  private appendReconcileResult(
+    merged: ReconciliationResponse,
+    result: ReconciliationResponse,
+    service: string,
+    partnerFileName: string
+  ): void {
+    for (const match of result.matches) {
+      merged.matches.push({
+        ...match,
+        boData: { ...match.boData, _magicService: service, _magicPartnerFile: partnerFileName },
+        partnerData: { ...match.partnerData, _magicService: service, _magicPartnerFile: partnerFileName }
+      });
+    }
+    for (const row of result.boOnly) {
+      merged.boOnly.push({ ...row, _magicService: service, _magicPartnerFile: partnerFileName });
+    }
+    for (const row of result.partnerOnly) {
+      merged.partnerOnly.push({ ...row, _magicService: service, _magicPartnerFile: partnerFileName });
+    }
+    for (const row of result.mismatches ?? []) {
+      merged.mismatches.push({ ...row, _magicService: service, _magicPartnerFile: partnerFileName });
+    }
+    merged.totalBoRecords += result.totalBoRecords;
+    merged.totalPartnerRecords += result.totalPartnerRecords;
+    merged.totalMatches += result.totalMatches;
+    merged.totalMismatches += result.totalMismatches;
+    merged.totalBoOnly += result.totalBoOnly;
+    merged.totalPartnerOnly += result.totalPartnerOnly;
   }
 
   private async reconcileOnce(
     boData: Record<string, string>[],
     partnerData: Record<string, string>[],
     boKeyColumn: string,
-    partnerKeyColumn: string
+    partnerKeyColumn: string,
+    onStep?: (step: string, percentage?: number) => void
   ): Promise<ReconciliationResponse> {
     const request = {
       boFileContent: boData,
@@ -360,7 +459,129 @@ export class MagicReconciliationService {
       comparisonColumns: [{ boColumn: boKeyColumn, partnerColumn: partnerKeyColumn }],
       boColumnFilters: []
     };
-    return firstValueFrom(this.reconciliationService.reconcile(request));
+    return firstValueFrom(
+      this.reconciliationService.reconcileWithLiveProgress(request, onStep)
+    );
+  }
+
+  private loadTraitementModels(): Promise<AutoProcessingModel[]> {
+    return this.autoProcessingService.getAllModels(AutoProcessingService.RECONCILIATION_MODULE);
+  }
+
+  private async runPool<T, R>(
+    items: T[],
+    concurrency: number,
+    worker: (item: T, index: number) => Promise<R>
+  ): Promise<R[]> {
+    if (!items.length) {
+      return [];
+    }
+
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    const poolSize = Math.max(1, Math.min(concurrency, items.length));
+
+    const runWorker = async (): Promise<void> => {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= items.length) {
+          break;
+        }
+        results[index] = await worker(items[index], index);
+      }
+    };
+
+    await Promise.all(Array.from({ length: poolSize }, () => runWorker()));
+    return results;
+  }
+
+  private indexRowsByColumn(
+    data: Record<string, string>[],
+    column: string
+  ): Map<string, Record<string, string>[]> {
+    const map = new Map<string, Record<string, string>[]>();
+    for (const row of data) {
+      const key = (row[column] || '').trim();
+      if (!key) {
+        continue;
+      }
+      let bucket = map.get(key);
+      if (!bucket) {
+        bucket = [];
+        map.set(key, bucket);
+      }
+      bucket.push(row);
+    }
+    return map;
+  }
+
+  private tagRowsForMagic(
+    rows: Record<string, string>[],
+    service: string,
+    partnerFileName: string
+  ): Record<string, string>[] {
+    if (!rows.length) {
+      return rows;
+    }
+    const tagged = new Array<Record<string, string>>(rows.length);
+    for (let i = 0; i < rows.length; i++) {
+      tagged[i] = {
+        ...rows[i],
+        _magicService: service,
+        _magicPartnerFile: partnerFileName
+      };
+    }
+    return tagged;
+  }
+
+  private sanitizeProgressDetail(detail?: string): string {
+    const trimmed = (detail ?? '').trim();
+    if (!trimmed || /^en attente$/i.test(trimmed)) {
+      return 'En cours...';
+    }
+    return trimmed.replace(/en attente/gi, 'En cours');
+  }
+
+  private buildServiceProgress(
+    service: string,
+    index: number,
+    total: number,
+    detail?: string,
+    percentage?: number
+  ): MagicReconciliationProgress {
+    const safeDetail = this.sanitizeProgressDetail(detail);
+    return {
+      step: `Service ${index}/${total} « ${service} » — ${safeDetail}`,
+      current: index,
+      total,
+      percentage
+    };
+  }
+
+  /**
+   * Détection rapide via en-têtes « service » / « type » identiques ou compatibles.
+   */
+  private findServiceColumnsByHeader(
+    boData: Record<string, string>[],
+    partnerData: Record<string, string>[]
+  ): MatchedServiceColumns | null {
+    const boCol = this.findServiceColumn(boData);
+    const partnerCol = this.findServiceColumn(partnerData);
+    if (!boCol || !partnerCol) {
+      return null;
+    }
+    const matches = this.findServiceMatches(boData, partnerData, boCol, partnerCol);
+    if (!matches.length) {
+      return null;
+    }
+    return { boColumn: boCol, partnerColumn: partnerCol, overlapScore: 1 };
+  }
+
+  private modelHasPartnerKeyConfig(model: AutoProcessingModel): boolean {
+    return !!(
+      model.reconciliationKeys?.partnerKeys?.length ||
+      this.partnerConditionalKeysService.isEnabled(model.reconciliationKeys?.partnerConditionalKeys)
+    );
   }
 
   private findModelForFile(
@@ -397,7 +618,7 @@ export class MagicReconciliationService {
     if (!candidates.length) {
       candidates = models.filter(m =>
         (m.fileType === 'partner' || m.fileType === 'both') &&
-        !!m.reconciliationKeys?.partnerKeys?.length
+        this.modelHasPartnerKeyConfig(m)
       );
     }
 
@@ -415,6 +636,18 @@ export class MagicReconciliationService {
     boData: Record<string, string>[],
     partnerData: Record<string, string>[]
   ): { boKeyColumn: string; partnerKeyColumn: string; modelId?: string } | null {
+    const conditional = this.partnerConditionalKeysService.tryResolveConditionalPartnerKey(
+      model,
+      boData,
+      partnerData
+    );
+    if (conditional) {
+      return {
+        ...conditional,
+        modelId: model.modelId || model.id
+      };
+    }
+
     if (!model.reconciliationKeys?.partnerKeys?.length) {
       return null;
     }
@@ -574,21 +807,17 @@ export class MagicReconciliationService {
 
     const boCols = Object.keys(boData[0]);
     const partnerCols = Object.keys(partnerData[0]);
+    const boDistinct = this.buildDistinctValueCache(boData, boCols);
+    const partnerDistinct = this.buildDistinctValueCache(partnerData, partnerCols);
     let best: MatchedServiceColumns | null = null;
 
     const scorePair = (boCol: string, partnerCol: string): number => {
-      const boValues = this.extractDistinctValues(boData, boCol);
-      const partnerValues = this.extractDistinctValues(partnerData, partnerCol);
+      const boValues = boDistinct.get(boCol) ?? [];
+      const partnerValues = partnerDistinct.get(partnerCol) ?? [];
       if (boValues.length < 1 || partnerValues.length < 1 || boValues.length > 40 || partnerValues.length > 40) {
         return 0;
       }
-      const partnerSet = new Set(partnerValues);
-      let overlap = 0;
-      for (const v of boValues) {
-        if (partnerSet.has(v)) {
-          overlap++;
-        }
-      }
+      const overlap = this.countServiceOverlap(boValues, partnerValues);
       if (overlap === 0) {
         return 0;
       }
@@ -600,8 +829,15 @@ export class MagicReconciliationService {
       return l.includes('service') || l.includes('serv') || l.includes('type') || l.includes('produit');
     };
 
-    for (const boCol of boCols) {
-      for (const partnerCol of partnerCols) {
+    const boColsOrdered = [...boCols].sort(
+      (a, b) => Number(isServiceLikeHeader(b)) - Number(isServiceLikeHeader(a))
+    );
+    const partnerColsOrdered = [...partnerCols].sort(
+      (a, b) => Number(isServiceLikeHeader(b)) - Number(isServiceLikeHeader(a))
+    );
+
+    for (const boCol of boColsOrdered) {
+      for (const partnerCol of partnerColsOrdered) {
         const overlapScore = scorePair(boCol, partnerCol);
         if (overlapScore <= 0) {
           continue;
@@ -612,21 +848,101 @@ export class MagicReconciliationService {
         if (!best || totalScore > best.overlapScore) {
           best = { boColumn: boCol, partnerColumn: partnerCol, overlapScore: totalScore };
         }
+        if (totalScore >= 0.95) {
+          return best;
+        }
       }
     }
 
     return best;
   }
 
+  /**
+   * Associe chaque service partenaire aux variantes BO correspondantes (égalité ou inclusion).
+   * Ex. partenaire CASHINOMCI ↔ BO CASHINOMCIPART2, MYTP_CASHINOMCI, GU2_CASHINOMCIPART_CI.
+   */
+  findServiceMatches(
+    boData: Record<string, string>[],
+    partnerData: Record<string, string>[],
+    boColumn: string,
+    partnerColumn: string
+  ): MagicServiceMatch[] {
+    const boValues = this.extractDistinctValues(boData, boColumn);
+    const partnerValues = this.extractDistinctValues(partnerData, partnerColumn);
+    const sortedPartners = [...partnerValues].sort(
+      (a, b) => this.normalizeServiceValue(b).length - this.normalizeServiceValue(a).length
+    );
+    const assignedBo = new Set<string>();
+    const matches: MagicServiceMatch[] = [];
+
+    for (const partnerSvc of sortedPartners) {
+      const boMatches: string[] = [];
+      for (const boSvc of boValues) {
+        if (assignedBo.has(boSvc)) {
+          continue;
+        }
+        if (this.serviceValuesMatch(boSvc, partnerSvc)) {
+          boMatches.push(boSvc);
+          assignedBo.add(boSvc);
+        }
+      }
+      if (boMatches.length) {
+        matches.push({ partnerService: partnerSvc, boServices: boMatches.sort() });
+      }
+    }
+
+    return matches.sort((a, b) => a.partnerService.localeCompare(b.partnerService));
+  }
+
+  /** @deprecated Préférer findServiceMatches ; retourne les libellés partenaire reconnus. */
   findCommonServices(
     boData: Record<string, string>[],
     partnerData: Record<string, string>[],
     boColumn: string,
     partnerColumn: string
   ): string[] {
-    const boValues = new Set(this.extractDistinctValues(boData, boColumn));
-    const partnerValues = new Set(this.extractDistinctValues(partnerData, partnerColumn));
-    return [...boValues].filter(v => partnerValues.has(v)).sort();
+    return this.findServiceMatches(boData, partnerData, boColumn, partnerColumn)
+      .map(m => m.partnerService);
+  }
+
+  private normalizeServiceValue(value: string): string {
+    return (value || '')
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Z0-9]/g, '');
+  }
+
+  private serviceValuesMatch(boValue: string, partnerValue: string): boolean {
+    const bo = this.normalizeServiceValue(boValue);
+    const partner = this.normalizeServiceValue(partnerValue);
+    if (!bo || !partner) {
+      return false;
+    }
+    if (bo === partner) {
+      return true;
+    }
+    if (partner.length >= MIN_SERVICE_PARTIAL_TOKEN_LENGTH && bo.includes(partner)) {
+      return true;
+    }
+    if (bo.length >= MIN_SERVICE_PARTIAL_TOKEN_LENGTH && partner.includes(bo)) {
+      return true;
+    }
+    return false;
+  }
+
+  private countServiceOverlap(boValues: string[], partnerValues: string[]): number {
+    let overlap = 0;
+    for (const bo of boValues) {
+      for (const partner of partnerValues) {
+        if (this.serviceValuesMatch(bo, partner)) {
+          overlap++;
+          break;
+        }
+      }
+    }
+    return overlap;
   }
 
   private findServiceColumn(data: Record<string, string>[]): string | null {
@@ -635,8 +951,19 @@ export class MagicReconciliationService {
     }
     return Object.keys(data[0]).find(c => {
       const l = c.toLowerCase();
-      return l.includes('service') || l.includes('serv');
+      return l.includes('service') || l.includes('serv') || l.includes('type') || l.includes('produit');
     }) || null;
+  }
+
+  private buildDistinctValueCache(
+    data: Record<string, string>[],
+    columns: string[]
+  ): Map<string, string[]> {
+    const cache = new Map<string, string[]>();
+    for (const column of columns) {
+      cache.set(column, this.extractDistinctValues(data, column));
+    }
+    return cache;
   }
 
   private extractDistinctValues(data: Record<string, string>[], column: string): string[] {
