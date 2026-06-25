@@ -36,6 +36,17 @@ export const MERCHANT_REPORT_COLUMNS: BilingualColumnDefinition[] = [
   { id: 'linkedTxId', fr: 'ID de transaction liée', en: 'Linked Transaction ID' }
 ];
 
+/** Alias Orange Money : en-têtes variables des relevés (ex. « Généré le : », « Application : »). */
+export const ORANGE_MONEY_COLUMN_DEFINITIONS: BilingualColumnDefinition[] = [
+  { id: 'omStatut', fr: 'Statut', en: 'Généré le :' },
+  { id: 'omPaiement', fr: 'Paiement', en: 'Application :' }
+];
+
+const ORANGE_MONEY_EXTRA_ALIASES: Record<string, string[]> = {
+  omStatut: ['Généré le', 'Genere le :', 'Genere le', 'Status', 'État', 'Etat', 'State'],
+  omPaiement: ['Application', 'Application:', 'Payment', 'Moyen de Paiement', 'Moyen paiement']
+};
+
 /** Champs métier ReconciliApp (écarts BO, TRX, etc.) — alias FR / EN. */
 export const BILINGUAL_COLUMN_ALIASES = {
   date: [
@@ -63,7 +74,11 @@ export const BILINGUAL_COLUMN_ALIASES = {
   ],
   statut: [
     'Statut', 'statut', 'STATUT', 'status', 'Status', 'Transaction Status', 'Statut de la transaction',
-    'Etat', 'State'
+    'Etat', 'State', 'Généré le :', 'Généré le', 'Genere le :', 'Genere le'
+  ],
+  paiement: [
+    'Paiement', 'paiement', 'PAIEMENT', 'payment', 'Payment',
+    'Application :', 'Application:', 'Application', 'Moyen de Paiement', 'Moyen paiement'
   ],
   receipt: [
     'Receipt No.', 'Receipt No', 'N° de reçu', 'N de recu', 'Numero de recu', 'Numéro de reçu',
@@ -89,6 +104,16 @@ function buildNormalizedHeaderIndex(): Map<string, BilingualColumnDefinition> {
     register(def.en, def);
     register(def.fr.replace(/'/g, ''), def);
     register(def.en.replace(/\./g, ''), def);
+  }
+
+  for (const def of ORANGE_MONEY_COLUMN_DEFINITIONS) {
+    register(def.fr, def);
+    register(def.en, def);
+    register(def.en.replace(/\s*:\s*$/, ''), def);
+    const extras = ORANGE_MONEY_EXTRA_ALIASES[def.id] || [];
+    for (const extra of extras) {
+      register(extra, def);
+    }
   }
 
   for (const aliases of Object.values(BILINGUAL_COLUMN_ALIASES)) {
@@ -136,13 +161,48 @@ export function resolveCanonicalColumnId(header: string): string | null {
     }
   }
 
+  for (const def of ORANGE_MONEY_COLUMN_DEFINITIONS) {
+    const frNorm = normalizeHeaderForMatch(def.fr);
+    const enNorm = normalizeHeaderForMatch(def.en);
+    if (normalized === frNorm || normalized === enNorm) {
+      return def.id;
+    }
+    if (def.id === 'omStatut' && normalized.includes('genere le')) {
+      return def.id;
+    }
+    if (def.id === 'omPaiement' && normalized.startsWith('application')) {
+      return def.id;
+    }
+  }
+
   return null;
 }
 
 /** Libellé FR canonique pour un id (utilisé après normalisation des fichiers EN). */
 export function getCanonicalFrenchLabel(columnId: string): string | null {
-  const def = MERCHANT_REPORT_COLUMNS.find(d => d.id === columnId);
-  return def?.fr ?? null;
+  const merchantDef = MERCHANT_REPORT_COLUMNS.find(d => d.id === columnId);
+  if (merchantDef) {
+    return merchantDef.fr;
+  }
+  const orangeMoneyDef = ORANGE_MONEY_COLUMN_DEFINITIONS.find(d => d.id === columnId);
+  return orangeMoneyDef?.fr ?? null;
+}
+
+/** Alias Orange Money supplémentaires pour une colonne configurée dans un modèle. */
+export function getOrangeMoneyAliasHeadersForColumn(column: string): string[] {
+  const columnId = resolveCanonicalColumnId(column);
+  if (!columnId) {
+    return [];
+  }
+  const def = ORANGE_MONEY_COLUMN_DEFINITIONS.find(d => d.id === columnId);
+  if (!def) {
+    return [];
+  }
+  const aliases = new Set<string>([def.fr, def.en, def.en.replace(/\s*:\s*$/, '')]);
+  for (const extra of ORANGE_MONEY_EXTRA_ALIASES[columnId] || []) {
+    aliases.add(extra);
+  }
+  return Array.from(aliases).filter(alias => alias && alias !== column);
 }
 
 /**

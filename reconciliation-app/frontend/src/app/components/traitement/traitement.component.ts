@@ -607,7 +607,7 @@ End Sub`;
     
     // Mots-clés pour identifier les en-têtes
     const headerKeywords = [
-      'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Statut', 'Mode',
+      'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Application :', 'Statut', 'Généré le :', 'Mode',
       'Compte', 'Wallet', 'Pseudo', 'Débit', 'Crédit', 'Montant', 'Commissions',
       'Opération', 'Agent', 'Correspondant', 'Sous-réseau', 'Transaction'
     ];
@@ -648,7 +648,10 @@ End Sub`;
         'Fin de Période :', 'Réseau :', 'Cameroon', 'Transactions réussies',
         'Wallet commission', 'Total', 'Total activités'
       ];
-      const isDocumentHeader = documentHeaders.some(header => 
+      const nonEmptyCells = rowStrings.filter(cell => cell !== '').length;
+      // Ne pas confondre une ligne d'en-tête de données (plusieurs colonnes, ex. « Application : »)
+      // avec une ligne de métadonnées du relevé Orange Money.
+      const isDocumentHeader = nonEmptyCells < 5 && documentHeaders.some(header => 
         rowStrings.some(cell => cell.includes(header))
       );
       
@@ -5409,7 +5412,7 @@ End Sub`;
           
           // Chercher des patterns d'en-tête de données
           const dataHeaderPatterns = [
-            'date', 'heure', 'référence', 'service', 'paiement', 'statut', 'mode',
+            'date', 'heure', 'référence', 'service', 'paiement', 'application', 'statut', 'genere le', 'mode',
             'agent', 'correspondant', 'montant', 'commissions', 'débit', 'crédit'
           ];
           
@@ -5546,9 +5549,8 @@ End Sub`;
   private applyAutomaticOrangeMoneyFilter(): void {
     
     // Chercher la colonne "Statut" dans les colonnes disponibles
-    const statutColumn = this.allColumns.find(col => 
-      col.toLowerCase().includes('statut') || 
-      col.toLowerCase().includes('status')
+    const statutColumn = this.allColumns.find(col =>
+      this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(col)
     );
     
     // Chercher la colonne "Type d'opération" ou "Opération" pour filtrer Cash in et Merchant Payment
@@ -5651,6 +5653,7 @@ End Sub`;
       'N° de Compte',
       'DATE',
       'Service',
+      'Paiement',
       'Statut'
     ];
     
@@ -5673,7 +5676,8 @@ End Sub`;
         if (targetColumn === 'N° de Compte' && (colLower.includes('n°') && colLower.includes('compte'))) return true;
         if (targetColumn === 'DATE' && colLower.includes('date')) return true;
         if (targetColumn === 'Service' && colLower.includes('service')) return true;
-        if (targetColumn === 'Statut' && (colLower.includes('statut') || colLower.includes('status'))) return true;
+        if (targetColumn === 'Paiement' && this.orangeMoneyUtilsService.matchesOrangeMoneyPaiementColumn(col)) return true;
+        if (targetColumn === 'Statut' && this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(col)) return true;
         
         return false;
       });

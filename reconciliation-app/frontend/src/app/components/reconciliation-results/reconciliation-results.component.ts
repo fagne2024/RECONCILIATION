@@ -1,4 +1,4 @@
-﻿import { Component, Input, OnInit, ChangeDetectorRef, OnChanges, SimpleChanges, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
+import { Component, Input, OnInit, ChangeDetectorRef, OnChanges, SimpleChanges, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -7962,6 +7962,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     goToMatches() {
         const buttonClickStartTime = performance.now();
+
+        this.syncMagicViewContextToTabsService();
+        if (this.isMagicServiceView() || this.shouldApplyServicePartition()) {
+            this.filteredMatches = this.getFilteredMatches();
+            this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+        }
         
         const setActiveTabStartTime = performance.now();
         // Utiliser setActiveTab pour avoir le même comportement que les autres boutons

@@ -15,6 +15,7 @@ import {
   parseConditionValues
 } from './auto-processing.service';
 import { buildConcatenatedValue } from '../utils/concat.util';
+import { getOrangeMoneyAliasHeadersForColumn } from '../utils/bilingual-column.util';
 import { parseAmountValue } from '../utils/record-amount.util';
 import {
   normalizeColumnKey,
@@ -29,6 +30,11 @@ interface PrecomputedFormatTarget {
   action: ModelFormatAction;
   conditionColumnKey: string | null;
   expectedValues: ReadonlySet<string> | null;
+}
+
+interface ResolvedColumnRenameRule {
+  sourceKey: string;
+  targetKey: string;
 }
 
 @Injectable({
@@ -102,11 +108,10 @@ export class ModelPreProcessingService {
           break;
         case 'columnRenameRules':
           if (config.columnRenameRules?.length) {
-            result = await this.mapRowsBatched(
+            result = await this.applyColumnRenameRulesAsync(
               result,
+              config.columnRenameRules,
               batchSize,
-              row => this.applyColumnRenameRulesToRow(row, config.columnRenameRules!),
-              'Renommage des en-têtes...',
               options
             );
           }
@@ -381,26 +386,117 @@ export class ModelPreProcessingService {
 
   private applyColumnRenameRulesToRow(
     row: Record<string, string>,
-    rules: ModelColumnRenameRule[]
+    rules: ModelColumnRenameRule[],
+    resolvedRules?: ResolvedColumnRenameRule[]
   ): Record<string, string> {
-    const activeRules = this.getActiveColumnRenameRules(rules);
+    const activeRules = resolvedRules ?? this.resolveColumnRenameRules(row, rules);
     if (!activeRules.length) {
       return row;
     }
 
-    let newRow = { ...row };
-    for (const rule of activeRules) {
-      const targetColumn = rule.targetColumn?.trim();
-      if (!rule.sourceColumn || !targetColumn) {
-        continue;
-      }
-      const sourceKey = resolveColumnKeyInRow(newRow, rule.sourceColumn);
-      if (!sourceKey || sourceKey === targetColumn) {
-        continue;
-      }
-      newRow = renameKeyPreservingOrder(newRow, sourceKey, targetColumn);
+    return this.applyResolvedColumnRenamesToRow(row, activeRules);
+  }
+
+  private resolveColumnRenameRules(
+    sampleRow: Record<string, string>,
+    rules: ModelColumnRenameRule[]
+  ): ResolvedColumnRenameRule[] {
+    const activeRules = this.getActiveColumnRenameRules(rules);
+    if (!activeRules.length) {
+      return [];
     }
-    return newRow;
+
+    let working: Record<string, string> = { ...sampleRow };
+    const resolved: ResolvedColumnRenameRule[] = [];
+
+    for (const rule of activeRules) {
+      const targetKey = rule.targetColumn!.trim();
+      const sourceKey = resolveColumnKeyInRow(working, rule.sourceColumn!);
+      if (!sourceKey || sourceKey === targetKey || !Object.prototype.hasOwnProperty.call(working, sourceKey)) {
+        continue;
+      }
+      resolved.push({ sourceKey, targetKey });
+      working = renameKeyPreservingOrder(working, sourceKey, targetKey);
+    }
+
+    return resolved;
+  }
+
+  private applyResolvedColumnRenamesToRow(
+    row: Record<string, string>,
+    resolvedRules: ResolvedColumnRenameRule[]
+  ): Record<string, string> {
+    if (!resolvedRules.length) {
+      return row;
+    }
+
+    if (resolvedRules.length === 1) {
+      const { sourceKey, targetKey } = resolvedRules[0];
+      if (!Object.prototype.hasOwnProperty.call(row, sourceKey)) {
+        return row;
+      }
+      return renameKeyPreservingOrder(row, sourceKey, targetKey);
+    }
+
+    let current: Record<string, string> = row;
+    let changed = false;
+    for (const { sourceKey, targetKey } of resolvedRules) {
+      if (!Object.prototype.hasOwnProperty.call(current, sourceKey)) {
+        continue;
+      }
+      const next = renameKeyPreservingOrder(current, sourceKey, targetKey);
+      if (next !== current) {
+        current = next;
+        changed = true;
+      }
+    }
+    return changed ? current : row;
+  }
+
+  private async applyColumnRenameRulesAsync(
+    rows: Record<string, string>[],
+    rules: ModelColumnRenameRule[],
+    batchSize: number,
+    options?: {
+      onProgress?: (message: string, done: number, total: number) => void | Promise<void>;
+      yieldFn?: () => Promise<void>;
+    }
+  ): Promise<Record<string, string>[]> {
+    if (!rows.length) {
+      return rows;
+    }
+
+    const resolvedRules = this.resolveColumnRenameRules(rows[0], rules);
+    if (!resolvedRules.length) {
+      return rows;
+    }
+
+    const message = 'Renommage des en-têtes...';
+    const total = rows.length;
+    const progressInterval = total > 50000 ? 10000 : total > 10000 ? 5000 : total;
+    const processingBatch = total > 50000
+      ? Math.max(batchSize, 4000)
+      : Math.max(batchSize, 2000);
+
+    await options?.onProgress?.(message, 0, total);
+    await options?.yieldFn?.();
+
+    for (let start = 0; start < total; start += processingBatch) {
+      const end = Math.min(start + processingBatch, total);
+      for (let i = start; i < end; i++) {
+        const updated = this.applyResolvedColumnRenamesToRow(rows[i], resolvedRules);
+        if (updated !== rows[i]) {
+          rows[i] = updated;
+        }
+      }
+
+      if (end === total || end % progressInterval === 0 || start === 0) {
+        await options?.onProgress?.(message, end, total);
+        await options?.yieldFn?.();
+      }
+    }
+
+    return rows;
   }
 
   applyPreProcessing(
@@ -577,12 +673,22 @@ export class ModelPreProcessingService {
     rows: Record<string, string>[],
     rules: ModelColumnRenameRule[]
   ): Record<string, string>[] {
-    const activeRules = this.getActiveColumnRenameRules(rules);
-    if (!activeRules.length) {
+    if (!rows.length) {
       return rows;
     }
 
-    return rows.map(row => this.applyColumnRenameRulesToRow(row, rules));
+    const resolvedRules = this.resolveColumnRenameRules(rows[0], rules);
+    if (!resolvedRules.length) {
+      return rows;
+    }
+
+    for (let i = 0; i < rows.length; i++) {
+      const updated = this.applyResolvedColumnRenamesToRow(rows[i], resolvedRules);
+      if (updated !== rows[i]) {
+        rows[i] = updated;
+      }
+    }
+    return rows;
   }
 
   applyValueMappings(
@@ -1370,6 +1476,15 @@ export class ModelPreProcessingService {
       ];
     }
 
+    if (String(filePattern || '').toUpperCase().includes('OM')) {
+      return [
+        'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Application :',
+        'Statut', 'Généré le :', 'Mode', 'N° de Compte', 'Wallet', 'N° Pseudo',
+        'Débit', 'Crédit', 'Montant', 'Commissions', 'Opération', 'Agent',
+        'Correspondant', 'Sous-réseau'
+      ];
+    }
+
     return [];
   }
 
@@ -1490,6 +1605,85 @@ export class ModelPreProcessingService {
     return '';
   }
 
+  isBlankColumnName(column?: string | null): boolean {
+    const name = String(column ?? '').trim();
+    return !name || name.toLowerCase() === 'undefined';
+  }
+
+  private isEmptyCellValue(value?: string | null): boolean {
+    return !String(value ?? '').trim();
+  }
+
+  /** True si toutes les lignes ont une valeur vide pour cette colonne. */
+  isColumnEmptyInAllRows(rows: Record<string, string>[], column: string): boolean {
+    if (!rows.length || this.isBlankColumnName(column)) {
+      return true;
+    }
+    for (const row of rows) {
+      if (!this.isEmptyCellValue(this.resolveRowColumnValue(row, column))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private collectColumnNamesFromRows(rows: Record<string, string>[]): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const row of rows) {
+      for (const key of Object.keys(row)) {
+        if (!this.isBlankColumnName(key) && !seen.has(key)) {
+          seen.add(key);
+          result.push(key);
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Colonnes utiles pour export / déduplication : nom non vide et au moins une valeur renseignée.
+   */
+  getNonemptyExportColumns(
+    rows: Record<string, string>[],
+    candidateColumns?: string[]
+  ): string[] {
+    if (!rows.length) {
+      return [];
+    }
+    const columns = candidateColumns?.length
+      ? candidateColumns.map(col => col.trim()).filter(col => !this.isBlankColumnName(col))
+      : this.collectColumnNamesFromRows(rows);
+    return columns.filter(col => !this.isColumnEmptyInAllRows(rows, col));
+  }
+
+  /**
+   * Retire du fichier final les colonnes sans nom ou sans aucune valeur sur l'ensemble des lignes.
+   */
+  dropEmptyColumnsFromRows(
+    rows: Record<string, string>[],
+    candidateColumns?: string[]
+  ): { rows: Record<string, string>[]; columns: string[] } {
+    if (!rows.length) {
+      return { rows: [], columns: [] };
+    }
+
+    const keptColumns = this.getNonemptyExportColumns(rows, candidateColumns);
+    if (!keptColumns.length) {
+      return { rows: [], columns: [] };
+    }
+
+    const filteredRows = rows.map(row => {
+      const filtered: Record<string, string> = {};
+      for (const col of keptColumns) {
+        filtered[col] = this.resolveRowColumnValue(row, col);
+      }
+      return filtered;
+    });
+
+    return { rows: filteredRows, columns: keptColumns };
+  }
+
   /** Projette les lignes vers les colonnes finales du modèle (avec repli sur colonnes sources). */
   projectRowsToExportColumns(
     rows: Record<string, string>[],
@@ -1502,7 +1696,9 @@ export class ModelPreProcessingService {
     }
 
     const aliasesByOutput = this.buildOutputColumnAliases(columnRules, model?.preProcessingConfig);
-    const orderedColumns = outputColumns.map(col => col.trim()).filter(Boolean);
+    const orderedColumns = outputColumns
+      .map(col => col.trim())
+      .filter(col => !this.isBlankColumnName(col));
 
     return rows.map(row => {
       const projected: Record<string, string> = {};
@@ -1558,6 +1754,22 @@ export class ModelPreProcessingService {
       }
     }
 
+    const aliasTargets = new Set<string>([
+      ...map.keys(),
+      ...columnRules.map(rule => (rule.targetColumn || rule.sourceColumn || '').trim()).filter(Boolean)
+    ]);
+    for (const target of aliasTargets) {
+      const omAliases = getOrangeMoneyAliasHeadersForColumn(target);
+      if (!omAliases.length) {
+        continue;
+      }
+      const existing = new Set(map.get(target) || []);
+      for (const alias of omAliases) {
+        existing.add(alias);
+      }
+      map.set(target, [...existing]);
+    }
+
     for (const rename of renameRules) {
       const renameSource = (rename.sourceColumn || '').trim();
       const renameTarget = (rename.targetColumn || '').trim();
@@ -1592,7 +1804,7 @@ export class ModelPreProcessingService {
     return '';
   }
 
-  /** Ne conserve que les colonnes attendues dans le fichier final (toutes présentes, même vides). */
+  /** Ne conserve que les colonnes attendues dans le fichier final (hors colonnes vides). */
   filterRowsToColumns(
     rows: Record<string, string>[],
     columns: string[]
@@ -1601,9 +1813,9 @@ export class ModelPreProcessingService {
       return rows;
     }
 
-    const orderedColumns = columns.map(col => col.trim()).filter(Boolean);
+    const orderedColumns = this.getNonemptyExportColumns(rows, columns);
     if (!orderedColumns.length) {
-      return rows;
+      return [];
     }
 
     return rows.map(row => {

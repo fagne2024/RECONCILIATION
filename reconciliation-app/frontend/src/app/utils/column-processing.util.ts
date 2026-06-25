@@ -1,10 +1,18 @@
 import { ColumnProcessingRule } from '../services/auto-processing.service';
+import { getOrangeMoneyAliasHeadersForColumn } from './bilingual-column.util';
 import { resolveColumnKeyInRow } from './row-column.util';
 
 function findColumnKey(data: Record<string, unknown>, sourceColumn: string): string | null {
   const resolved = resolveColumnKeyInRow(data as Record<string, string>, sourceColumn);
   if (resolved) {
     return resolved;
+  }
+
+  for (const alias of getOrangeMoneyAliasHeadersForColumn(sourceColumn)) {
+    const aliasKey = resolveColumnKeyInRow(data as Record<string, string>, alias);
+    if (aliasKey) {
+      return aliasKey;
+    }
   }
 
   const normalizedSource = normalizeColumnName(sourceColumn);

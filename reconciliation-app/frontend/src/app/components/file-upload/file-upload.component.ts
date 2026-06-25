@@ -1113,7 +1113,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         );
         const inputColumns = this.collectAssistedTreatmentInputColumns(model, columnRules);
         let workingRows = compiled.rows;
-        const needsEnrichment = this.needsAssistedColumnEnrichment(compiled.rows[0], inputColumns);
+        const needsEnrichment = this.needsAssistedColumnEnrichment(compiled.rows[0], inputColumns)
+            || this.orangeMoneyUtilsService.isOrangeMoneyModel(model);
 
         if (needsEnrichment) {
             workingRows = await this.enrichAssistedRowsAsync(
@@ -1178,13 +1179,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return { success: false, warningMessage: 'Aucun résultat après application des règles.' };
         }
 
-        const dedupResult = await this.removeDuplicateTreatmentRowsAsync(processed);
-        const uniqueProcessed = dedupResult.uniqueRows;
-
-        if (!uniqueProcessed.length) {
-            return { success: false, warningMessage: 'Aucune ligne unique après déduplication.' };
-        }
-
         const useColumnFilter = !this.isTraitementMultiModelMode || this.selectedTraitementModelIds.size === 1;
         const exportColumns = useColumnFilter ? this.getSelectedTraitementExportColumns() : [];
         if (useColumnFilter && this.traitementColumnFilterEnabled && this.traitementOutputColumns.length > 0 && exportColumns.length === 0) {
@@ -1194,27 +1188,45 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             };
         }
 
-        let exportRows = uniqueProcessed;
+        let exportRows = processed;
         if (exportColumns.length) {
             exportRows = this.modelPreProcessingService.projectRowsToExportColumns(
-                uniqueProcessed,
+                processed,
                 exportColumns,
                 columnRules,
                 model
             );
         }
 
+        const sanitized = this.modelPreProcessingService.dropEmptyColumnsFromRows(
+            exportRows,
+            exportColumns.length ? exportColumns : undefined
+        );
+        exportRows = sanitized.rows;
+        const finalExportColumns = sanitized.columns;
+
+        if (!exportRows.length) {
+            return { success: false, warningMessage: 'Aucune colonne avec données pour le fichier final.' };
+        }
+
+        const dedupResult = await this.removeDuplicateTreatmentRowsAsync(exportRows, finalExportColumns);
+        exportRows = dedupResult.uniqueRows;
+
+        if (!exportRows.length) {
+            return { success: false, warningMessage: 'Aucune ligne unique après déduplication.' };
+        }
+
         const outputName = this.buildProcessedOutputFileName(model, compiled.referenceFile);
         await this.updateTraitementProgress(`Téléchargement : ${outputName}`);
         await this.downloadProcessedTreatmentFile(exportRows, outputName, {
             skipNormalize: true,
-            columns: exportColumns.length ? exportColumns : undefined
+            columns: finalExportColumns.length ? finalExportColumns : undefined
         });
 
         return {
             success: true,
             outputName,
-            lineCount: uniqueProcessed.length,
+            lineCount: exportRows.length,
             duplicatesRemoved: dedupResult.duplicatesRemoved,
             preProcessingResultMessage,
             exportRows
@@ -2310,7 +2322,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return cleaned || 'modele';
     }
 
-    private removeDuplicateTreatmentRows(rows: Record<string, string>[]): {
+    private removeDuplicateTreatmentRows(
+        rows: Record<string, string>[],
+        columns?: string[]
+    ): {
         uniqueRows: Record<string, string>[];
         duplicatesRemoved: number;
     } {
@@ -2318,7 +2333,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const uniqueRows: Record<string, string>[] = [];
         let duplicatesRemoved = 0;
 
-        const orderedKeys = Object.keys(rows[0]);
+        const orderedKeys = this.modelPreProcessingService.getNonemptyExportColumns(rows, columns);
 
         for (const row of rows) {
             const key = this.buildTreatmentRowDedupKey(row, orderedKeys);
@@ -2336,7 +2351,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return { uniqueRows, duplicatesRemoved };
     }
 
-    private async removeDuplicateTreatmentRowsAsync(rows: Record<string, string>[]): Promise<{
+    private async removeDuplicateTreatmentRowsAsync(
+        rows: Record<string, string>[],
+        columns?: string[]
+    ): Promise<{
         uniqueRows: Record<string, string>[];
         duplicatesRemoved: number;
     }> {
@@ -2347,7 +2365,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const seen = new Set<string>();
         const uniqueRows: Record<string, string>[] = [];
         let duplicatesRemoved = 0;
-        const orderedKeys = Object.keys(rows[0]);
+        const orderedKeys = this.modelPreProcessingService.getNonemptyExportColumns(rows, columns);
         const batchSize = rows.length > 100000 ? 20000 : 2000;
 
         for (let i = 0; i < rows.length; i++) {
@@ -2375,7 +2393,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         let key = '';
         for (let i = 0; i < orderedKeys.length; i++) {
             const k = orderedKeys[i];
-            key += `${row[k] ?? ''}\u0001`;
+            const raw = String(row[k] ?? '').trim().replace(/\s+/g, ' ');
+            key += `${raw}\u0001`;
         }
         return key;
     }
@@ -2661,9 +2680,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             exportRows = this.normalizeData(data);
         }
 
-        const columns = options?.columns?.length
-            ? options.columns
-            : this.getColumnsFromData(exportRows);
+        const sanitized = this.modelPreProcessingService.dropEmptyColumnsFromRows(
+            exportRows,
+            options?.columns
+        );
+        exportRows = sanitized.rows;
+
+        const columns = sanitized.columns.length
+            ? sanitized.columns
+            : this.modelPreProcessingService.getNonemptyExportColumns(exportRows);
         const lowerName = outputBaseName.toLowerCase();
         const exportOptions = {
             chunkSize: exportRows.length > 100000 ? 5000 : exportRows.length > 20000 ? 2000 : 1000,
@@ -2863,11 +2888,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             const colLower = col.toLowerCase();
             return colLower.includes('service') || colLower.includes('serv') || colLower.includes('type');
         });
-        const statusColumn = columns.find(col => {
-            const colLower = col.toLowerCase();
-            return colLower.includes('statut') || colLower.includes('status') || colLower.includes('état')
-                || colLower.includes('généré le') || colLower.includes('genere le');
-        });
+        const statusColumn = columns.find(col =>
+            this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(col)
+        );
         const agencyColumn = columns.find(col => {
             const lower = col.toLowerCase();
             return lower.includes('agence') || lower.includes('agency');
@@ -3419,37 +3442,20 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Méthode pour appliquer le filtrage automatique Orange Money dans la réconciliation
     private applyAutomaticOrangeMoneyFilterForReconciliation(result: any): void {
-        
-        // Vérifier si le fichier traité est un fichier Orange Money
         const fileName = result.fileName || '';
-        const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
-        
-        if (isOrangeMoneyFile) {
-            
-            // Vérifier si le modèle utilisé est un modèle Orange Money
-            const modelId = result.modelId || '';
-            const isOrangeMoneyModel = modelId.toLowerCase().includes('orange') || 
-                                     modelId.toLowerCase().includes('ciomcm') ||
-                                     modelId.toLowerCase().includes('orange money');
-            
-            if (isOrangeMoneyModel) {
-                
-                // Appliquer le filtrage sur les données traitées
-                if (result.processedData && result.processedData.length > 0) {
-                    const filteredData = this.filterOrangeMoneyData(result.processedData);
-                    
-                    
-                    // Mettre à jour les résultats avec les données filtrées
-                    result.processedData = filteredData;
-                    result.orangeMoneyFilterApplied = true;
-                    result.filteredRowsCount = filteredData.length;
-                    
-                    // Afficher une notification
-                    this.showOrangeMoneyFilterNotification(result);
-                }
-            } else {
-            }
-        } else {
+        const model = this.findProcessingModelById(result.modelId);
+        const shouldApply = this.orangeMoneyUtilsService.shouldApplyOrangeMoneyTreatment(fileName, model);
+
+        if (!shouldApply) {
+            return;
+        }
+
+        if (result.processedData && result.processedData.length > 0) {
+            const filteredData = this.filterOrangeMoneyData(result.processedData);
+            result.processedData = filteredData;
+            result.orangeMoneyFilterApplied = true;
+            result.filteredRowsCount = filteredData.length;
+            this.showOrangeMoneyFilterNotification(result);
         }
     }
 
@@ -3466,10 +3472,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         if (isOrangeMoneyFile) {
             
             const filteredData = data.filter(row => {
-                // Chercher la colonne "Statut" dans les données
-                const statutColumn = Object.keys(row).find(key => 
-                    key.toLowerCase().includes('statut') || 
-                    key.toLowerCase().includes('status')
+                const statutColumn = Object.keys(row).find(key =>
+                    this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(key)
                 );
                 
                 if (statutColumn) {
@@ -3488,10 +3492,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         } else {
             // Traitement normal pour les autres fichiers
             const filteredData = data.filter(row => {
-                // Chercher la colonne "Statut" dans les données
-                const statutColumn = Object.keys(row).find(key => 
-                    key.toLowerCase().includes('statut') || 
-                    key.toLowerCase().includes('status')
+                const statutColumn = Object.keys(row).find(key =>
+                    this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(key)
                 );
                 
                 if (statutColumn) {
@@ -3525,29 +3527,41 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Méthode pour appliquer le filtrage automatique Orange Money dans le file upload
     private applyAutomaticOrangeMoneyFilterForFileUpload(fileName: string, isBo: boolean): void {
-        
-        // Vérifier si le fichier traité est un fichier Orange Money
-        const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
-        
-        if (isOrangeMoneyFile) {
-            
-            // Appliquer le filtrage sur les données appropriées
-            if (isBo && this.boData.length > 0) {
-                const originalCount = this.boData.length;
-                this.boData = this.filterOrangeMoneyData(this.boData);
-                const filteredCount = this.boData.length;
-                
-                this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'BO', originalCount, filteredCount);
-            } else if (!isBo && this.partnerData.length > 0) {
-                const originalCount = this.partnerData.length;
-                this.partnerData = this.filterOrangeMoneyData(this.partnerData);
-                const filteredCount = this.partnerData.length;
-                
-                this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'Partenaire', originalCount, filteredCount);
-            } else {
-            }
-        } else {
+        const model = this.findProcessingModelForFile(fileName)
+            ?? this.findProcessingModelById(isBo ? this.assistedBoTreatmentModelId : this.assistedPartnerReconciliationModelId);
+        const shouldApply = this.orangeMoneyUtilsService.shouldApplyOrangeMoneyTreatment(fileName, model);
+
+        if (!shouldApply) {
+            return;
         }
+
+        if (isBo && this.boData.length > 0) {
+            const originalCount = this.boData.length;
+            this.boData = this.filterOrangeMoneyData(this.boData);
+            const filteredCount = this.boData.length;
+            this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'BO', originalCount, filteredCount);
+        } else if (!isBo && this.partnerData.length > 0) {
+            const originalCount = this.partnerData.length;
+            this.partnerData = this.filterOrangeMoneyData(this.partnerData);
+            const filteredCount = this.partnerData.length;
+            this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'Partenaire', originalCount, filteredCount);
+        }
+    }
+
+    private findProcessingModelById(modelId?: string | null): AutoProcessingModel | undefined {
+        if (!modelId) {
+            return undefined;
+        }
+        return this.traitementModels.find(m => this.getTraitementModelId(m) === modelId);
+    }
+
+    private findProcessingModelForFile(fileName: string): AutoProcessingModel | undefined {
+        if (!fileName || !this.traitementModels.length) {
+            return undefined;
+        }
+        return this.traitementModels.find(model =>
+            !!model.filePattern && this.matchesFilePattern(fileName, model.filePattern)
+        );
     }
 
     // Méthode pour afficher une notification de filtrage Orange Money pour le file upload
@@ -3627,10 +3641,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return normalizedRows;
         }
 
+        const matchedModel = this.findProcessingModelForFile(fileName || '');
+        const isOrangeMoneyByModel = this.orangeMoneyUtilsService.isOrangeMoneyModel(matchedModel);
+
         // Détection d'un fichier Orange Money basée sur la présence de colonnes clés
-        const looksLikeOM = headers.some(h => lower(h).includes('référence') || lower(h).includes('reference'))
-            && headers.some(h => lower(h).includes('statut') || lower(h).includes('status'))
-            && headers.some(h => lower(h).includes('date'));
+        const looksLikeOM = isOrangeMoneyByModel || (
+            headers.some(h => lower(h).includes('référence') || lower(h).includes('reference'))
+            && headers.some(h => this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(h))
+            && headers.some(h => lower(h).includes('date'))
+        );
 
         
         if (!looksLikeOM) {
@@ -4625,7 +4644,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
         
         // Fallback orienté Orange Money: si la meilleure ligne ne contient pas assez d'indices, chercher plus bas
-        const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status'];
+        const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status','paiement','payment','application','généré le','genere le'];
         const bestOmMatches = (bestHeaderRow || []).reduce((acc, c) => {
             const v = (c || '').toString().toLowerCase();
             return acc + (omTargets.some(t => v.includes(t)) ? 1 : 0);
@@ -4670,7 +4689,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         
         // Bonus pour les mots-clés d'en-tête
         const headerKeywords = [
-            'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Statut', 'Mode',
+            'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Application :', 'Statut', 'Généré le :', 'Mode',
             'Compte', 'Wallet', 'Pseudo', 'Débit', 'Crédit', 'Montant', 'Commissions',
             'Opération', 'Agent', 'Correspondant', 'Sous-réseau', 'Transaction',
             'ID', 'External', 'Reference', 'Amount', 'Status', 'Phone', 'Email',
@@ -4702,7 +4721,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         // Heuristique spécifique Orange Money
         const rowLower = rowStrings.map(c => c.toLowerCase());
-        const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status'];
+        const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status','paiement','payment','application','généré le','genere le'];
         const omMatches = rowLower.reduce((acc, v) => acc + (omTargets.some(t => v.includes(t)) ? 1 : 0), 0);
         score += omMatches * 5;
         if (omMatches >= 5) score += 30;
@@ -4833,7 +4852,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     getColumnsFromData(data: any[]): string[] {
         if (data.length === 0) return [];
-        return Object.keys(data[0]);
+        return this.modelPreProcessingService.getNonemptyExportColumns(data);
     }
 
     // Méthodes pour le mode automatique
@@ -5033,14 +5052,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                    colLower.includes('type');
         });
         
-        const statusColumn = columns.find(col => {
-            const colLower = col.toLowerCase();
-            return colLower.includes('statut') ||
-                   colLower.includes('status') ||
-                   colLower.includes('état') ||
-                   colLower.includes('généré le') ||
-                   colLower.includes('genere le');
-        });
+        const statusColumn = columns.find(col =>
+            this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(col)
+        );
 
         const agencyColumn = columns.find(col => {
             const c = col.toLowerCase();
@@ -5101,14 +5115,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         });
         
         // Chercher une colonne statut
-        const statusColumn = columns.find(col => {
-            const colLower = col.toLowerCase();
-            return colLower.includes('statut') || 
-                   colLower.includes('status') ||
-                   colLower.includes('état') ||
-                   colLower.includes('généré le') ||
-                   colLower.includes('genere le');
-        });
+        const statusColumn = columns.find(col =>
+            this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(col)
+        );
         
         const agencyColumn = columns.find(col => {
             const c = col.toLowerCase();
@@ -5960,16 +5969,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 const firstRow = filteredData[0];
                 const columns = Object.keys(firstRow);
             
-                const paymentColumn = columns.find(col => {
-                    const colLower = col.toLowerCase();
-                    return colLower.includes('paiement') || 
-                           colLower.includes('payment') ||
-                           colLower.includes('moyen de paiement') ||
-                           colLower.includes('moyen paiement') ||
-                           colLower.includes('application :') ||
-                           colLower.includes('application:') ||
-                           colLower.includes('application');
-                });
+                const paymentColumn = columns.find(col =>
+                    this.orangeMoneyUtilsService.matchesOrangeMoneyPaiementColumn(col)
+                );
             
                 if (paymentColumn) {
                 

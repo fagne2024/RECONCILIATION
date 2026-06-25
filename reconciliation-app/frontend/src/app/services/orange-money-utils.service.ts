@@ -8,9 +8,93 @@ export class OrangeMoneyUtilsService {
   constructor() { }
 
   /**
+   * Normalise un libellé de colonne pour comparaison (casse, accents, espaces).
+   */
+  normalizeColumnLabel(column?: string | null): string {
+    return String(column ?? '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  /** Colonne Statut Orange Money (y compris en-tête « Généré le : »). */
+  matchesOrangeMoneyStatutColumn(column?: string | null): boolean {
+    const label = this.normalizeColumnLabel(column);
+    return label.includes('statut')
+      || label.includes('status')
+      || label.includes('etat')
+      || label.includes('state')
+      || label.includes('genere le');
+  }
+
+  /** Colonne Paiement Orange Money (y compris en-tête « Application : »). */
+  matchesOrangeMoneyPaiementColumn(column?: string | null): boolean {
+    const label = this.normalizeColumnLabel(column);
+    return label.includes('paiement')
+      || label.includes('payment')
+      || label.includes('moyen de paiement')
+      || label.includes('moyen paiement')
+      || label.startsWith('application :')
+      || label.startsWith('application:')
+      || label === 'application';
+  }
+
+  /**
+   * Règle métier : tout modèle dont le pattern contient « OM » est Orange Money
+   * (ex. *CIOMCM*, *PMOMCI*, *OMBF*).
+   */
+  isOrangeMoneyModelPattern(filePattern?: string | null): boolean {
+    const pattern = String(filePattern || '').trim();
+    if (!pattern) {
+      return false;
+    }
+    return pattern.toUpperCase().includes('OM');
+  }
+
+  isOrangeMoneyModel(
+    model?: {
+      filePattern?: string | null;
+      name?: string | null;
+      id?: string | null;
+      modelId?: string | null;
+    } | null
+  ): boolean {
+    if (!model) {
+      return false;
+    }
+    if (this.isOrangeMoneyModelPattern(model.filePattern)) {
+      return true;
+    }
+    const name = String(model.name || '').toLowerCase();
+    const id = String(model.id || model.modelId || '').toLowerCase();
+    return name.includes('orange') || name.includes('ciom') || name.includes('pmom')
+      || id.includes('orange') || id.includes('ciom') || id.includes('pmom');
+  }
+
+  shouldApplyOrangeMoneyTreatment(
+    fileName?: string | null,
+    model?: {
+      filePattern?: string | null;
+      name?: string | null;
+      id?: string | null;
+      modelId?: string | null;
+    } | null
+  ): boolean {
+    if (model && this.isOrangeMoneyModel(model)) {
+      return true;
+    }
+    return !!fileName && this.isOrangeMoneyFile(fileName);
+  }
+
+  /**
    * Détecte si un fichier est un fichier Orange Money
    */
-  isOrangeMoneyFile(fileName: string): boolean {
+  isOrangeMoneyFile(fileName: string, filePattern?: string | null): boolean {
+    if (this.isOrangeMoneyModelPattern(filePattern)) {
+      return true;
+    }
+
     const fileNameLower = fileName.toLowerCase();
     
     const hasCiomcm = fileNameLower.includes('ciomcm');
@@ -37,16 +121,16 @@ export class OrangeMoneyUtilsService {
    * Retourne les valeurs spécifiques pour un champ donné dans un fichier Orange Money
    */
   getOrangeMoneyFieldValues(fieldName: string): string[] {
-    
-    // Normaliser le nom de la colonne pour la comparaison
-    const normalizedFieldName = fieldName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    
-    if (normalizedFieldName.includes('statut')) {
+    if (this.matchesOrangeMoneyStatutColumn(fieldName)) {
       return ['Succès'];
     }
     
-    if (normalizedFieldName.includes('service')) {
+    if (this.normalizeColumnLabel(fieldName).includes('service')) {
       return ['Cash in', 'Débit'];
+    }
+
+    if (this.matchesOrangeMoneyPaiementColumn(fieldName)) {
+      return ['Débit', 'Crédit', 'Transfert', 'Paiement'];
     }
     
     // Pour tous les autres champs, retourner un tableau vide

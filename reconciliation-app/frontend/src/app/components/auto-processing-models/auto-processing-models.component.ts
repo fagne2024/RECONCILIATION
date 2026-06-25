@@ -3099,9 +3099,10 @@ export class AutoProcessingModelsComponent implements OnInit {
    */
   getModelCategory(model: AutoProcessingModel): string {
     const modelName = model.name.toLowerCase();
-    
+    const modelPattern = (model.filePattern || '').toLowerCase();
+    const patternKey = `${modelName} ${modelPattern}`;
+
     // RÈGLE SPÉCIALE: Tous les modèles commençant par "PM" sont des partenaires paiement
-    // Vérifier plusieurs patterns pour capturer tous les cas :
     // - "PMWAVECI" 
     // - "Modèle basé sur PMWAVECI.xls"
     // - "PMOMCI", "PMMTNCM", etc.
@@ -3128,14 +3129,14 @@ export class AutoProcessingModelsComponent implements OnInit {
     
     // Vérifier les patterns CASHIN
     for (const pattern of cashinPatterns) {
-      if (modelName.includes(pattern)) {
+      if (patternKey.includes(pattern)) {
         return 'Partenaire CASHIN';
       }
     }
     
     // Vérifier les patterns PAIEMENT
     for (const pattern of paiementPatterns) {
-      if (modelName.includes(pattern)) {
+      if (patternKey.includes(pattern)) {
         return 'Partenaire PAIEMENT';
       }
     }
