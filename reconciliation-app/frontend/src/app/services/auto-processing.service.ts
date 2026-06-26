@@ -18,6 +18,8 @@ export interface ColumnProcessingRule {
   removeAccents?: boolean;
   stringToRemove?: string;
   padZeros?: boolean;
+  /** Longueur cible si padZeros (défaut : 10 pour To/MSISDN, sinon 8). */
+  padZeroLength?: number;
   regexReplace?: string;
   specialCharReplacementMap?: { [key: string]: string };
   ruleOrder?: number;
@@ -181,6 +183,9 @@ export interface PartnerConditionalKeysConfig {
   defaultKeyColumn?: string;
 }
 
+/** Clés BO conditionnelles (optionnel) — même principe sur les colonnes du fichier BO. */
+export type BoConditionalKeysConfig = PartnerConditionalKeysConfig;
+
 export interface AutoProcessingModel {
   id?: string; // Optionnel pour la création
   modelId?: string; // ID retourné par le backend
@@ -199,6 +204,7 @@ export interface AutoProcessingModel {
     boModelKeys?: any;
     boTreatments?: any;
     partnerConditionalKeys?: PartnerConditionalKeysConfig;
+    boConditionalKeys?: BoConditionalKeysConfig;
   };
   boColumnFilters?: BOColumnFilter[]; // Filtres BO appliqués
   columnProcessingRules?: ColumnProcessingRule[]; // Règles de traitement des colonnes

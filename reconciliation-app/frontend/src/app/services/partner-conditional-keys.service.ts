@@ -1,39 +1,41 @@
 import { Injectable } from '@angular/core';
 import {
   AutoProcessingModel,
+  BoConditionalKeysConfig,
   PartnerConditionalKeysConfig
 } from './auto-processing.service';
 import { fixCellEncoding } from '../utils/encoding-fixer';
+import {
+  BO_RECONCILIATION_KEY_ALIASES,
+  PARTNER_REFERENCE_KEY_ALIASES,
+  normalizeReconciliationKeyValue
+} from '../utils/reconciliation-key.util';
 
 /** Colonne synthétique injectée dans les données partenaire avant réconciliation. */
 export const PARTNER_CONDITIONAL_KEY_COLUMN = '__PARTNER_RECON_KEY__';
+
+/** Colonne synthétique injectée dans les données BO avant réconciliation. */
+export const BO_CONDITIONAL_KEY_COLUMN = '__BO_RECON_KEY__';
+
+type ConditionalKeysConfig = PartnerConditionalKeysConfig | BoConditionalKeysConfig;
 
 @Injectable({ providedIn: 'root' })
 export class PartnerConditionalKeysService {
 
   isEnabled(config?: PartnerConditionalKeysConfig | null): boolean {
-    return !!(
-      config?.enabled &&
-      config.conditionColumn?.trim() &&
-      config.rules?.length &&
-      config.rules.some(r => r.whenValue?.trim() && r.keyColumn?.trim())
-    );
+    return this.isConditionalConfigEnabled(config);
+  }
+
+  isBoConditionalEnabled(config?: BoConditionalKeysConfig | null): boolean {
+    return this.isConditionalConfigEnabled(config);
   }
 
   isConfigValid(data: Record<string, string>[], config: PartnerConditionalKeysConfig): boolean {
-    if (!this.isEnabled(config)) {
-      return false;
-    }
-    const conditionCol = this.findExistingColumn(data, [config.conditionColumn]);
-    if (!conditionCol) {
-      return false;
-    }
-    return config.rules.some(rule => {
-      if (!rule.whenValue?.trim() || !rule.keyColumn?.trim()) {
-        return false;
-      }
-      return !!this.findExistingColumn(data, [rule.keyColumn]);
-    });
+    return this.isConditionalConfigValid(data, config);
+  }
+
+  isBoConditionalConfigValid(data: Record<string, string>[], config: BoConditionalKeysConfig): boolean {
+    return this.isConditionalConfigValid(data, config);
   }
 
   resolveBoKeyFromModel(model: AutoProcessingModel, boData: Record<string, string>[]): string | null {
@@ -53,11 +55,24 @@ export class PartnerConditionalKeysService {
         }
       }
     }
-    return null;
+
+    return this.findExistingColumn(boData, BO_RECONCILIATION_KEY_ALIASES);
+  }
+
+  resolvePartnerKeyFromModel(model: AutoProcessingModel, partnerData: Record<string, string>[]): string | null {
+    const partnerKeys = model.reconciliationKeys?.partnerKeys || [];
+    if (partnerKeys.length) {
+      const found = this.findExistingColumn(partnerData, partnerKeys);
+      if (found) {
+        return found;
+      }
+    }
+
+    return this.findExistingColumn(partnerData, PARTNER_REFERENCE_KEY_ALIASES);
   }
 
   /**
-   * Si le modèle définit des clés conditionnelles valides, retourne la colonne clé synthétique.
+   * Si le modèle définit des clés conditionnelles partenaire valides, retourne la colonne clé synthétique.
    */
   tryResolveConditionalPartnerKey(
     model: AutoProcessingModel,
@@ -68,18 +83,72 @@ export class PartnerConditionalKeysService {
     if (!this.isEnabled(config)) {
       return null;
     }
-    const boKeyColumn = this.resolveBoKeyFromModel(model, boData);
+    const boKeyColumn = this.resolveBoKeyColumnForModel(model, boData);
     if (!boKeyColumn || !this.isConfigValid(partnerData, config!)) {
       return null;
     }
     return { boKeyColumn, partnerKeyColumn: PARTNER_CONDITIONAL_KEY_COLUMN };
   }
 
+  /**
+   * Résout les colonnes clés en combinant clés statiques et clés conditionnelles BO / partenaire.
+   */
+  resolveReconciliationKeyColumns(
+    model: AutoProcessingModel,
+    boData: Record<string, string>[],
+    partnerData: Record<string, string>[]
+  ): { boKeyColumn: string; partnerKeyColumn: string } | null {
+    const partnerConditional = model.reconciliationKeys?.partnerConditionalKeys;
+    const boConditional = model.reconciliationKeys?.boConditionalKeys;
+
+    let partnerKeyColumn = '';
+    if (this.isEnabled(partnerConditional) && this.isConfigValid(partnerData, partnerConditional!)) {
+      partnerKeyColumn = PARTNER_CONDITIONAL_KEY_COLUMN;
+    } else {
+      partnerKeyColumn = this.resolvePartnerKeyFromModel(model, partnerData) || '';
+    }
+
+    let boKeyColumn = '';
+    if (this.isBoConditionalEnabled(boConditional) && this.isBoConditionalConfigValid(boData, boConditional!)) {
+      boKeyColumn = BO_CONDITIONAL_KEY_COLUMN;
+    } else {
+      boKeyColumn = this.resolveBoKeyColumnForModel(model, boData) || '';
+    }
+
+    if (!boKeyColumn || !partnerKeyColumn) {
+      return null;
+    }
+    return { boKeyColumn, partnerKeyColumn };
+  }
+
+  private resolveBoKeyColumnForModel(model: AutoProcessingModel, boData: Record<string, string>[]): string | null {
+    if (this.isBoConditionalEnabled(model.reconciliationKeys?.boConditionalKeys)
+      && this.isBoConditionalConfigValid(boData, model.reconciliationKeys!.boConditionalKeys!)) {
+      return BO_CONDITIONAL_KEY_COLUMN;
+    }
+    return this.resolveBoKeyFromModel(model, boData);
+  }
+
   applyPartnerConditionalKeys(
     data: Record<string, string>[],
     config: PartnerConditionalKeysConfig
   ): Record<string, string>[] {
-    if (!data?.length || !this.isEnabled(config)) {
+    return this.applyConditionalKeys(data, config, PARTNER_CONDITIONAL_KEY_COLUMN);
+  }
+
+  applyBoConditionalKeys(
+    data: Record<string, string>[],
+    config: BoConditionalKeysConfig
+  ): Record<string, string>[] {
+    return this.applyConditionalKeys(data, config, BO_CONDITIONAL_KEY_COLUMN);
+  }
+
+  private applyConditionalKeys(
+    data: Record<string, string>[],
+    config: ConditionalKeysConfig,
+    targetColumn: string
+  ): Record<string, string>[] {
+    if (!data?.length || !this.isConditionalConfigEnabled(config)) {
       return data;
     }
 
@@ -116,8 +185,33 @@ export class PartnerConditionalKeysService {
         keyValue = (copy[defaultCol] || '').trim();
       }
 
-      copy[PARTNER_CONDITIONAL_KEY_COLUMN] = keyValue;
+      copy[targetColumn] = normalizeReconciliationKeyValue(keyValue);
       return copy;
+    });
+  }
+
+  private isConditionalConfigEnabled(config?: ConditionalKeysConfig | null): boolean {
+    return !!(
+      config?.enabled &&
+      config.conditionColumn?.trim() &&
+      config.rules?.length &&
+      config.rules.some(r => r.whenValue?.trim() && r.keyColumn?.trim())
+    );
+  }
+
+  private isConditionalConfigValid(data: Record<string, string>[], config: ConditionalKeysConfig): boolean {
+    if (!this.isConditionalConfigEnabled(config)) {
+      return false;
+    }
+    const conditionCol = this.findExistingColumn(data, [config.conditionColumn]);
+    if (!conditionCol) {
+      return false;
+    }
+    return config.rules.some(rule => {
+      if (!rule.whenValue?.trim() || !rule.keyColumn?.trim()) {
+        return false;
+      }
+      return !!this.findExistingColumn(data, [rule.keyColumn]);
     });
   }
 

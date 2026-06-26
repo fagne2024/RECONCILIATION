@@ -24,6 +24,14 @@ import {
   resolveCanonicalColumnKeysInRow
 } from '../utils/row-column.util';
 import { fixCellEncoding, fixCellEncodingIfNeeded } from '../utils/encoding-fixer';
+import {
+  finalizeTextPreserveColumnValue,
+  preserveLeadingZeroString,
+  normalizeLeadingZeroCellsInRows,
+  keepCharactersFromString,
+  finalizeAfterKeepCharacters,
+  isMsisdnPreserveColumn
+} from '../utils/text-cell.util';
 
 interface PrecomputedFormatTarget {
   keys: readonly string[];
@@ -119,7 +127,7 @@ export class ModelPreProcessingService {
       }
     }
 
-    return result;
+    return normalizeLeadingZeroCellsInRows(result);
   }
 
   private async mapRowsBatched(
@@ -265,11 +273,12 @@ export class ModelPreProcessingService {
 
         const formattedValue = this.applyFormatActionToValue(
           this.coerceFormatCellValueFast(rawValue),
-          target.action
+          target.action,
+          primaryKey
         );
 
         for (const key of target.keys) {
-          row[key] = formattedValue;
+          row[key] = this.finalizeFormatColumnValue(key, target.action, formattedValue);
         }
       }
     }
@@ -298,11 +307,13 @@ export class ModelPreProcessingService {
 
         const formattedValue = this.applyFormatActionToValue(
           this.coerceFormatCellValue(rawValue),
-          merged
+          merged,
+          key
         );
+        const storedValue = this.finalizeFormatColumnValue(key, merged, formattedValue);
 
         for (const aliasKey of resolveCanonicalColumnKeysInRow(row, column)) {
-          row[aliasKey] = formattedValue;
+          row[aliasKey] = this.finalizeFormatColumnValue(aliasKey, merged, storedValue);
         }
       }
     }
@@ -322,9 +333,21 @@ export class ModelPreProcessingService {
     const newRow = row;
     for (const rule of activeRules) {
       newRow[rule.targetColumn] = buildConcatenatedValue(
-        rule.sourceColumns.map(column => newRow[column]),
-        rule.separator ?? ''
+        rule.sourceColumns.map(column => {
+          const key = resolveColumnKeyInRow(newRow, column) ?? column;
+          return newRow[key];
+        }),
+        rule.separator ?? '',
+        rule.sourceColumns
       );
+      if (rule.targetColumn) {
+        if (isMsisdnPreserveColumn(rule.targetColumn)) {
+          newRow[rule.targetColumn] = finalizeTextPreserveColumnValue(
+            rule.targetColumn,
+            newRow[rule.targetColumn]
+          );
+        }
+      }
     }
     return newRow;
   }
@@ -545,7 +568,7 @@ export class ModelPreProcessingService {
       }
     }
 
-    return result;
+    return normalizeLeadingZeroCellsInRows(result);
   }
 
   applyRowFilters(
@@ -779,7 +802,7 @@ export class ModelPreProcessingService {
       if (!Number.isFinite(value)) {
         return '';
       }
-      return String(value);
+      return preserveLeadingZeroString(value);
     }
 
     const asString = String(value);
@@ -798,36 +821,75 @@ export class ModelPreProcessingService {
       if (!Number.isFinite(value)) {
         return '';
       }
-      return String(value);
+      return preserveLeadingZeroString(value);
     }
     return fixCellEncodingIfNeeded(String(value)).trim();
   }
 
-  private applyFormatActionToValue(value: string, action: ModelFormatAction): string {
+  private applyFormatActionToValue(
+    value: string,
+    action: ModelFormatAction,
+    columnName?: string
+  ): string {
     if (!value.length) {
       return value;
     }
 
+    let result: string;
     switch (action.type) {
       case 'removeSpecialStrings':
-        return this.applyRemoveSpecialString(value, action);
+        result = this.applyRemoveSpecialString(value, action);
+        break;
       case 'removeCharacters':
-        return this.applyRemoveCharacters(value, action);
+        result = this.applyRemoveCharacters(value, action);
+        break;
       case 'removeNumbers':
-        return value.replace(/\d/g, '');
+        result = value.replace(/\d/g, '');
+        break;
       case 'removeIndicatif':
-        return this.applyRemoveIndicatif(value, action);
+        result = this.applyRemoveIndicatif(value, action);
+        break;
       case 'removeDecimals':
-        return this.applyRemoveDecimals(value, action);
+        result = this.applyRemoveDecimals(value, action);
+        break;
       case 'keepLastDigits':
-        return this.applyKeepLastDigits(value, action);
+        result = this.applyKeepLastDigits(value, action);
+        break;
       case 'removeZeroDecimals':
-        return value.endsWith('.0') ? value.slice(0, -2) : value;
+        result = value.endsWith('.0') ? value.slice(0, -2) : value;
+        break;
       case 'removeSpaces':
-        return this.applyRemoveSpaces(value, action);
+        result = this.applyRemoveSpaces(value, action);
+        break;
       default:
-        return value;
+        result = value;
     }
+
+    if (columnName && action.type === 'removeCharacters') {
+      if (action.removeCharMode === 'keep') {
+        const keepCount = Math.max(1, Number(action.removeCharCount) || 1);
+        return finalizeAfterKeepCharacters(columnName, result, keepCount);
+      }
+      return isMsisdnPreserveColumn(columnName)
+        ? finalizeTextPreserveColumnValue(columnName, result)
+        : result;
+    }
+
+    return result;
+  }
+
+  private finalizeFormatColumnValue(
+    columnName: string,
+    action: ModelFormatAction,
+    value: string
+  ): string {
+    if (action.type === 'removeCharacters' && action.removeCharMode === 'keep') {
+      const keepCount = Math.max(1, Number(action.removeCharCount) || 1);
+      return finalizeAfterKeepCharacters(columnName, value, keepCount);
+    }
+    return isMsisdnPreserveColumn(columnName)
+      ? finalizeTextPreserveColumnValue(columnName, value)
+      : value;
   }
 
   private applyRemoveSpecialString(value: string, action: ModelFormatAction): string {
@@ -852,39 +914,26 @@ export class ModelPreProcessingService {
     const position = action.removeCharPosition ?? 'start';
     const count = Math.max(1, Number(action.removeCharCount) || 1);
     const specificPosition = Math.max(1, Number(action.removeCharSpecificPosition) || 1);
+    const text = preserveLeadingZeroString(value);
 
     if (mode === 'keep') {
-      switch (position) {
-        case 'start':
-          return value.substring(0, count);
-        case 'end':
-          return value.substring(Math.max(0, value.length - count));
-        case 'specific': {
-          const pos = specificPosition - 1;
-          if (pos >= 0 && pos < value.length) {
-            return value.substring(pos, pos + count);
-          }
-          return value;
-        }
-        default:
-          return value;
-      }
+      return keepCharactersFromString(text, position, count, specificPosition);
     }
 
     switch (position) {
       case 'start':
-        return value.length >= count ? value.substring(count) : value;
+        return text.length >= count ? text.substring(count) : text;
       case 'end':
-        return value.length >= count ? value.substring(0, value.length - count) : value;
+        return text.length >= count ? text.substring(0, text.length - count) : text;
       case 'specific': {
         const pos = specificPosition - 1;
-        if (pos >= 0 && pos < value.length && pos + count <= value.length) {
-          return value.substring(0, pos) + value.substring(pos + count);
+        if (pos >= 0 && pos < text.length && pos + count <= text.length) {
+          return text.substring(0, pos) + text.substring(pos + count);
         }
-        return value;
+        return text;
       }
       default:
-        return value;
+        return text;
     }
   }
 

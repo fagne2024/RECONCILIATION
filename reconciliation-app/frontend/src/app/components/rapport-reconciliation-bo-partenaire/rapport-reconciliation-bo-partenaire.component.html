@@ -30,6 +30,15 @@
       <button
         type="button"
         class="nav-btn secondary"
+        (click)="exportToExcel()"
+        [disabled]="!canExportExcel || isExportingExcel"
+        title="Exporter le rapport affiché en Excel"
+      >
+        <i class="fas fa-file-excel"></i> {{ isExportingExcel ? 'Export…' : 'Exporter Excel' }}
+      </button>
+      <button
+        type="button"
+        class="nav-btn secondary"
         (click)="exportToPdf()"
         [disabled]="!canExportPdf || isExportingPdf"
         title="Exporter le rapport affiché en PDF"

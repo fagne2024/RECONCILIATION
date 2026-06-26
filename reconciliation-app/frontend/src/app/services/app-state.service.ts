@@ -3,7 +3,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
 import { DataNormalizationService } from './data-normalization.service';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
-import { MagicServiceSummary } from './magic-reconciliation.service';
+import { MagicServiceResultPart, MagicServiceSummary } from './magic-reconciliation.service';
 
 export type ReconciliationLaunchMode = 'manual' | 'assisted' | 'magic';
 
@@ -76,6 +76,10 @@ export class AppStateService {
 
     private selectedMagicServiceSubject = new BehaviorSubject<string>('');
     selectedMagicService$ = this.selectedMagicServiceSubject.asObservable();
+
+    private magicResponsePartsSubject = new BehaviorSubject<MagicServiceResultPart[]>([]);
+
+    private magicServiceColumnsSubject = new BehaviorSubject<{ boColumn: string; partnerColumn: string } | null>(null);
 
     // Gestion de la progression de la réconciliation
     private reconciliationProgressSubject = new BehaviorSubject<boolean>(false);
@@ -275,6 +279,8 @@ export class AppStateService {
         this.magicPartnerFileNamesSubject.next([]);
         this.selectedMagicPartnerFileSubject.next('');
         this.selectedMagicServiceSubject.next('');
+        this.magicResponsePartsSubject.next([]);
+        this.magicServiceColumnsSubject.next(null);
     }
 
     setMagicServiceSummaries(summaries: MagicServiceSummary[]) {
@@ -307,6 +313,22 @@ export class AppStateService {
 
     getSelectedMagicService(): string {
         return this.selectedMagicServiceSubject.value;
+    }
+
+    setMagicResponseParts(parts: MagicServiceResultPart[]) {
+        this.magicResponsePartsSubject.next(parts);
+    }
+
+    getMagicResponseParts(): MagicServiceResultPart[] {
+        return this.magicResponsePartsSubject.value;
+    }
+
+    setMagicServiceColumns(columns: { boColumn: string; partnerColumn: string } | null) {
+        this.magicServiceColumnsSubject.next(columns);
+    }
+
+    getMagicServiceColumns(): { boColumn: string; partnerColumn: string } | null {
+        return this.magicServiceColumnsSubject.value;
     }
 
     // Gestion de la progression de la réconciliation

@@ -1,6 +1,7 @@
 import { ColumnProcessingRule } from '../services/auto-processing.service';
 import { getOrangeMoneyAliasHeadersForColumn } from './bilingual-column.util';
 import { resolveColumnKeyInRow } from './row-column.util';
+import { preserveLeadingZeroString, isLeadingZeroNumericString, isMsisdnPreserveColumn, finalizeTextPreserveColumnValue, DEFAULT_MSISDN_DIGIT_LENGTH } from './text-cell.util';
 
 function findColumnKey(data: Record<string, unknown>, sourceColumn: string): string | null {
   const resolved = resolveColumnKeyInRow(data as Record<string, string>, sourceColumn);
@@ -56,7 +57,7 @@ function applyRule(value: unknown, rule: ColumnProcessingRule): string {
     return '';
   }
 
-  let stringValue = String(value);
+  let stringValue = preserveLeadingZeroString(value);
   stringValue = applyFormatType(stringValue, rule.formatType);
 
   if (rule.removeAccents) {
@@ -86,7 +87,9 @@ function applyRule(value: unknown, rule: ColumnProcessingRule): string {
     stringValue = stringValue.toLowerCase();
   }
   if (rule.padZeros && /^\d+$/.test(stringValue)) {
-    stringValue = stringValue.padStart(8, '0');
+    const padLen = rule.padZeroLength
+      ?? (isMsisdnPreserveColumn(rule.targetColumn || rule.sourceColumn) ? DEFAULT_MSISDN_DIGIT_LENGTH : 8);
+    stringValue = stringValue.padStart(padLen, '0');
   }
 
   if (rule.regexReplace?.includes('|')) {
@@ -100,6 +103,15 @@ function applyRule(value: unknown, rule: ColumnProcessingRule): string {
 
   if (rule.trimSpaces) {
     stringValue = stringValue.trim();
+  }
+
+  if (isLeadingZeroNumericString(stringValue)) {
+    return preserveLeadingZeroString(stringValue);
+  }
+
+  const outColumn = rule.targetColumn?.trim() || rule.sourceColumn;
+  if (isMsisdnPreserveColumn(outColumn) && /^\d+$/.test(stringValue)) {
+    return finalizeTextPreserveColumnValue(outColumn, stringValue);
   }
 
   return stringValue;

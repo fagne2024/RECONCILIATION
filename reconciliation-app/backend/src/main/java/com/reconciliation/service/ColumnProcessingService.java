@@ -250,24 +250,35 @@ public class ColumnProcessingService {
      */
     private String applyStringRemoval(String value, ColumnProcessingRule rule) {
         String stringToRemove = rule.getStringToRemove();
-        if (stringToRemove != null && !stringToRemove.isEmpty()) {
-            String escapedString = stringToRemove.replace("\\", "\\\\")
-                                                 .replace(".", "\\.")
-                                                 .replace("*", "\\*")
-                                                 .replace("+", "\\+")
-                                                 .replace("?", "\\?")
-                                                 .replace("^", "\\^")
-                                                 .replace("$", "\\$")
-                                                 .replace("{", "\\{")
-                                                 .replace("}", "\\}")
-                                                 .replace("(", "\\(")
-                                                 .replace(")", "\\)")
-                                                 .replace("[", "\\[")
-                                                 .replace("]", "\\]")
-                                                 .replace("|", "\\|");
-            value = value.replaceAll(escapedString, "");
+        if (stringToRemove == null || stringToRemove.isEmpty()) {
+            return value;
+        }
+
+        for (String target : stringToRemove.split(",")) {
+            String trimmed = target.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            value = value.replaceAll(escapeRegexSpecialChars(trimmed), "");
         }
         return value;
+    }
+
+    private String escapeRegexSpecialChars(String input) {
+        return input.replace("\\", "\\\\")
+                .replace(".", "\\.")
+                .replace("*", "\\*")
+                .replace("+", "\\+")
+                .replace("?", "\\?")
+                .replace("^", "\\^")
+                .replace("$", "\\$")
+                .replace("{", "\\{")
+                .replace("}", "\\}")
+                .replace("(", "\\(")
+                .replace(")", "\\)")
+                .replace("[", "\\[")
+                .replace("]", "\\]")
+                .replace("|", "\\|");
     }
 
     /**

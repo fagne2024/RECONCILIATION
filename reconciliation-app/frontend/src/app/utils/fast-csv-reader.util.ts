@@ -1,5 +1,11 @@
 import * as Papa from 'papaparse';
 import { fixGarbledCharacters } from './encoding-fixer';
+import {
+  findHeaderRowIndexInGrid,
+  looksLikeAirtelReportPreamble,
+  looksLikeAirtelTransactionalHeader,
+  scoreHeaderRowMatch
+} from './model-header-detection.util';
 
 export interface FastCsvReadResult {
     rows: Record<string, string>[];
@@ -8,8 +14,10 @@ export interface FastCsvReadResult {
 }
 
 export interface FastCsvReadOptions {
-    /** Retire le préambule Airtel (User Transaction Report). Activé par défaut. */
+    /** Retire le préambule Airtel (User / Customer Transaction Report). Activé par défaut. */
     stripAirtelPreamble?: boolean;
+    /** Colonnes attendues (fichier modèle watch-folder) pour localiser l'en-tête. */
+    expectedHeaderColumns?: string[];
     /** Normalise les noms de colonnes (ex. normalizeColumnName + FR). */
     normalizeHeader?: (header: string, index: number) => string;
     /** Transforme la ligne d'en-tête complète avant lecture des données. */
@@ -70,6 +78,8 @@ export function stripAirtelReportPreambleFromText(text: string): string {
     const isAirtel =
         lower.includes('user_transaction_report') ||
         lower.includes('user transaction report') ||
+        lower.includes('customer_transaction_report') ||
+        lower.includes('customer transaction report') ||
         (lower.includes('selection criteria') && lower.includes('from date'));
 
     if (!isAirtel) {
@@ -77,13 +87,17 @@ export function stripAirtelReportPreambleFromText(text: string): string {
     }
 
     const lines = text.split(/\r?\n/);
-    for (let i = 0; i < Math.min(15, lines.length); i++) {
+    for (let i = 0; i < Math.min(20, lines.length); i++) {
         const line = lines[i].toLowerCase();
         const hasTransactionId = line.includes('transaction id') || line.includes('transaction_id');
         const hasSerialOrSender =
             line.includes('s. no') ||
             line.includes('s.no') ||
-            line.includes('sender msisdn');
+            line.includes('record no') ||
+            line.includes('record_no') ||
+            line.includes('sender msisdn') ||
+            line.includes('sender_msisdn') ||
+            line.includes('payer mobile number');
         if (hasTransactionId && hasSerialOrSender) {
             return lines.slice(i).join('\n');
         }
@@ -93,19 +107,13 @@ export function stripAirtelReportPreambleFromText(text: string): string {
 }
 
 function findAirtelCsvHeaderLineIndex(lines: string[]): number | null {
-    for (let i = 0; i < Math.min(15, lines.length); i++) {
+    for (let i = 0; i < Math.min(20, lines.length); i++) {
         const line = lines[i];
         if (!line?.trim()) {
             continue;
         }
-        const lower = line.toLowerCase();
-        const hasTransactionId = lower.includes('transaction id') || lower.includes('transaction_id');
-        const hasSerialOrSender =
-            lower.includes('s. no') ||
-            lower.includes('s.no') ||
-            lower.includes('sender msisdn') ||
-            lower.includes('sender_msisdn');
-        if (hasTransactionId && hasSerialOrSender) {
+        const cells = line.split(/[,;\t|]/).map(cell => cell.trim());
+        if (looksLikeAirtelTransactionalHeader(cells)) {
             return i;
         }
     }
@@ -124,23 +132,23 @@ function maybeFixCell(text: string): string {
 }
 
 function looksLikeAirtelPreamble(cells: string[]): boolean {
-    const lower = cells.join(' ').toLowerCase();
-    return (
-        lower.includes('user_transaction_report') ||
-        lower.includes('user transaction report') ||
-        (lower.includes('selection criteria') && lower.includes('from date'))
-    );
+    return looksLikeAirtelReportPreamble(cells);
 }
 
 function looksLikeAirtelHeader(cells: string[]): boolean {
-    const lower = cells.join(' ').toLowerCase();
-    const hasTransactionId = lower.includes('transaction id') || lower.includes('transaction_id');
-    const hasSerialOrSender =
-        lower.includes('s. no') ||
-        lower.includes('s.no') ||
-        lower.includes('sender msisdn') ||
-        lower.includes('sender_msisdn');
-    return hasTransactionId && hasSerialOrSender;
+    return looksLikeAirtelTransactionalHeader(cells);
+}
+
+function tryResolveHeaderFromModelColumns(
+    cells: string[],
+    options: FastCsvReadOptions
+): string[] | null {
+    if (!options.expectedHeaderColumns?.length) {
+        return null;
+    }
+    return scoreHeaderRowMatch(cells, options.expectedHeaderColumns) > 0
+        ? finalizeHeaderRow(cells, options)
+        : null;
 }
 
 function estimateRowCount(fileSizeBytes: number): number {
@@ -198,6 +206,13 @@ export function readCsvFileUltraFast(
                 }
 
                 if (!headers) {
+                    const modelHeader = tryResolveHeaderFromModelColumns(cells, options);
+                    if (modelHeader) {
+                        headers = modelHeader;
+                        headerLineIndex = skippedBeforeHeader;
+                        return;
+                    }
+
                     if (options.stripAirtelPreamble !== false && looksLikeAirtelPreamble(cells)) {
                         skippedBeforeHeader++;
                         return;
@@ -212,6 +227,11 @@ export function readCsvFileUltraFast(
                     if (skippedBeforeHeader === 0) {
                         headers = finalizeHeaderRow(cells, options);
                         headerLineIndex = 0;
+                        return;
+                    }
+
+                    if (options.expectedHeaderColumns?.length && skippedBeforeHeader < 80) {
+                        skippedBeforeHeader++;
                         return;
                     }
 
@@ -274,7 +294,14 @@ export async function readCsvContentUltraFast(
 
     const delimiter = detectCsvDelimiter(text);
     const previewLines = text.split(/\r?\n/).slice(0, 20);
-    const airtelHeaderIdx = findAirtelCsvHeaderLineIndex(previewLines);
+    const modelHeaderIdx = options.expectedHeaderColumns?.length
+        ? findHeaderRowIndexInGrid(
+            previewLines.map(line => line.split(delimiter)),
+            options.expectedHeaderColumns,
+            20
+        )
+        : null;
+    const airtelHeaderIdx = modelHeaderIdx ?? findAirtelCsvHeaderLineIndex(previewLines);
     const skipRows = airtelHeaderIdx !== null ? airtelHeaderIdx : 0;
 
     const estimatedTotal = Math.max(1, (text.match(/\r?\n/g) || []).length - skipRows - 1);
@@ -311,6 +338,13 @@ export async function readCsvContentUltraFast(
                 }
 
                 if (!headers) {
+                    const modelHeader = tryResolveHeaderFromModelColumns(cells, options);
+                    if (modelHeader) {
+                        headers = modelHeader;
+                        headerLineIndex = rowIndex;
+                        return;
+                    }
+
                     headers = finalizeHeaderRow(cells, options);
                     headerLineIndex = rowIndex;
                     return;

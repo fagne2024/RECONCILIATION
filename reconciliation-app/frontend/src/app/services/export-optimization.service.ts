@@ -5,6 +5,13 @@ import * as ExcelJS from 'exceljs';
 import { fixCellEncoding } from '../utils/encoding-fixer';
 import { getRowColumnValue } from '../utils/row-column.util';
 import { stripAllWhitespace } from '../utils/concat.util';
+import {
+  preserveLeadingZeroString,
+  shouldExportCellAsText,
+  finalizeTextPreserveColumnValue,
+  formatCellForCsvExport,
+  exportTextCellValue
+} from '../utils/text-cell.util';
 
 /** Couleurs par type de commentaire pour export écarts (TRXBO/OPPART) - ARGB 8 caractères */
 export const ECART_COMMENT_COLORS: Record<string, string> = {
@@ -88,31 +95,17 @@ export class ExportOptimizationService {
     await new Promise<void>(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
   }
 
-  private formatCellForCsv(raw: unknown): string {
+  private formatCellForCsv(raw: unknown, columnName?: string): string {
     if (raw === undefined || raw === null) {
       return '';
     }
 
-    let val: string;
-    if (typeof raw === 'object') {
-      try {
-        val = JSON.stringify(raw);
-      } catch {
-        val = String(raw);
-      }
-    } else {
-      val = String(raw);
-    }
-
+    let val = formatCellForCsvExport(columnName, raw);
     if (/Ã.|Â.|ï¿½|\uFFFD/.test(val)) {
       val = fixCellEncoding(val);
-    }
-
-    if (val.includes('"')) {
-      val = val.replace(/"/g, '""');
-    }
-    if (val.includes(';') || val.includes('"') || val.includes('\n') || val.includes('\r')) {
-      val = `"${val}"`;
+      if (columnName && shouldExportCellAsText(columnName, val)) {
+        val = formatCellForCsvExport(columnName, val);
+      }
     }
     return val;
   }
@@ -120,7 +113,8 @@ export class ExportOptimizationService {
   private buildCsvLine(row: Record<string, unknown>, columns: string[]): string {
     const cells = new Array<string>(columns.length);
     for (let i = 0; i < columns.length; i++) {
-      cells[i] = this.formatCellForCsv(row[columns[i]]);
+      const col = columns[i];
+      cells[i] = this.formatCellForCsv(this.readRowCell(row, col), col);
     }
     return cells.join(';');
   }
@@ -142,6 +136,7 @@ export class ExportOptimizationService {
     });
     const parts: BlobPart[] = [];
     const encoder = new TextEncoder();
+    parts.push(encoder.encode('\uFEFF'));
     parts.push(encoder.encode(`${encodedColumns.join(';')}\r\n`));
 
     this._exportProgress.next({
@@ -249,7 +244,7 @@ export class ExportOptimizationService {
       const chunk = rows.slice(i, i + chunkSize);
       for (const row of chunk) {
         const rowData = columns.map(col => {
-          const base = this.serializeCellForExport(this.readRowCell(row, col));
+          const base = this.serializeCellForExport(col, this.readRowCell(row, col));
           return this.cellValueForExcel(col, base);
         });
         const excelRow = worksheet.addRow(rowData);
@@ -294,17 +289,6 @@ export class ExportOptimizationService {
   }
 
   /**
-   * Indique si une colonne est une colonne clé / identifiant (toujours exportée en texte)
-   */
-  private isKeyColumn(col: string): boolean {
-    const lower = (col || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
-    const keyPatterns = [
-      'cle', 'key', 'reference', 'referenceid', 'idtransaction', 'reconciliation'
-    ];
-    return keyPatterns.some(k => lower === k || lower.includes(k));
-  }
-
-  /**
    * Indique si une colonne est une colonne montant/volume (à exporter en nombre)
    */
   private readRowCell(row: Record<string, unknown>, col: string): unknown {
@@ -331,8 +315,8 @@ export class ExportOptimizationService {
    */
   private cellValueForExcel(col: string, val: any): any {
     if (val === undefined || val === null || val === '') return '';
-    if (this.isKeyColumn(col)) {
-      return stripAllWhitespace(val);
+    if (shouldExportCellAsText(col, val)) {
+      return finalizeTextPreserveColumnValue(col, val);
     }
     if (!this.isAmountColumn(col)) return val;
     const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\s/g, '').replace(',', '.'));
@@ -343,8 +327,11 @@ export class ExportOptimizationService {
    * XLSX attend des valeurs "feuille de calcul" (string/number/boolean/date).
    * Les objets/tableaux (souvent présents dans boData/partnerData) peuvent faire planter json_to_sheet / writeFile.
    */
-  private serializeCellForExport(val: any): string | number | boolean | Date {
+  private serializeCellForExport(col: string, val: any): string | number | boolean | Date {
     if (val === undefined || val === null) return '';
+    if (shouldExportCellAsText(col, val)) {
+      return finalizeTextPreserveColumnValue(col, val);
+    }
     if (typeof val === 'string') return fixCellEncoding(val);
     if (typeof val === 'number' || typeof val === 'boolean') return val;
     if (val instanceof Date) return val;
@@ -383,7 +370,7 @@ export class ExportOptimizationService {
     headerRow.font = { bold: true };
 
     headerColumns.forEach((col, idx) => {
-      if (this.isKeyColumn(col)) {
+      if (shouldExportCellAsText(col, '')) {
         worksheet.getColumn(idx + 1).numFmt = '@';
       }
     });
@@ -391,21 +378,31 @@ export class ExportOptimizationService {
     for (let i = 0; i < totalRows; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
       for (const row of chunk) {
-        const rowValues = sourceColumns.map((col, idx) => {
+        const rowValues: (string | number | boolean | Date | null)[] = new Array(sourceColumns.length);
+        const textCells: { index: number; headerCol: string; sourceCol: string }[] = [];
+
+        sourceColumns.forEach((col, idx) => {
           const headerCol = headerColumns[idx] ?? col;
-          const base = this.serializeCellForExport(this.readRowCell(row, col));
-          return this.cellValueForExcel(headerCol, base);
-        });
-        const excelRow = worksheet.addRow(rowValues);
-        excelRow.eachCell((cell, colNumber) => {
-          const col = headerColumns[colNumber - 1];
-          if (!this.isKeyColumn(col)) {
+          const rawCell = this.readRowCell(row, col);
+          if (shouldExportCellAsText(headerCol, rawCell)) {
+            textCells.push({ index: idx, headerCol, sourceCol: col });
+            rowValues[idx] = null;
             return;
           }
-          const text = stripAllWhitespace(cell.value);
-          cell.value = text;
-          cell.numFmt = '@';
+          const base = this.serializeCellForExport(col, rawCell);
+          rowValues[idx] = this.cellValueForExcel(headerCol, base);
         });
+
+        const excelRow = worksheet.addRow(rowValues);
+        for (const textCell of textCells) {
+          const cell = excelRow.getCell(textCell.index + 1);
+          const text = exportTextCellValue(
+            textCell.headerCol,
+            this.readRowCell(row, textCell.sourceCol)
+          );
+          cell.value = text === '' ? null : text;
+          cell.numFmt = '@';
+        }
       }
 
       const progress = Math.min(i + chunkSize, totalRows);
@@ -458,10 +455,10 @@ export class ExportOptimizationService {
       const chunkData = chunk.map(row =>
         sourceColumns.map((col, idx) => {
           const headerCol = headerColumns[idx] ?? col;
-          const base = this.serializeCellForExport(this.readRowCell(row, col));
+          const base = this.serializeCellForExport(col, this.readRowCell(row, col));
           const val = this.cellValueForExcel(headerCol, base);
-          if (this.isKeyColumn(headerCol) && val !== '') {
-            return { t: 's', v: stripAllWhitespace(val), z: '@' };
+          if (shouldExportCellAsText(headerCol, val) && val !== '') {
+            return { t: 's', v: exportTextCellValue(headerCol, val), z: '@' };
           }
           return val;
         })
@@ -521,37 +518,33 @@ export class ExportOptimizationService {
         ...rows.map(row => 
           columns.map(col => {
             const raw = this.readRowCell(row, col);
-            const serialized = this.serializeCellForExport(raw);
-            let val = serialized !== '' ? String(serialized) : '';
-            if (val.includes('"')) val = val.replace(/"/g, '""');
-            if (val.includes(';') || val.includes('"') || val.includes('\n')) {
-              val = '"' + val + '"';
-            }
-            return val;
+            return raw === undefined || raw === null || raw === ''
+              ? ''
+              : this.formatCellForCsv(raw, col);
           }).join(';')
         )
       ].join('\r\n');
       
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob(['\uFEFF', csvContent], { type: 'text/csv;charset=utf-8;' });
       this.downloadFile(blob, fileName.endsWith('.csv') ? fileName : fileName + '.csv');
     } else if (format === 'xlsx' || format === 'xls') {
-      const exportData = rows.map(row => {
-        const exportRow: any = {};
-        columns.forEach(col => {
-          const base = this.serializeCellForExport(this.readRowCell(row, col));
-          exportRow[col] = this.cellValueForExcel(col, base);
-        });
-        return exportRow;
-      });
-      
+      const headerRow = columns;
+      const dataRows = rows.map(row =>
+        columns.map(col => {
+          const base = this.serializeCellForExport(col, this.readRowCell(row, col));
+          const val = this.cellValueForExcel(col, base);
+          if (shouldExportCellAsText(col, val) && val !== '') {
+            return {
+              t: 's',
+              v: exportTextCellValue(col, val),
+              z: '@'
+            };
+          }
+          return val;
+        })
+      );
       const workbook = XLSX.utils.book_new();
-      let worksheet: XLSX.WorkSheet;
-      try {
-        worksheet = XLSX.utils.json_to_sheet(exportData);
-      } catch (e) {
-        console.error('❌ Erreur XLSX (json_to_sheet):', e);
-        throw e;
-      }
+      const worksheet = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Données');
       
       let finalFileName: string;

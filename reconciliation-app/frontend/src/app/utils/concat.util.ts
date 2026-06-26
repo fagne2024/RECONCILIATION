@@ -1,18 +1,25 @@
+import {
+  finalizeTextPreserveColumnValue,
+  isMsisdnPreserveColumn,
+  preserveLeadingZeroString
+} from './text-cell.util';
+
 const WHITESPACE_RE = /[\s\u00A0\u202F\u2007\u2060]+/g;
 
 /**
  * Normalise une valeur avant concaténation : supprime espaces et séparateurs de milliers.
  */
-export function normalizeConcatSourceValue(value: unknown): string {
+export function normalizeConcatSourceValue(value: unknown, columnName?: string): string {
   if (value === null || value === undefined) {
     return '';
   }
 
+  if (columnName && isMsisdnPreserveColumn(columnName)) {
+    return finalizeTextPreserveColumnValue(columnName, value);
+  }
+
   if (typeof value === 'number' && isFinite(value)) {
-    if (Number.isInteger(value) || Math.abs(value - Math.round(value)) < 1e-9) {
-      return String(Math.round(value));
-    }
-    return String(value);
+    return preserveLeadingZeroString(value);
   }
 
   return String(value).replace(WHITESPACE_RE, '');
@@ -21,9 +28,16 @@ export function normalizeConcatSourceValue(value: unknown): string {
 /**
  * Concatène des parties sans aucun espace dans le résultat final.
  */
-export function buildConcatenatedValue(parts: unknown[], separator = ''): string {
+export function buildConcatenatedValue(
+  parts: unknown[],
+  separator = '',
+  sourceColumns?: string[]
+): string {
   const joined = parts
-    .map(part => normalizeConcatSourceValue(part))
+    .map((part, index) => {
+      const columnName = sourceColumns?.[index];
+      return normalizeConcatSourceValue(part, columnName);
+    })
     .join(separator ?? '');
   return joined.replace(WHITESPACE_RE, '');
 }

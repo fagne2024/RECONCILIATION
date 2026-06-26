@@ -1,7 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { FormBuilder, FormGroup, Validators, FormArray } from '@angular/forms';
-import { AutoProcessingService, AutoProcessingModel, DEFAULT_PRE_PROCESSING_SECTION_ORDER, ModelColumnMathRule, ModelFormatAction, ModelFormatActionType, ModelFormatColumnSettings, ModelPreProcessingConfig, ModelPreProcessingSectionId, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule, PartnerConditionalKeyRule, PartnerConditionalKeysConfig } from '../../services/auto-processing.service';
+import { AutoProcessingService, AutoProcessingModel, DEFAULT_PRE_PROCESSING_SECTION_ORDER, ModelColumnMathRule, ModelFormatAction, ModelFormatActionType, ModelFormatColumnSettings, ModelPreProcessingConfig, ModelPreProcessingSectionId, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule, PartnerConditionalKeyRule, PartnerConditionalKeysConfig, BoConditionalKeysConfig } from '../../services/auto-processing.service';
 import { FileWatcherService } from '../../services/file-watcher.service';
 import { ModelManagementService } from '../../services/model-management.service';
 import { PopupService } from '../../services/popup.service';
@@ -125,6 +125,12 @@ export class AutoProcessingModelsComponent implements OnInit {
   partnerConditionColumn = '';
   partnerConditionalDefaultKeyColumn = '';
   partnerConditionalKeyRules: PartnerConditionalKeyRule[] = [];
+
+  /** Clés BO conditionnelles (optionnel). */
+  boConditionalKeysEnabled = false;
+  boConditionColumn = '';
+  boConditionalDefaultKeyColumn = '';
+  boConditionalKeyRules: PartnerConditionalKeyRule[] = [];
   
   // Colonnes disponibles pour le fichier modèle
   availableTemplateColumns: string[] = [];
@@ -825,7 +831,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     return [...columns];
   }
 
-  private extractColumnsFromConditionalKeys(config?: PartnerConditionalKeysConfig | null): string[] {
+  private extractColumnsFromConditionalKeys(config?: PartnerConditionalKeysConfig | BoConditionalKeysConfig | null): string[] {
     if (!config) {
       return [];
     }
@@ -870,6 +876,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       boKeys?: string[];
       preProcessingConfig?: ModelPreProcessingConfig | null;
       partnerConditionalKeys?: PartnerConditionalKeysConfig | null;
+      boConditionalKeys?: BoConditionalKeysConfig | null;
     }
   ): Promise<string[]> {
     if (!templateFile?.trim()) {
@@ -1098,7 +1105,8 @@ export class AutoProcessingModelsComponent implements OnInit {
           boModels: formValue.reconciliationKeys.boModels || [],
           boModelKeys: formValue.reconciliationKeys.boModelKeys || {},
           boTreatments: formValue.reconciliationKeys.boTreatments || {},
-          partnerConditionalKeys: this.buildPartnerConditionalKeysConfig()
+          partnerConditionalKeys: this.buildPartnerConditionalKeysConfig(),
+          boConditionalKeys: this.buildBoConditionalKeysConfig()
         },
         columnProcessingRules: this.columnProcessingRules, // Ajouter les règles de traitement
         // Nouvelles configurations autonomes
@@ -1225,7 +1233,8 @@ export class AutoProcessingModelsComponent implements OnInit {
       boModels: sourceModel.reconciliationKeys?.boModels || [],
       boModelKeys: sourceModel.reconciliationKeys?.boModelKeys || {},
       boTreatments: sourceModel.reconciliationKeys?.boTreatments || {},
-      partnerConditionalKeys: sourceModel.reconciliationKeys?.partnerConditionalKeys
+      partnerConditionalKeys: sourceModel.reconciliationKeys?.partnerConditionalKeys,
+      boConditionalKeys: sourceModel.reconciliationKeys?.boConditionalKeys
     };
     
     console.log('🔍 Valeurs à patcher dans le formulaire:', {
@@ -1332,6 +1341,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     console.log('✅ Clés partenaires chargées pour édition (corrigées):', this.selectedPartnerKeys);
 
     this.loadPartnerConditionalKeysConfig(sourceModel.reconciliationKeys?.partnerConditionalKeys);
+    this.loadBoConditionalKeysConfig(sourceModel.reconciliationKeys?.boConditionalKeys);
 
     console.log('✅ Modèles BO chargés pour édition:', this.selectedBOModels);
     console.log('✅ Clés BO chargées pour édition (corrigées):', this.selectedBOKeys);
@@ -1364,7 +1374,8 @@ export class AutoProcessingModelsComponent implements OnInit {
             partnerKeys: reconciliationKeys.partnerKeys,
             boKeys: this.selectedBOKeys,
             preProcessingConfig: sourceModel.preProcessingConfig,
-            partnerConditionalKeys: sourceModel.reconciliationKeys?.partnerConditionalKeys
+            partnerConditionalKeys: sourceModel.reconciliationKeys?.partnerConditionalKeys,
+            boConditionalKeys: sourceModel.reconciliationKeys?.boConditionalKeys
           }
         );
       }
@@ -2000,6 +2011,65 @@ export class AutoProcessingModelsComponent implements OnInit {
       return;
     }
     this.partnerConditionalKeyRules.splice(index, 1);
+  }
+
+  // ===== CLÉS BO CONDITIONNELLES (OPTIONNEL) =====
+
+  isBoConditionalKeysConfigValid(): boolean {
+    if (!this.boConditionalKeysEnabled) {
+      return false;
+    }
+    if (!this.boConditionColumn?.trim()) {
+      return false;
+    }
+    return this.boConditionalKeyRules.some(
+      rule => rule.whenValue?.trim() && rule.keyColumn?.trim()
+    );
+  }
+
+  buildBoConditionalKeysConfig(): BoConditionalKeysConfig {
+    if (!this.boConditionalKeysEnabled) {
+      return { enabled: false, conditionColumn: '', rules: [] };
+    }
+    return {
+      enabled: true,
+      conditionColumn: this.boConditionColumn.trim(),
+      rules: this.boConditionalKeyRules
+        .filter(rule => rule.whenValue?.trim() && rule.keyColumn?.trim())
+        .map(rule => ({
+          whenValue: rule.whenValue.trim(),
+          keyColumn: rule.keyColumn.trim()
+        })),
+      defaultKeyColumn: this.boConditionalDefaultKeyColumn?.trim() || undefined
+    };
+  }
+
+  loadBoConditionalKeysConfig(config?: BoConditionalKeysConfig): void {
+    this.boConditionalKeysEnabled = !!config?.enabled;
+    this.boConditionColumn = config?.conditionColumn || '';
+    this.boConditionalDefaultKeyColumn = config?.defaultKeyColumn || '';
+    this.boConditionalKeyRules = config?.rules?.length
+      ? config.rules.map(rule => ({ ...rule }))
+      : [{ whenValue: '', keyColumn: '' }];
+  }
+
+  resetBoConditionalKeysConfig(): void {
+    this.boConditionalKeysEnabled = false;
+    this.boConditionColumn = '';
+    this.boConditionalDefaultKeyColumn = '';
+    this.boConditionalKeyRules = [{ whenValue: '', keyColumn: '' }];
+  }
+
+  addBoConditionalKeyRule(): void {
+    this.boConditionalKeyRules.push({ whenValue: '', keyColumn: '' });
+  }
+
+  removeBoConditionalKeyRule(index: number): void {
+    if (this.boConditionalKeyRules.length <= 1) {
+      this.boConditionalKeyRules[0] = { whenValue: '', keyColumn: '' };
+      return;
+    }
+    this.boConditionalKeyRules.splice(index, 1);
   }
 
   // ===== MÉTHODES POUR LES CLÉS DE RÉCONCILIATION =====
@@ -2883,7 +2953,9 @@ export class AutoProcessingModelsComponent implements OnInit {
     
     // Pour les fichiers partenaires, nécessite modèles BO ET (clés partenaire OU clés conditionnelles)
     const hasConditionalKeys = this.isPartnerConditionalKeysConfigValid();
-    const reconciliationKeysValid = hasBOModels && (hasPartnerKeys || hasConditionalKeys);
+    const hasBoConditionalKeys = this.isBoConditionalKeysConfigValid();
+    const hasBoKeySelection = this.selectedBOKeys.length > 0 || hasBoConditionalKeys;
+    const reconciliationKeysValid = hasBOModels && (hasPartnerKeys || hasConditionalKeys) && hasBoKeySelection;
     
     // Vérifier si le groupe reconciliationKeys est valide en ignorant boKeys pour les partenaires
     const reconciliationKeysGroup = this.modelForm.get('reconciliationKeys');
@@ -3043,6 +3115,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.selectedBOModels = [];
     this.selectedBOKeys = [];
     this.resetPartnerConditionalKeysConfig();
+    this.resetBoConditionalKeysConfig();
     this.availableBOColumns = [];
     this.selectedColumns = []; // Réinitialiser la sélection multiple
     

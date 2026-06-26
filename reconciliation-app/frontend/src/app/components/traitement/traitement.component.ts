@@ -1,4 +1,4 @@
-﻿import { Component, OnInit, ChangeDetectorRef, AfterViewInit, ViewChild } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, AfterViewInit, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, FormControl } from '@angular/forms';
 import { MatSelect, MatSelectChange } from '@angular/material/select';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
@@ -8,6 +8,15 @@ import { ExportOptimizationService, ExportProgress } from '../../services/export
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import { readCsvFileUltraFast } from '../../utils/fast-csv-reader.util';
 import { buildConcatenatedValue } from '../../utils/concat.util';
+import {
+  preserveLeadingZeroString,
+  finalizeTextPreserveColumnValue,
+  formatCellForCsvExport,
+  keepCharactersFromString,
+  finalizeAfterKeepCharacters,
+  isMsisdnPreserveColumn,
+  isLeadingZeroNumericString
+} from '../../utils/text-cell.util';
 import { renameKeyPreservingOrder } from '../../utils/row-column.util';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -3930,48 +3939,48 @@ End Sub`;
   private transformCharactersValue(value: string): string {
     const count = Math.max(1, Number(this.removeCharCount) || 1);
     const specificPosition = Math.max(1, Number(this.removeCharSpecificPosition) || 1);
+    const text = preserveLeadingZeroString(value);
 
-    switch (this.removeCharMode) {
-      case 'keep':
-        switch (this.removeCharPosition) {
-          case 'start':
-            return value.substring(0, count);
-          case 'end':
-            return value.substring(Math.max(0, value.length - count));
-          case 'specific': {
-            const pos = specificPosition - 1;
-            if (pos >= 0 && pos < value.length) {
-              return value.substring(pos, pos + count);
-            }
-            return value;
-          }
-          default:
-            return value;
-        }
-      case 'remove':
-      default:
-        switch (this.removeCharPosition) {
-          case 'start':
-            if (value.length >= count) {
-              return value.substring(count);
-            }
-            return value;
-          case 'end':
-            if (value.length >= count) {
-              return value.substring(0, value.length - count);
-            }
-            return value;
-          case 'specific': {
-            const pos = specificPosition - 1;
-            if (pos >= 0 && pos < value.length && pos + count <= value.length) {
-              return value.substring(0, pos) + value.substring(pos + count);
-            }
-            return value;
-          }
-        }
+    if (this.removeCharMode === 'keep') {
+      return keepCharactersFromString(
+        text,
+        this.removeCharPosition,
+        count,
+        specificPosition
+      );
     }
 
-    return value;
+    switch (this.removeCharPosition) {
+      case 'start':
+        if (text.length >= count) {
+          return text.substring(count);
+        }
+        return text;
+      case 'end':
+        if (text.length >= count) {
+          return text.substring(0, text.length - count);
+        }
+        return text;
+      case 'specific': {
+        const pos = specificPosition - 1;
+        if (pos >= 0 && pos < text.length && pos + count <= text.length) {
+          return text.substring(0, pos) + text.substring(pos + count);
+        }
+        return text;
+      }
+      default:
+        return text;
+    }
+  }
+
+  private finalizeRemovedCharactersCell(columnName: string, value: string): string {
+    if (this.removeCharMode === 'keep') {
+      const keepCount = Math.max(1, Number(this.removeCharCount) || 1);
+      return finalizeAfterKeepCharacters(columnName, value, keepCount);
+    }
+    return isMsisdnPreserveColumn(columnName)
+      ? finalizeTextPreserveColumnValue(columnName, value)
+      : value;
   }
 
   onRemoveCharModeChange(): void {
@@ -4026,8 +4035,7 @@ End Sub`;
         this.formatSelections['removeCharacters'].forEach(col => {
           totalCells++;
           if (row[col] !== undefined && row[col] !== null) {
-            // Convertir en chaîne si ce n'est pas déjà le cas
-            let value = String(row[col]);
+            let value = preserveLeadingZeroString(row[col]);
             const originalValue = value;
             
             // Vérifier que la chaîne a une longueur suffisante
@@ -4035,7 +4043,7 @@ End Sub`;
       return;
     }
             
-            value = this.transformCharactersValue(value);
+            value = this.finalizeRemovedCharactersCell(col, this.transformCharactersValue(value));
             
             if (value !== originalValue) {
               processedCells++;
@@ -4059,7 +4067,7 @@ End Sub`;
                 return;
               }
               
-              value = this.transformCharactersValue(value);
+              value = this.finalizeRemovedCharactersCell(col, this.transformCharactersValue(value));
               
               row[col] = value;
             }
@@ -4106,8 +4114,7 @@ End Sub`;
         this.formatSelections['removeSpecialStrings'].forEach(col => {
           totalCells++;
           if (row[col] !== undefined && row[col] !== null) {
-            // Convertir en chaîne si ce n'est pas déjà le cas
-            let value = String(row[col]);
+            let value = preserveLeadingZeroString(row[col]);
             const originalValue = value;
             
             // Vérifier que la chaîne n'est pas vide
@@ -4209,8 +4216,7 @@ End Sub`;
         this.formatSelections['removeNumbers'].forEach(col => {
           totalCells++;
           if (row[col] !== undefined && row[col] !== null) {
-            // Convertir en chaîne si ce n'est pas déjà le cas
-            let value = String(row[col]);
+            let value = preserveLeadingZeroString(row[col]);
             const originalValue = value;
             
             // Vérifier que la chaîne a une longueur suffisante
@@ -4738,8 +4744,7 @@ End Sub`;
         this.formatSelections['removeSpaces'].forEach(col => {
           totalCells++;
           if (row[col] !== undefined && row[col] !== null) {
-            // Convertir en chaîne si ce n'est pas déjà le cas
-            let value = String(row[col]);
+            let value = preserveLeadingZeroString(row[col]);
             const originalValue = value;
             
             // Appliquer la suppression d'espaces selon le type choisi
@@ -6555,23 +6560,7 @@ End Sub`;
       csvRows.push(exportColumns.join(';'));
 
       for (const row of rows) {
-        const line = this.columns.map((col, idx) => {
-          let val = row[col];
-          
-          // Nettoyer et formater les valeurs
-          if (val === undefined || val === null) {
-            val = '';
-          } else if (typeof val === 'object') {
-            val = JSON.stringify(val);
-          } else {
-            val = String(val).trim();
-          }
-          
-          // Échapper les caractères spéciaux pour CSV
-          if (val.includes('"')) val = val.replace(/"/g, '""');
-          if (val.includes(';') || val.includes('"') || val.includes('\n')) val = '"' + val + '"';
-          return val;
-        }).join(';');
+        const line = this.columns.map((col) => formatCellForCsvExport(col, row[col])).join(';');
         csvRows.push(line);
       }
 
@@ -6617,7 +6606,10 @@ End Sub`;
           } else if (typeof value === 'object') {
             value = JSON.stringify(value);
           } else {
-            value = String(value).trim();
+            const trimmed = String(value).trim();
+            value = (isMsisdnPreserveColumn(col) || isLeadingZeroNumericString(trimmed))
+              ? finalizeTextPreserveColumnValue(col, trimmed)
+              : trimmed;
           }
           
           exportRow[exportCol] = value;
@@ -6669,7 +6661,10 @@ End Sub`;
           } else if (typeof value === 'object') {
             value = JSON.stringify(value);
           } else {
-            value = String(value).trim();
+            const trimmed = String(value).trim();
+            value = (isMsisdnPreserveColumn(col) || isLeadingZeroNumericString(trimmed))
+              ? finalizeTextPreserveColumnValue(col, trimmed)
+              : trimmed;
           }
           
           exportRow[exportCol] = value;

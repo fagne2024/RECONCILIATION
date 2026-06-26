@@ -31,6 +31,7 @@ import {
 } from '../../shared/result8rec-audit-display';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import * as XLSX from 'xlsx';
 
 /** Entrées GET /api/result8rec/{id}/audit-history (même modèle que le rapport réconciliation détaillé). */
 interface Result8RecAuditEntry {
@@ -202,6 +203,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   statutEcartPartenaireEntete = 'Effectif';
 
   isExportingPdf = false;
+  isExportingExcel = false;
 
   @ViewChild('rrbpPdfExportContent') pdfExportContentRef?: ElementRef<HTMLDivElement>;
 
@@ -1705,6 +1707,144 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     return !!(this.selectedCountry && !this.loading && !this.error && this.serviceRows.length > 0);
   }
 
+  get canExportExcel(): boolean {
+    return this.canExportPdf;
+  }
+
+  private buildExportBaseName(): string {
+    const pays = (this.selectedCountry || 'pays').replace(/\s+/g, '-');
+    const r = this.getNormalizedDateRange();
+    const d0 = (r?.start || this.dateDebut || '').replace(/-/g, '');
+    const d1 = (r?.end || this.dateFin || '').replace(/-/g, '');
+    const env = (this.selectedEnv || 'ENV').replace(/\s+/g, '-');
+    return `Rapport-BO-vs-Partenaire-${pays}-${d0}${d1 && d1 !== d0 ? '-' + d1 : ''}-${env}`;
+  }
+
+  private rowToExcelRecord(
+    row: BoPartenaireRow,
+    serviceLabel: string,
+    ligneType: string
+  ): Record<string, string | number | null> {
+    return {
+      'Type ligne': ligneType,
+      Service: serviceLabel,
+      Traitement: this.displayTraitementLabel(row.traitement),
+      Statut: this.libelleStatutFromTraitement(row.traitement),
+      'Transactions BO': row.boNombre,
+      'Volume BO': row.boVolume,
+      'Partenaire Nombre': row.partenaireNombre,
+      'Partenaire Volume': row.partenaireVolume,
+      'Décalage J-1 Nombre': row.decalageJm1Nombre,
+      'Décalage J-1 Volume': row.decalageJm1Volume,
+      'Décalage J+1 Nombre': row.decalageJp1Nombre,
+      'Décalage J+1 Volume': row.decalageJp1Volume,
+      'Écart Nombre': row.ecartNombre,
+      'Écart Volume': row.ecartVolume,
+      'Taux volume (%)':
+        row.tauxVolume != null ? Math.round(row.tauxVolume * 10) / 10 : null
+    };
+  }
+
+  private buildExcelDataRows(): Record<string, string | number | null>[] {
+    const rows: Record<string, string | number | null>[] = [];
+
+    for (const line of this.displayLines) {
+      if (line.type === 'single') {
+        rows.push(this.rowToExcelRecord(line.row, line.row.service, 'Ligne'));
+      } else if (line.type === 'group-header') {
+        rows.push(
+          this.rowToExcelRecord(
+            line.aggregate,
+            `${line.label} (${line.count} services)`,
+            'Total groupe'
+          )
+        );
+      } else if (line.type === 'group-detail') {
+        rows.push(this.rowToExcelRecord(line.row, line.row.service, 'Détail'));
+      }
+    }
+
+    rows.push({
+      'Type ligne': 'Total',
+      Service: 'Total',
+      Traitement: '—',
+      Statut: this.libelleStatutFromTraitement(''),
+      'Transactions BO': this.totalBoNombre,
+      'Volume BO': this.totalBoVolume,
+      'Partenaire Nombre': this.totalPartNombre,
+      'Partenaire Volume': this.totalPartVolume,
+      'Décalage J-1 Nombre': this.totalDecJm1Nombre,
+      'Décalage J-1 Volume': this.totalDecJm1Volume,
+      'Décalage J+1 Nombre': this.totalDecJp1Nombre,
+      'Décalage J+1 Volume': this.totalDecJp1Volume,
+      'Écart Nombre': this.totalEcartNombreAjuste,
+      'Écart Volume': this.totalEcartVolumeAjuste,
+      'Taux volume (%)': null
+    });
+
+    return rows;
+  }
+
+  async exportToExcel(): Promise<void> {
+    if (!this.canExportExcel || this.isExportingExcel) {
+      return;
+    }
+
+    this.isExportingExcel = true;
+    this.cdr.markForCheck();
+
+    try {
+      const wb = XLSX.utils.book_new();
+      const dataRows = this.buildExcelDataRows();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dataRows), 'Rapport');
+
+      const kpiRows = [
+        { Indicateur: 'Transactions BO (nombre)', Valeur: this.totalBoNombre },
+        { Indicateur: 'Transactions BO (volume)', Valeur: this.totalBoVolume },
+        { Indicateur: 'Transactions correspondantes BO', Valeur: this.totalMatchesBo },
+        { Indicateur: 'Partenaire (nombre)', Valeur: this.totalPartNombre },
+        { Indicateur: 'Partenaire (volume)', Valeur: this.totalPartVolume },
+        { Indicateur: 'Écart nombre (ajusté J±1)', Valeur: this.totalEcartNombreAjuste },
+        { Indicateur: 'Écart volume (ajusté J±1)', Valeur: this.totalEcartVolumeAjuste },
+        { Indicateur: 'Services avec écart', Valeur: this.servicesAvecEcart },
+        { Indicateur: 'Services total', Valeur: this.totalServices },
+        { Indicateur: 'Écarts BO (en-tête)', Valeur: this.statutEcartBoEntete },
+        { Indicateur: 'Écarts Partenaire (en-tête)', Valeur: this.statutEcartPartenaireEntete }
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kpiRows), 'Synthèse');
+
+      const meta = [
+        {
+          Périmètre: this.subtitle,
+          Pays: this.selectedCountry,
+          'Date début': this.getNormalizedDateRange()?.start || this.dateDebut,
+          'Date fin': this.getNormalizedDateRange()?.end || this.dateFin,
+          ENV: this.selectedEnv,
+          Utilisateur: this.displayUserName,
+          Services:
+            this.selectedServices.length > 0
+              ? this.selectedServices.join(', ')
+              : 'Tous (périmètre)',
+          Commentaire: this.commentaire || ''
+        }
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(meta), 'Infos');
+
+      const fileName = `${this.buildExportBaseName()}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      await this.popupService.showSuccess('Export Excel', `Le fichier ${fileName} a été téléchargé.`);
+    } catch (e) {
+      console.error('Erreur export Excel rapport BO vs Partenaire:', e);
+      await this.popupService.showError(
+        'Erreur d’export',
+        'Une erreur est survenue lors de l’export Excel.'
+      );
+    } finally {
+      this.isExportingExcel = false;
+      this.cdr.markForCheck();
+    }
+  }
+
   /**
    * Export PDF (même principe que l’état des réconciliations dashboard / relevé : html2canvas + jsPDF paysage).
    * Déploie les groupes de services pour inclure toutes les lignes dans la capture.
@@ -1757,12 +1897,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       const pdfH = pdf.internal.pageSize.getHeight();
       pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
 
-      const pays = (this.selectedCountry || 'pays').replace(/\s+/g, '-');
-      const r = this.getNormalizedDateRange();
-      const d0 = (r?.start || this.dateDebut || '').replace(/-/g, '');
-      const d1 = (r?.end || this.dateFin || '').replace(/-/g, '');
-      const env = (this.selectedEnv || 'ENV').replace(/\s+/g, '-');
-      const fileName = `Rapport-BO-vs-Partenaire-${pays}-${d0}${d1 && d1 !== d0 ? '-' + d1 : ''}-${env}.pdf`;
+      const fileName = `${this.buildExportBaseName()}.pdf`;
       pdf.save(fileName);
       await this.popupService.showSuccess(
         'Export PDF',
