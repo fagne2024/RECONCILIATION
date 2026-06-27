@@ -1,11 +1,7 @@
-import { Injectable } from '@angular/core';
+﻿import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { Match } from '../models/reconciliation-response.model';
-import {
-    filterRecordsByMagicPartition,
-    hasMagicPartitionTags,
-    recordMatchesMagicPartition
-} from '../utils/magic-partition.util';
+import { filterRecordsByMagicPartition } from '../utils/magic-partition.util';
 
 @Injectable({
     providedIn: 'root'
@@ -56,19 +52,6 @@ export class ReconciliationTabsService {
 
     filterBoEcartsByMagicView(records: Record<string, string>[]): Record<string, string>[] {
         return this.filterRecordsByMagicView(records);
-    }
-
-    /** Filtre les correspondances selon le contexte magique (_magicService / _magicPartnerFile). */
-    filterMatchesByMagicView(matches: Match[]): Match[] {
-        const { service, partnerFile } = this.getMagicViewContext();
-        if (!service && !partnerFile) {
-            return matches;
-        }
-        const boRows = matches.map(m => m.boData || {});
-        const magicTaggedDataset = hasMagicPartitionTags(boRows);
-        return matches.filter(match =>
-            recordMatchesMagicPartition(match.boData || {}, service, partnerFile, magicTaggedDataset)
-        );
     }
 
     setFilteredPartnerOnly(partnerOnly: Record<string, string>[]) {

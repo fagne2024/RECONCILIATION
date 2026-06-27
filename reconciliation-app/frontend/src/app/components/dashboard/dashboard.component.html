@@ -118,10 +118,17 @@
                         </div>
                         <div
                             class="legend-item"
-                            [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'EN_COURS' }"
-                            (click)="setReconciliationStatusFilter('EN_COURS')"
+                            [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'EN_COURS_VALIDATION' }"
+                            (click)="setReconciliationStatusFilter('EN_COURS_VALIDATION')"
                         >
-                            <span class="legend-dot legend-pending"></span>En cours
+                            <span class="legend-dot legend-pending-cdo"></span>En cours de validation
+                        </div>
+                        <div
+                            class="legend-item"
+                            [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'EN_COURS_CLOTURE' }"
+                            (click)="setReconciliationStatusFilter('EN_COURS_CLOTURE')"
+                        >
+                            <span class="legend-dot legend-pending-group"></span>En cours de clôture
                         </div>
                         <div
                             class="legend-item"
@@ -188,21 +195,11 @@
                             >
                                 <span
                                     class="status-pill"
-                                    [ngClass]="{
-                                        'status-ok': day.status === 'RECONCILIE',
-                                        'status-nok': day.status === 'NON_RECONCILIE',
-                                        'status-en-cours': day.status === 'EN_COURS'
-                                    }"
+                                    [ngClass]="getStatusPillNgClass(day)"
                                     (click)="day.status === 'RECONCILIE' && day.ticketId ? showTicketOptionsPopupFromDashboard(day.ticketId) : null"
                                 >
                                     <span class="status-label">
-                                        {{
-                                            day.status === 'RECONCILIE'
-                                                ? 'Réconcilié'
-                                                : (day.status === 'EN_COURS'
-                                                    ? 'En cours...'
-                                                    : 'Non réconcilié')
-                                        }}
+                                        {{ getStatusPillLabel(day) }}
                                     </span>
                                     <ng-container *ngIf="day.status === 'RECONCILIE' && day.ticketId">
                                         <span class="status-id">{{ day.ticketId }}</span>
@@ -227,8 +224,12 @@
                     <span class="reco-stat-value ok">{{ recoStats.reconcilie }}</span>
                 </div>
                 <div class="reco-stat-item">
-                    <span class="reco-stat-label">En cours</span>
-                    <span class="reco-stat-value pending">{{ recoStats.enCours }}</span>
+                    <span class="reco-stat-label">En cours de validation</span>
+                    <span class="reco-stat-value pending-cdo">{{ recoStats.enCoursCdo }}</span>
+                </div>
+                <div class="reco-stat-item">
+                    <span class="reco-stat-label">En cours de clôture</span>
+                    <span class="reco-stat-value pending-group">{{ recoStats.enCoursGroup }}</span>
                 </div>
                 <div class="reco-stat-item">
                     <span class="reco-stat-label">Non réconciliés</span>
@@ -326,7 +327,8 @@
                 <div class="reco-chart-block reco-chart-donut">
                     <div class="reco-chart-legend-top">
                         <span class="reco-legend-dot ok"></span> Réconcilié
-                        <span class="reco-legend-dot pending"></span> En cours
+                        <span class="reco-legend-dot pending-cdo"></span> En cours de validation
+                        <span class="reco-legend-dot pending-group"></span> En cours de clôture
                         <span class="reco-legend-dot failed"></span> Non réconcilié
                     </div>
                     <div class="reco-chart-canvas-wrap">
@@ -338,7 +340,9 @@
                     </div>
                     <div class="reco-chart-legend-detail">
                         <div><span class="reco-legend-dot ok"></span> Réconcilié : {{ recoStats.reconcilie }} ({{ (recoStats.total > 0 ? (recoStats.reconcilie / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
-                        <div><span class="reco-legend-dot pending"></span> En cours : {{ recoStats.enCours }} ({{ (recoStats.total > 0 ? (recoStats.enCours / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
+                        <div><span class="reco-legend-dot pending-support"></span> En cours de traitement : {{ recoStats.enCoursSupport }} ({{ (recoStats.total > 0 ? (recoStats.enCoursSupport / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
+                        <div><span class="reco-legend-dot pending-cdo"></span> En cours de validation : {{ recoStats.enCoursCdo }} ({{ (recoStats.total > 0 ? (recoStats.enCoursCdo / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
+                        <div><span class="reco-legend-dot pending-group"></span> En cours de clôture : {{ recoStats.enCoursGroup }} ({{ (recoStats.total > 0 ? (recoStats.enCoursGroup / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
                         <div><span class="reco-legend-dot failed"></span> Non réconcilié : {{ recoStats.nonReco }} ({{ (recoStats.total > 0 ? (recoStats.nonReco / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
                     </div>
                 </div>
@@ -1147,15 +1151,11 @@
                                 <td class="reco-status" *ngFor="let day of getRecoViewDisplayedRowDays(row)">
                                     <span
                                         class="status-pill"
-                                        [ngClass]="{
-                                            'status-ok': day.status === 'RECONCILIE',
-                                            'status-nok': day.status === 'NON_RECONCILIE',
-                                            'status-en-cours': day.status === 'EN_COURS'
-                                        }"
+                                        [ngClass]="getStatusPillNgClass(day)"
                                         (click)="day.status === 'RECONCILIE' && day.ticketId ? showTicketOptionsPopupFromDashboard(day.ticketId) : null"
                                     >
                                         <span class="status-label">
-                                            {{ day.status === 'RECONCILIE' ? 'Réconcilié' : (day.status === 'EN_COURS' ? 'En cours...' : 'Non réconcilié') }}
+                                            {{ getStatusPillLabel(day) }}
                                         </span>
                                         <ng-container *ngIf="day.status === 'RECONCILIE' && day.ticketId">
                                             <span class="status-id">{{ day.ticketId }}</span>
@@ -1177,8 +1177,12 @@
                         <span class="reco-stat-value ok">{{ recoViewStats.reconcilie }}</span>
                     </div>
                     <div class="reco-stat-item">
-                        <span class="reco-stat-label">En cours</span>
-                        <span class="reco-stat-value pending">{{ recoViewStats.enCours }}</span>
+                        <span class="reco-stat-label">En cours de validation</span>
+                        <span class="reco-stat-value pending-cdo">{{ recoViewStats.enCoursCdo }}</span>
+                    </div>
+                    <div class="reco-stat-item">
+                        <span class="reco-stat-label">En cours de clôture</span>
+                        <span class="reco-stat-value pending-group">{{ recoViewStats.enCoursGroup }}</span>
                     </div>
                     <div class="reco-stat-item">
                         <span class="reco-stat-label">Non réconciliés</span>

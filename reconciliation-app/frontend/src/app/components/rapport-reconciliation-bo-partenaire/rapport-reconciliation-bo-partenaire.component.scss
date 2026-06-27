@@ -786,12 +786,12 @@
 }
 
 .rrbp-statut-cell.rrbp-statut--group {
-  background: rgba(219, 234, 254, 0.45);
+  background: rgba(220, 252, 231, 0.45);
 }
 .rrbp-statut-cell.rrbp-statut--group .rrbp-statut-pill {
-  background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%);
-  color: #1e3a8a;
-  border: 1px solid #3b82f6;
+  background: linear-gradient(180deg, #ecfdf5 0%, #bbf7d0 100%);
+  color: #166534;
+  border: 1px solid #4ade80;
 }
 
 .rrbp-statut-cell.rrbp-statut--termine {
@@ -848,7 +848,7 @@
   background: rgba(209, 236, 241, 0.55);
 }
 .rrbp-table tbody tr.rrbp-row-group .rrbp-statut-cell.rrbp-statut--group {
-  background: rgba(219, 234, 254, 0.55);
+  background: rgba(220, 252, 231, 0.55);
 }
 .rrbp-table tbody tr.rrbp-row-group .rrbp-statut-cell.rrbp-statut--termine {
   background: rgba(209, 250, 229, 0.55);
@@ -889,12 +889,12 @@
 }
 
 .rrbp-traitement-cell--group {
-  background: rgba(219, 234, 254, 0.45);
+  background: rgba(220, 252, 231, 0.45);
 }
 .rrbp-traitement-kind--group {
-  background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%);
-  color: #1e3a8a;
-  border-color: #3b82f6;
+  background: linear-gradient(180deg, #ecfdf5 0%, #bbf7d0 100%);
+  color: #166534;
+  border-color: #4ade80;
 }
 
 .rrbp-traitement-cell--termine {
@@ -920,7 +920,7 @@
   background: rgba(209, 236, 241, 0.6);
 }
 .rrbp-table tbody tr.rrbp-row-group .rrbp-traitement-cell--group {
-  background: rgba(219, 234, 254, 0.55);
+  background: rgba(220, 252, 231, 0.55);
 }
 .rrbp-table tbody tr.rrbp-row-group .rrbp-traitement-cell--termine {
   background: rgba(209, 250, 229, 0.55);

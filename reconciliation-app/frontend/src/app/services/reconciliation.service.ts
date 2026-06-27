@@ -974,7 +974,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
         request.progressSessionId = sessionId;
 
         const stopPolling$ = new Subject<void>();
-        let pollingStopped = false;
         const pollSub = timer(0, 450).pipe(
             takeUntil(stopPolling$),
             switchMap(() => this.http.get<{ progress?: { progress?: number; step?: string } }>(
@@ -995,10 +994,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
                     step,
                     estimatedTimeRemaining: this.progressSubject.value.estimatedTimeRemaining
                 });
-                if (typeof pct === 'number' && pct >= 100 && !pollingStopped) {
-                    pollingStopped = true;
-                    stopPolling$.next();
-                }
             })
         ).subscribe();
 

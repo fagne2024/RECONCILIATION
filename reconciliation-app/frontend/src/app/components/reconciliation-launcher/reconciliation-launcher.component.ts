@@ -417,12 +417,12 @@ import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../.
       <div class="selection-overlay magic-progress-overlay" *ngIf="magicPipelineRunning">
         <div class="selection-modal magic-progress-modal">
           <div class="magic-modal-header">
-            <div class="magic-modal-icon" [class.is-done]="magicProgressFinalizing">
-              <i class="fas" [ngClass]="magicProgressFinalizing ? 'fa-check' : 'fa-wand-magic-sparkles fa-spin'"></i>
+            <div class="magic-modal-icon">
+              <i class="fas fa-wand-magic-sparkles fa-spin"></i>
             </div>
             <div class="magic-modal-titles">
-              <h3>{{ magicProgressFinalizing ? 'Préparation des résultats' : 'Réconciliation magique' }}</h3>
-              <p>{{ magicProgressSubtitle }}</p>
+              <h3>Réconciliation magique en cours</h3>
+              <p>Veuillez patienter pendant le traitement</p>
             </div>
           </div>
           <div class="magic-progress-body">
@@ -432,7 +432,7 @@ import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../.
             <div class="magic-progress-track" *ngIf="magicProgressPercentage > 0">
               <div class="magic-progress-fill" [style.width.%]="magicProgressPercentage"></div>
             </div>
-            <p class="magic-progress-detail" *ngIf="magicProgressMessage">{{ magicProgressMessage }}</p>
+            <p class="magic-progress-detail">{{ magicProgressMessage }}</p>
           </div>
         </div>
       </div>
@@ -453,8 +453,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   magicPartnerSlots: Array<{ file: File; data: Record<string, string>[]; loading: boolean }> = [];
   magicPipelineRunning = false;
   magicProgressMessage = '';
-  magicProgressSubtitle = 'Analyse des fichiers en cours…';
-  magicProgressFinalizing = false;
   magicProgressCurrent = 0;
   magicProgressTotal = 0;
   magicProgressPercentage = 0;
@@ -597,8 +595,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     this.magicPartnerSlots = [];
     this.magicBoParsed = this.boData.length > 0;
 
-    void this.magicReconciliationService.preloadTraitementModels();
-
     if (this.boFile && !this.boData.length) {
       this.parseFile(this.boFile, true, true);
     }
@@ -663,9 +659,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     } finally {
       slot.loading = false;
       this.syncPartnerStateFromMagicSlots();
-      if (this.canLaunchMagic) {
-        void this.magicReconciliationService.preloadTraitementModels();
-      }
       this.cdr.detectChanges();
     }
   }
@@ -865,54 +858,58 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       this.magicProgressCurrent = progress.current;
       this.magicProgressTotal = progress.total;
     }
-
-    const pct = progress.percentage != null
-      ? Math.min(100, Math.round(progress.percentage))
-      : null;
-    if (pct != null && pct > 0) {
-      this.magicProgressPercentage = pct;
+    if (progress.percentage != null && progress.percentage >= 0) {
+      this.magicProgressPercentage = Math.min(100, Math.round(progress.percentage));
     }
 
-    const step = (progress.step ?? '').replace(/en attente/gi, 'En cours').trim();
-    const serviceStep = step.match(
-      /^Service\s+(\d+)\/(\d+)\s+[«"]([^»"]+)[»"]\s*[—-]\s*(.+)$/i
-    );
-
-    if (serviceStep) {
-      this.magicProgressCurrent = Number(serviceStep[1]);
-      this.magicProgressTotal = Number(serviceStep[2]);
-      this.magicProgressMessage = serviceStep[3].trim();
-      this.magicProgressSubtitle = this.formatMagicProgressSubtitle(serviceStep[4], pct);
-    } else {
-      this.magicProgressMessage = '';
-      this.magicProgressSubtitle = this.formatMagicProgressSubtitle(step, pct);
+    let message = (progress.step ?? '').replace(/en attente/gi, 'En cours');
+    if (
+      progress.percentage != null &&
+      progress.percentage >= 0 &&
+      !/%\s*\)?\s*$/.test(message) &&
+      !/termin/i.test(message)
+    ) {
+      message = `${message} (${Math.round(progress.percentage)} %)`;
     }
-
-    this.magicProgressFinalizing = pct === 100
-      || /finalis|assembl|ouverture|récupération des résultats|préparation des résultats/i.test(step)
-      || /récupération des résultats/i.test(this.magicProgressSubtitle);
+    this.magicProgressMessage = message;
     this.cdr.detectChanges();
   }
 
-  private formatMagicProgressSubtitle(detail: string, pct: number | null): string {
-    const cleaned = detail
-      .replace(/\s*\(\d+\s*%\)\s*$/i, '')
-      .replace(/^réconciliation terminée$/i, 'Service terminé')
-      .replace(/^terminé$/i, 'Récupération des résultats…')
-      .trim();
-    if (/récupération des résultats/i.test(cleaned)) {
-      return cleaned;
+  private persistMagicReconciliationResult(
+    result: Awaited<ReturnType<MagicReconciliationService['runMultiPartner']>>,
+    partners: Array<{ fileName: string; data: Record<string, string>[] }>
+  ): string {
+    const modeLabel = result.mode === 'pattern'
+      ? 'patterns modèles'
+      : result.mode === 'mixed'
+        ? 'patterns et détection auto'
+        : 'détection automatique des clés';
+
+    this.reconciliationTabsService.clearAllData();
+    this.appStateService.setReconciliationLaunchMode('magic');
+    this.appStateService.setReconciliationEntryPath('/reconciliation-launcher');
+    this.appStateService.setMagicPartnerFileNames(result.partnerFileNames ?? partners.map(p => p.fileName));
+    this.appStateService.setSelectedMagicPartnerFile((result.partnerFileNames ?? [])[0] ?? '');
+    this.appStateService.setMagicServiceSummaries(result.serviceSummaries);
+    this.appStateService.setReconciliationResults(result.response);
+    this.appStateService.setCurrentStep(4);
+
+    let successMsg =
+      `Réconciliation magique terminée (${partners.length} fichier(s) partenaire) via ${modeLabel}.\n` +
+      `${result.serviceSummaries.length} périmètre(s) service réconcilié(s).`;
+    if (result.warnings?.length) {
+      successMsg += `\n\nAvertissements :\n${result.warnings.join('\n')}`;
     }
-    if (/finalis|assembl|ouverture/i.test(cleaned)) {
-      return cleaned;
-    }
-    if (pct === 100 && /termin/i.test(cleaned)) {
-      return 'Récupération des résultats…';
-    }
-    if (pct != null && pct > 0) {
-      return cleaned ? `${cleaned} — ${pct} %` : `${pct} %`;
-    }
-    return cleaned || 'Traitement en cours…';
+    return successMsg;
+  }
+
+  private async closeMagicProgressAndNavigateToResults(): Promise<void> {
+    this.magicProgressMessage = 'Ouverture des résultats...';
+    this.magicProgressPercentage = 100;
+    this.magicPipelineRunning = false;
+    this.isLoading = false;
+    this.cdr.detectChanges();
+    await this.router.navigate(['/results']);
   }
 
   // Méthode pour la réconciliation magique
@@ -923,16 +920,12 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     }
 
     this.magicPipelineRunning = true;
-    this.magicProgressMessage = '';
-    this.magicProgressSubtitle = 'Préparation des fichiers…';
-    this.magicProgressFinalizing = false;
+    this.magicProgressMessage = 'Préparation de la réconciliation magique...';
     this.magicProgressCurrent = 0;
     this.magicProgressTotal = 0;
     this.magicProgressPercentage = 0;
     this.isLoading = true;
     this.cdr.detectChanges();
-
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 
     const partners = this.magicPartnerSlots
       .filter(s => s.data.length)
@@ -942,15 +935,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       boFile: this.boFile,
       partnerFile: partners[0] ? this.magicPartnerSlots[0].file : null
     });
+    this.appStateService.setReconciliationData(this.boData, partners[0]?.data ?? []);
 
     try {
-      this.magicProgressSubtitle = 'Chargement des modèles…';
-      this.cdr.detectChanges();
-      await this.magicReconciliationService.preloadTraitementModels();
-
-      this.magicProgressSubtitle = 'Analyse et réconciliation…';
-      this.cdr.detectChanges();
-
       const result = await this.magicReconciliationService.runMultiPartner(
         this.boFile.name,
         this.boData,
@@ -958,51 +945,12 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
         progress => this.updateMagicProgress(progress)
       );
 
-      this.updateMagicProgress({
-        step: 'Ouverture des résultats…',
-        percentage: 100,
-        current: this.magicProgressTotal || result.serviceSummaries.length || 1,
-        total: this.magicProgressTotal || result.serviceSummaries.length || 1
-      });
+      const successMsg = this.persistMagicReconciliationResult(result, partners);
 
-      this.magicPipelineRunning = false;
-      this.isLoading = false;
-      this.cdr.detectChanges();
+      await this.closeMagicProgressAndNavigateToResults();
 
-      this.reconciliationTabsService.clearAllData();
-      this.appStateService.setReconciliationLaunchMode('magic');
-      this.appStateService.setReconciliationEntryPath('/reconciliation-launcher');
-      this.appStateService.setMagicPartnerFileNames(result.partnerFileNames ?? partners.map(p => p.fileName));
-      this.appStateService.setSelectedMagicPartnerFile((result.partnerFileNames ?? [])[0] ?? '');
-      this.appStateService.setMagicServiceSummaries(result.serviceSummaries);
-      this.appStateService.setMagicResponseParts(result.responseParts ?? []);
-      const columnSource = result.serviceSummaries.find(
-        s => s.boServiceColumn && s.partnerServiceColumn
-      );
-      if (columnSource?.boServiceColumn && columnSource?.partnerServiceColumn) {
-        this.appStateService.setMagicServiceColumns({
-          boColumn: columnSource.boServiceColumn,
-          partnerColumn: columnSource.partnerServiceColumn
-        });
-      }
-      this.appStateService.setCurrentStep(4);
-
-      void this.router.navigate(['/results']).then(navigated => {
-        if (!navigated) {
-          return;
-        }
-        requestAnimationFrame(() => {
-          this.appStateService.setReconciliationData(this.boData, partners[0]?.data ?? []);
-          this.appStateService.setReconciliationResults(result.response);
-        });
-      });
-
-      if (result.warnings?.length) {
-        void this.popupService.showWarning(
-          result.warnings.join('\n'),
-          'Réconciliation magique — avertissements'
-        );
-      }
+      // Notification non bloquante après redirection vers les résultats
+      void this.popupService.showSuccess(successMsg, 'Réconciliation magique');
     } catch (error) {
       await this.popupService.showError(
         error instanceof Error ? error.message : 'Erreur lors de la réconciliation magique',
@@ -1012,9 +960,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     } finally {
       if (this.magicPipelineRunning) {
         this.magicPipelineRunning = false;
+        this.isLoading = false;
+        this.cdr.detectChanges();
       }
-      this.isLoading = false;
-      this.cdr.detectChanges();
     }
   }
 
@@ -2367,9 +2315,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       this.magicBoParsed = forMagic || this.selectedMode === 'magic';
       this.cdr.detectChanges();
       if (forMagic || this.selectedMode === 'magic') {
-        if (data.length > 0) {
-          void this.magicReconciliationService.preloadTraitementModels();
-        }
         this.checkMagicReadyToLaunch();
         return;
       }

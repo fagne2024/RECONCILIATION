@@ -76,15 +76,22 @@ export function normalizeReconciliationKeyValue(value: unknown): string {
     return '';
   }
 
-  const numericLike = str.replace(/\s/g, '');
-  if (/^-?\d+(\.\d+)?$/.test(numericLike)) {
-    const asNumber = Number(numericLike);
+  const compact = str.replace(/\s/g, '');
+  if (/^-?\d+(?:\.\d+)?[eE][+\-]?\d+$/.test(compact)) {
+    const asNumber = Number(compact);
     if (Number.isFinite(asNumber) && Math.abs(asNumber - Math.round(asNumber)) < 1e-9) {
       return String(Math.trunc(asNumber));
     }
   }
 
-  return str.replace(/\s/g, '');
+  if (/^-?\d+(\.\d+)?$/.test(compact)) {
+    const asNumber = Number(compact);
+    if (Number.isFinite(asNumber) && Math.abs(asNumber - Math.round(asNumber)) < 1e-9) {
+      return String(Math.trunc(asNumber));
+    }
+  }
+
+  return compact;
 }
 
 export function isReconciliationKeyColumn(columnName: string): boolean {
@@ -92,16 +99,49 @@ export function isReconciliationKeyColumn(columnName: string): boolean {
   if (normalized === 'cle' || normalized === 'key') {
     return true;
   }
-  if (normalized.includes('numtransaction') || normalized.includes('numérotransgu')) {
+  if (
+    normalized.includes('numtransaction') ||
+    normalized.includes('numerotransgu') ||
+    normalized.includes('numtransgu')
+  ) {
     return true;
   }
   if (normalized.includes('reference') && normalized.includes('number')) {
     return true;
   }
-  if (normalized.includes('externaltransaction')) {
+  if (normalized.includes('externalid') || normalized.includes('externaltransaction')) {
     return true;
   }
   return false;
+}
+
+/** Force les colonnes clé en chaînes comparables (sans traitement par lots async). */
+export function coerceReconciliationKeyColumnsInPlace(
+  boData: Record<string, string>[],
+  boKeyColumn: string,
+  partnerData: Record<string, string>[],
+  partnerKeyColumn: string
+): void {
+  const boCol = resolveColumnKeyFromData(boData, boKeyColumn);
+  const partnerCol = resolveColumnKeyFromData(partnerData, partnerKeyColumn);
+
+  if (boCol && boData.length) {
+    for (let i = 0; i < boData.length; i++) {
+      const raw = boData[i][boCol];
+      if (raw !== null && raw !== undefined && raw !== '') {
+        boData[i][boCol] = normalizeReconciliationKeyValue(raw);
+      }
+    }
+  }
+
+  if (partnerCol && partnerData.length) {
+    for (let i = 0; i < partnerData.length; i++) {
+      const raw = partnerData[i][partnerCol];
+      if (raw !== null && raw !== undefined && raw !== '') {
+        partnerData[i][partnerCol] = normalizeReconciliationKeyValue(raw);
+      }
+    }
+  }
 }
 
 /** Colonnes à exclure de la détection automatique de colonnes « service ». */

@@ -598,6 +598,14 @@
   background: #4a7bb8;
 }
 
+.legend-pending-cdo {
+  background: #17a2b8;
+}
+
+.legend-pending-group {
+  background: #4ade80;
+}
+
 .legend-failed {
   background: #c87a3c;
 }
@@ -789,17 +797,20 @@
   background: #c87a3c;
 }
 
-.status-en-cours {
+.status-en-cours,
+.status-en-cours-default {
   background: #eaf0f8;
   color: #1e4a78;
   border: 1px solid #b8cde0;
 }
 
-.status-en-cours::after {
+.status-en-cours::after,
+.status-en-cours-default::after {
   background: #4a7bb8;
 }
 
-.status-en-cours::before {
+.status-en-cours::before,
+.status-en-cours-default::before {
   content: '';
   position: absolute;
   bottom: 6px;
@@ -809,6 +820,48 @@
   height: 2px;
   border-radius: 2px;
   background: #b8cde0;
+}
+
+.status-en-cours-support {
+  background: rgba(254, 243, 199, 0.9);
+  color: #92400e;
+  border: 1px solid #f59e0b;
+}
+
+.status-en-cours-support::after {
+  background: #f59e0b;
+}
+
+.status-en-cours-cdo {
+  background: rgba(209, 236, 241, 0.9);
+  color: #0c5460;
+  border: 1px solid #17a2b8;
+}
+
+.status-en-cours-cdo::after {
+  background: #17a2b8;
+}
+
+.status-en-cours-group {
+  background: rgba(220, 252, 231, 0.9);
+  color: #166534;
+  border: 1px solid #4ade80;
+}
+
+.status-en-cours-group::after {
+  background: #4ade80;
+}
+
+.status-en-cours-group::before {
+  content: '';
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: #86efac;
 }
 
 .status-label {
@@ -880,6 +933,16 @@
 .reco-stat-value.pending {
   color: #0d47a1;
   background: #bbdefb;
+}
+
+.reco-stat-value.pending-cdo {
+  color: #0c5460;
+  background: rgba(209, 236, 241, 0.95);
+}
+
+.reco-stat-value.pending-group {
+  color: #166534;
+  background: rgba(220, 252, 231, 0.95);
 }
 
 .reco-stat-value.failed {
@@ -973,6 +1036,9 @@
 
 .reco-chart-legend-top .reco-legend-dot.ok { background: #388e3c; }
 .reco-chart-legend-top .reco-legend-dot.pending { background: #1976d2; }
+.reco-chart-legend-top .reco-legend-dot.pending-support { background: #f59e0b; }
+.reco-chart-legend-top .reco-legend-dot.pending-cdo { background: #17a2b8; }
+.reco-chart-legend-top .reco-legend-dot.pending-group { background: #4ade80; }
 .reco-chart-legend-top .reco-legend-dot.failed { background: #f57c00; }
 
 .reco-chart-canvas-wrap {
@@ -1001,6 +1067,9 @@
 
 .reco-chart-legend-detail .reco-legend-dot.ok { background: #388e3c; }
 .reco-chart-legend-detail .reco-legend-dot.pending { background: #1976d2; }
+.reco-chart-legend-detail .reco-legend-dot.pending-support { background: #f59e0b; }
+.reco-chart-legend-detail .reco-legend-dot.pending-cdo { background: #17a2b8; }
+.reco-chart-legend-detail .reco-legend-dot.pending-group { background: #4ade80; }
 .reco-chart-legend-detail .reco-legend-dot.failed { background: #f57c00; }
 
 .reco-absent {

@@ -229,84 +229,6 @@
         </div>
     </div>
 
-    <!-- Sélection du pays pour TRXBO (avant agences) — mode manuel -->
-    <div class="manual-service-selection-overlay" *ngIf="showCountrySelection && reconciliationMode === 'manual'">
-        <div class="manual-service-selection-modal">
-            <div class="manual-service-selection-header">
-                <div class="header-badge">
-                    <span class="badge-text">
-                        Pays : {{ availableCountries.length }} — Sélection : {{ selectedCountries.length }}
-                    </span>
-                    <span class="status-info">
-                        <i class="fas fa-info-circle"></i>
-                        Étape 1/3 - Sélection du pays avant les agences
-                    </span>
-                </div>
-            </div>
-
-            <div class="manual-service-selection-content">
-                <div class="agency-search-wrap">
-                    <i class="fas fa-search agency-search-icon"></i>
-                    <input type="text" class="agency-search-input" placeholder="Rechercher un pays… (ex. CI, SN — plusieurs séparés par ,)"
-                           [(ngModel)]="countrySearchFilter"
-                           (ngModelChange)="onCountrySearchFilterChange($event)">
-                    <span class="agency-search-count" *ngIf="countrySearchFilter?.trim()">
-                        {{ displayedCountries.length }} / {{ availableCountries.length }}
-                    </span>
-                </div>
-                <div class="manual-service-controls">
-                    <button class="modern-btn select-all-btn" type="button" (click)="selectAllCountries()">
-                        <i class="fas fa-check-double"></i>
-                        Tout sélectionner
-                    </button>
-                    <button class="modern-btn deselect-all-btn" type="button" (click)="deselectAllCountries()">
-                        <i class="fas fa-check-double"></i>
-                        Tout désélectionner
-                    </button>
-                </div>
-
-                <div class="manual-service-grid">
-                    <div class="service-card" *ngFor="let country of displayedCountries; trackBy: trackSelectionValue">
-                        <div class="service-card-content">
-                            <div class="service-checkbox-modern">
-                                <input type="checkbox"
-                                       [id]="'manual-country-' + country"
-                                       [value]="country"
-                                       [checked]="isCountrySelected(country)"
-                                       (change)="onCountrySelectionChange($event, country)">
-                                <label [for]="'manual-country-' + country" class="checkbox-label">
-                                    <span class="checkmark"></span>
-                                </label>
-                            </div>
-                            <div class="service-info">
-                                <h4 class="service-name-modern">{{ country }}</h4>
-                                <p class="service-count-modern">{{ getCountryLineCount(country) }} lignes</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="manual-service-selection-actions">
-                <button class="modern-btn cancel-btn" type="button" (click)="cancelCountrySelection()">
-                    <i class="fas fa-times"></i>
-                    Annuler
-                </button>
-                <button class="modern-btn" type="button" (click)="skipCountrySelection()">
-                    <i class="fas fa-forward"></i>
-                    Passer
-                </button>
-                <button class="modern-btn confirm-btn"
-                        type="button"
-                        [disabled]="selectedCountries.length === 0"
-                        (click)="confirmCountrySelection()">
-                    <i class="fas fa-check"></i>
-                    Confirmer la sélection
-                </button>
-            </div>
-        </div>
-    </div>
-
     <!-- Sélection des agences pour TRXBO (Étape 1) -->
     <div class="manual-service-selection-overlay" *ngIf="showAgencySelection && reconciliationMode === 'manual'">
         <div class="manual-service-selection-modal">
@@ -318,7 +240,7 @@
                     </span>
                     <span class="status-info">
                         <i class="fas fa-info-circle"></i>
-                        Étape {{ boTrxboUsedCountryFilter ? '2/3' : '1/2' }} - Sélection des agences avant les services
+                        Étape 1/2 - Sélection des agences avant les services
                     </span>
                 </div>
             </div>
@@ -331,7 +253,7 @@
                            [(ngModel)]="agencySearchFilter"
                            (ngModelChange)="onAgencySearchFilterChange($event)">
                     <span class="agency-search-count" *ngIf="agencySearchFilter?.trim()">
-                        {{ displayedAgencies.length }} / {{ availableAgencies.length }}
+                        {{ filteredAvailableAgencies.length }} / {{ availableAgencies.length }}
                     </span>
                 </div>
                 <!-- Boutons d'action principaux -->
@@ -348,13 +270,13 @@
                 
                 <!-- Grille d'agences en cartes -->
                 <div class="manual-service-grid">
-                    <div class="service-card" *ngFor="let agency of displayedAgencies; trackBy: trackSelectionValue">
+                    <div class="service-card" *ngFor="let agency of filteredAvailableAgencies">
                         <div class="service-card-content">
                             <div class="service-checkbox-modern">
                                 <input type="checkbox" 
                                        [id]="'manual-agency-' + agency"
                                        [value]="agency" 
-                                       [checked]="isAgencySelected(agency)"
+                                       [checked]="selectedAgencies.includes(agency)"
                                        (change)="onAgencySelectionChange($event, agency)">
                                 <label [for]="'manual-agency-' + agency" class="checkbox-label">
                                     <span class="checkmark"></span>
@@ -362,7 +284,7 @@
                             </div>
                             <div class="service-info">
                                 <h4 class="service-name-modern">{{ agency }}</h4>
-                                <p class="service-count-modern">{{ getAgencyLineCount(agency) }} lignes</p>
+                                <p class="service-count-modern">{{ getAgencyCount(agency) }} lignes</p>
                             </div>
                         </div>
                     </div>
@@ -477,8 +399,7 @@
                     </span>
                     <span class="status-info" *ngIf="availableAgencies.length > 0">
                         <i class="fas fa-info-circle"></i>
-                        <ng-container *ngIf="boTrxboUsedCountryFilter">Étape 3/3 - Services après filtrage par pays et agence</ng-container>
-                        <ng-container *ngIf="!boTrxboUsedCountryFilter">Étape 2/3 - Services après filtrage par agence</ng-container>
+                        Étape 2/3 - Services après filtrage par agence
                     </span>
                     <span class="status-info" *ngIf="availableAgencies.length === 0">
                         <i class="fas fa-info-circle"></i>
@@ -495,7 +416,7 @@
                            [(ngModel)]="manualServiceSearchFilter"
                            (ngModelChange)="onManualServiceSearchFilterChange($event)">
                     <span class="agency-search-count" *ngIf="manualServiceSearchFilter?.trim()">
-                        {{ displayedManualServices.length }} / {{ manualAvailableServices.length }}
+                        {{ filteredManualAvailableServices.length }} / {{ manualAvailableServices.length }}
                     </span>
                 </div>
                 <!-- Boutons d'action principaux -->
@@ -512,13 +433,13 @@
                 
                 <!-- Grille de services en cartes -->
                 <div class="manual-service-grid">
-                    <div class="manual-service-card" *ngFor="let service of displayedManualServices; trackBy: trackSelectionValue">
+                    <div class="manual-service-card" *ngFor="let service of filteredManualAvailableServices">
                         <div class="manual-service-card-content">
                             <div class="manual-service-checkbox-modern">
                                 <input type="checkbox" 
                                        [id]="'manual-service-' + service"
                                        [value]="service" 
-                                       [checked]="isManualServiceSelected(service)"
+                                       [checked]="manualSelectedServices.includes(service)"
                                        (change)="onManualServiceSelectionChange($event, service)">
                                 <label [for]="'manual-service-' + service" class="checkbox-label">
                                     <span class="checkmark"></span>
@@ -526,7 +447,7 @@
                             </div>
                             <div class="manual-service-info">
                                 <h4 class="manual-service-name-modern">{{ service }}</h4>
-                                <p class="manual-service-count-modern">{{ getManualServiceLineCount(service) }} lignes</p>
+                                <p class="manual-service-count-modern">{{ getManualServiceCount(service) }} lignes</p>
                             </div>
                         </div>
                     </div>
@@ -576,10 +497,9 @@
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
                     <input type="text" class="agency-search-input" placeholder="Rechercher un statut… (plusieurs séparés par ,)"
-                           [(ngModel)]="manualStatusSearchFilter"
-                           (ngModelChange)="onManualStatusSearchFilterChange($event)">
+                           [(ngModel)]="manualStatusSearchFilter">
                     <span class="agency-search-count" *ngIf="manualStatusSearchFilter?.trim()">
-                        {{ displayedManualStatuses.length }} / {{ manualAvailableStatuses.length }}
+                        {{ filteredManualAvailableStatuses.length }} / {{ manualAvailableStatuses.length }}
                     </span>
                 </div>
                 <!-- Boutons d'action principaux -->
@@ -596,13 +516,13 @@
                 
                 <!-- Grille de statuts en cartes -->
                 <div class="manual-service-grid">
-                    <div class="manual-service-card" *ngFor="let status of displayedManualStatuses; trackBy: trackSelectionValue">
+                    <div class="manual-service-card" *ngFor="let status of filteredManualAvailableStatuses">
                         <div class="manual-service-card-content">
                             <div class="manual-service-checkbox-modern">
                                 <input type="checkbox" 
                                        [id]="'manual-status-' + status"
                                        [value]="status" 
-                                       [checked]="isManualStatusSelected(status)"
+                                       [checked]="manualSelectedStatuses.includes(status)"
                                        (change)="onManualStatusSelectionChange($event, status)">
                                 <label [for]="'manual-status-' + status" class="checkbox-label">
                                     <span class="checkmark"></span>
@@ -610,7 +530,7 @@
                             </div>
                             <div class="manual-service-info">
                                 <h4 class="manual-service-name-modern">{{ status }}</h4>
-                                <p class="manual-service-count-modern">{{ getManualStatusLineCount(status) }} lignes</p>
+                                <p class="manual-service-count-modern">{{ getManualStatusCount(status) }} lignes</p>
                             </div>
                         </div>
                     </div>
@@ -820,84 +740,6 @@
             </div>
         </div>
 
-        <!-- Sélection du pays pour TRXBO (avant agences) — mode assisté / automatique -->
-        <div class="service-selection-overlay" *ngIf="showCountrySelection && reconciliationMode === 'automatic'">
-            <div class="service-selection-modal">
-                <div class="service-selection-header">
-                    <div class="header-badge">
-                        <span class="badge-text">
-                            Pays : {{ availableCountries.length }} — Sélection : {{ selectedCountries.length }}
-                        </span>
-                        <span class="status-info">
-                            <i class="fas fa-info-circle"></i>
-                            Étape 1/3 - Sélection du pays avant les agences
-                        </span>
-                    </div>
-                </div>
-
-                <div class="service-selection-content">
-                    <div class="agency-search-wrap">
-                        <i class="fas fa-search agency-search-icon"></i>
-                        <input type="text" class="agency-search-input" placeholder="Rechercher un pays… (ex. CI, SN — plusieurs séparés par ,)"
-                               [(ngModel)]="countrySearchFilter"
-                               (ngModelChange)="onCountrySearchFilterChange($event)">
-                        <span class="agency-search-count" *ngIf="countrySearchFilter?.trim()">
-                            {{ displayedCountries.length }} / {{ availableCountries.length }}
-                        </span>
-                    </div>
-                    <div class="service-controls">
-                        <button class="modern-btn select-all-btn" type="button" (click)="selectAllCountries()">
-                            <i class="fas fa-check-double"></i>
-                            Tout sélectionner
-                        </button>
-                        <button class="modern-btn deselect-all-btn" type="button" (click)="deselectAllCountries()">
-                            <i class="fas fa-check-double"></i>
-                            Tout désélectionner
-                        </button>
-                    </div>
-
-                    <div class="service-grid">
-                        <div class="service-card" *ngFor="let country of displayedCountries; trackBy: trackSelectionValue">
-                            <div class="service-card-content">
-                                <div class="service-checkbox-modern">
-                                    <input type="checkbox"
-                                           [id]="'country-' + country"
-                                           [value]="country"
-                                           [checked]="isCountrySelected(country)"
-                                           (change)="onCountrySelectionChange($event, country)">
-                                    <label [for]="'country-' + country" class="checkbox-label">
-                                        <span class="checkmark"></span>
-                                    </label>
-                                </div>
-                                <div class="service-info">
-                                    <h4 class="service-name-modern">{{ country }}</h4>
-                                    <p class="service-count-modern">{{ getCountryLineCount(country) }} lignes</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="service-selection-actions">
-                    <button class="modern-btn cancel-btn" type="button" (click)="cancelCountrySelection()">
-                        <i class="fas fa-times"></i>
-                        Annuler
-                    </button>
-                    <button class="modern-btn" type="button" (click)="skipCountrySelection()">
-                        <i class="fas fa-forward"></i>
-                        Passer
-                    </button>
-                    <button class="modern-btn confirm-btn"
-                            type="button"
-                            [disabled]="selectedCountries.length === 0"
-                            (click)="confirmCountrySelection()">
-                        <i class="fas fa-check"></i>
-                        Confirmer la sélection
-                    </button>
-                </div>
-            </div>
-        </div>
-
         <!-- Sélection des agences pour TRXBO (Étape 1) - Design Moderne -->
         <div class="service-selection-overlay" *ngIf="showAgencySelection && reconciliationMode === 'automatic'">
             <div class="service-selection-modal">
@@ -909,7 +751,7 @@
                         </span>
                         <span class="status-info">
                             <i class="fas fa-info-circle"></i>
-                            Étape {{ boTrxboUsedCountryFilter ? '2/3' : '1/2' }} - Sélection des agences avant les services
+                            Étape 1/2 - Sélection des agences avant les services
                         </span>
                     </div>
                 </div>
@@ -922,7 +764,7 @@
                                [(ngModel)]="agencySearchFilter"
                                (ngModelChange)="onAgencySearchFilterChange($event)">
                         <span class="agency-search-count" *ngIf="agencySearchFilter?.trim()">
-                            {{ displayedAgencies.length }} / {{ availableAgencies.length }}
+                            {{ filteredAvailableAgencies.length }} / {{ availableAgencies.length }}
                         </span>
                     </div>
                     <!-- Boutons d'action principaux -->
@@ -939,13 +781,13 @@
                     
                     <!-- Grille d'agences en cartes -->
                     <div class="service-grid">
-                        <div class="service-card" *ngFor="let agency of displayedAgencies; trackBy: trackSelectionValue">
+                        <div class="service-card" *ngFor="let agency of filteredAvailableAgencies">
                             <div class="service-card-content">
                                 <div class="service-checkbox-modern">
                                     <input type="checkbox" 
                                            [id]="'agency-' + agency"
                                            [value]="agency" 
-                                           [checked]="isAgencySelected(agency)"
+                                           [checked]="selectedAgencies.includes(agency)"
                                            (change)="onAgencySelectionChange($event, agency)">
                                     <label [for]="'agency-' + agency" class="checkbox-label">
                                         <span class="checkmark"></span>
@@ -953,7 +795,7 @@
                                 </div>
                                 <div class="service-info">
                                     <h4 class="service-name-modern">{{ agency }}</h4>
-                                    <p class="service-count-modern">{{ getAgencyLineCount(agency) }} lignes</p>
+                                    <p class="service-count-modern">{{ getAgencyCount(agency) }} lignes</p>
                                 </div>
                             </div>
                         </div>
@@ -991,7 +833,7 @@
                         </span>
                         <span class="status-info" *ngIf="availableAgencies.length > 0">
                             <i class="fas fa-info-circle"></i>
-                            {{ boAutoServiceStepLabel }}
+                            Étape 2/2 - Services après filtrage par agence
                         </span>
                     </div>
                 </div>
@@ -1004,7 +846,7 @@
                                [(ngModel)]="serviceSearchFilter"
                                (ngModelChange)="onServiceSearchFilterChange($event)">
                         <span class="agency-search-count" *ngIf="serviceSearchFilter?.trim()">
-                            {{ displayedServices.length }} / {{ availableServices.length }}
+                            {{ filteredAvailableServices.length }} / {{ availableServices.length }}
                         </span>
                     </div>
                     <!-- Boutons d'action principaux -->
@@ -1021,13 +863,13 @@
                     
                     <!-- Grille de services en cartes -->
                     <div class="service-grid">
-                        <div class="service-card" *ngFor="let service of displayedServices; trackBy: trackSelectionValue">
+                        <div class="service-card" *ngFor="let service of filteredAvailableServices">
                             <div class="service-card-content">
                                 <div class="service-checkbox-modern">
                                     <input type="checkbox" 
                                            [id]="'service-' + service"
                                            [value]="service" 
-                                           [checked]="isServiceSelected(service)"
+                                           [checked]="selectedServices.includes(service)"
                                            (change)="onServiceSelectionChange($event, service)">
                                     <label [for]="'service-' + service" class="checkbox-label">
                                         <span class="checkmark"></span>
@@ -1035,7 +877,7 @@
                                 </div>
                                 <div class="service-info">
                                     <h4 class="service-name-modern">{{ service }}</h4>
-                                    <p class="service-count-modern">{{ getServiceLineCount(service) }} lignes</p>
+                                    <p class="service-count-modern">{{ getServiceCount(service) }} lignes</p>
                                 </div>
                             </div>
                         </div>
@@ -1081,10 +923,9 @@
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
                     <input type="text" class="agency-search-input" placeholder="Rechercher un statut… (plusieurs séparés par ,)"
-                           [(ngModel)]="autoStatusSearchFilter"
-                           (ngModelChange)="onAutoStatusSearchFilterChange($event)">
+                           [(ngModel)]="autoStatusSearchFilter">
                     <span class="agency-search-count" *ngIf="autoStatusSearchFilter?.trim()">
-                        {{ displayedAutoStatuses.length }} / {{ autoAvailableStatuses.length }}
+                        {{ filteredAutoAvailableStatuses.length }} / {{ autoAvailableStatuses.length }}
                     </span>
                 </div>
                 <div class="service-controls">
@@ -1099,13 +940,13 @@
                 </div>
 
                 <div class="service-grid">
-                    <div class="service-card" *ngFor="let status of displayedAutoStatuses; trackBy: trackSelectionValue">
+                    <div class="service-card" *ngFor="let status of filteredAutoAvailableStatuses">
                         <div class="service-card-content">
                             <div class="service-checkbox-modern">
                                 <input type="checkbox"
                                        [id]="'auto-status-' + status"
                                        [value]="status"
-                                       [checked]="isAutoStatusSelected(status)"
+                                       [checked]="autoSelectedStatuses.includes(status)"
                                        (change)="onAutoStatusSelectionChange($event, status)">
                                 <label [for]="'auto-status-' + status" class="checkbox-label">
                                     <span class="checkmark"></span>
@@ -1113,7 +954,7 @@
                             </div>
                             <div class="service-info">
                                 <h4 class="service-name-modern">{{ status }}</h4>
-                                <p class="service-count-modern">{{ getAutoStatusLineCount(status) }} lignes</p>
+                                <p class="service-count-modern">{{ getAutoStatusCount(status) }} lignes</p>
                             </div>
                         </div>
                     </div>

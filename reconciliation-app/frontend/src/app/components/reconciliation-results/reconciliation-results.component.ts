@@ -26,12 +26,7 @@ import {
     recordMatchesMagicPartition,
     hasMagicPartitionTags
 } from '../../utils/magic-partition.util';
-import { MagicServiceSummary, MagicServiceResultPart } from '../../services/magic-reconciliation.service';
-import {
-    scopeReconciliationResultToPartnerService,
-    parseAllowedBoServiceLabels
-} from '../../utils/service-match.util';
-import { resolveColumnKeyInRow } from '../../utils/row-column.util';
+import { MagicServiceSummary } from '../../services/magic-reconciliation.service';
 import {
     formatSpreadsheetDateValue,
     isDateColumnName,
@@ -4059,29 +4054,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 
                 // Nouvelle réconciliation : purger les anciens résultats pour afficher les nouveaux
                 if (response) {
-                    const magicSummaries = this.appStateService.getMagicServiceSummaries();
-                    const isMagicStub = (response.totalMatches ?? 0) > 0
-                        && !(response.matches?.length)
-                        && magicSummaries.length > 0;
-
-                    if (!isMagicStub) {
-                        this.reconciliationTabsService.clearAllData();
-                        this.invalidateCache();
-                    }
+                    // Purger les données des onglets et caches avant d'afficher les nouveaux résultats
+                    this.reconciliationTabsService.clearAllData();
+                    this.invalidateCache();
                     const initDataStartTime = performance.now();
-
-                    const detailRowCount = (response.matches?.length ?? 0)
-                        + (response.boOnly?.length ?? 0)
-                        + (response.partnerOnly?.length ?? 0);
-                    const deferNormalize = !isMagicStub
-                        && magicSummaries.length > 0
-                        && detailRowCount > 2000;
-
-                    if (isMagicStub || deferNormalize) {
-                        this.response = response;
-                    } else {
-                        this.response = this.normalizeReconciliationResponseDates(response);
-                    }
+                    
+                    this.response = this.normalizeReconciliationResponseDates(response);
                     this.magicServiceSummaries = this.appStateService.getMagicServiceSummaries();
                     this.magicPartnerFileNames = this.appStateService.getMagicPartnerFileNames();
                     this.selectedMagicPartnerFile = this.appStateService.getSelectedMagicPartnerFile()
@@ -4124,14 +4102,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     
                     // Calculer le total des enregistrements
                     const totalStartTime = performance.now();
-                    if (isMagicStub) {
-                        this.totalRecords = this.filteredMatchesCount + this.filteredBoOnlyCount + this.filteredPartnerOnlyCount;
-                    } else {
-                        this.totalRecords = (response.totalBoRecords || 0) + (response.totalPartnerRecords || 0);
-                    }
+                    this.totalRecords = (response.totalBoRecords || 0) + (response.totalPartnerRecords || 0);
                     
                     // Si nous n'avons pas encore de totalRecords et que nous avons des données, les calculer
-                    if (this.totalRecords === 0 && this.response && !isMagicStub) {
+                    if (this.totalRecords === 0 && this.response) {
                         const boCount = this.response.boOnly ? this.response.boOnly.length : 0;
                         const partnerCount = this.response.partnerOnly ? this.response.partnerOnly.length : 0;
                         const matchesCount = this.response.matches ? this.response.matches.length : 0;
@@ -4162,14 +4136,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         this.cdr.detectChanges();
                         const detectChangesDuration = performance.now() - detectChangesStartTime;
                     });
-
-                    if (deferNormalize) {
-                        queueMicrotask(() => {
-                            this.response = this.normalizeReconciliationResponseDates(response);
-                            this.cdr.markForCheck();
-                            this.cdr.detectChanges();
-                        });
-                    }
                     
                     const totalInitDuration = performance.now() - initDataStartTime;
                 } else {
@@ -4210,8 +4176,18 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.exportOptimizedProgressSub = undefined;
     }
 
-    private initializeFilteredData() {
+    private initializeFilteredData(options: { skipDeferredMagicBootstrap?: boolean } = {}) {
         const startTime = performance.now();
+
+        if (
+            !options.skipDeferredMagicBootstrap &&
+            this.isMagicServiceView() &&
+            this.shouldDeferMagicHeavyFilters()
+        ) {
+            this.bootstrapMagicFilteredDataForFastDisplay();
+            setTimeout(() => this.initializeFilteredData({ skipDeferredMagicBootstrap: true }), 0);
+            return;
+        }
         
         // Récupérer le jobId depuis le service
         const jobIdStartTime = performance.now();
@@ -4228,22 +4204,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.matchesLoaded = false;
         this.boOnlyLoaded = false;
         this.partnerOnlyLoaded = false;
-
-        if (this.magicServiceSummaries.length > 0 && this.isMagicServiceView()) {
-            this.applyMagicSummaryCountsForDisplay();
-            this.isInitializing = false;
-            this.reconciliationTabsService.setFilteredMatches([]);
-            this.reconciliationTabsService.setFilteredBoOnly([]);
-            this.reconciliationTabsService.setFilteredPartnerOnly([]);
-            this.reconciliationTabsService.setFilteredMismatches(this.response?.mismatches || []);
-            this.syncMagicViewContextToTabsService();
-            this.updatePagedData(true);
-            this.cdr.markForCheck();
-            this.cdr.detectChanges();
-            this.calculateVolumesAsync();
-            queueMicrotask(() => this.completeMagicFilteredDataLoad());
-            return;
-        }
         
         // Si les données sont déjà présentes dans la réponse (petits fichiers), les utiliser et mettre en cache
         const filterMatchesStartTime = performance.now();
@@ -4330,291 +4290,43 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         const totalInitDuration = performance.now() - startTime;
     }
 
-    /** Affichage immédiat des totaux magiques (sans filtrer tout le jeu de données). */
-    private applyMagicSummaryCountsForDisplay(): void {
-        this.refreshMagicServiceSummariesFromParts();
-        const counts = this.getMagicDisplayCounts();
-        this.filteredMatchesCount = counts.matches;
-        this.filteredBoOnlyCount = counts.boOnly;
-        this.filteredPartnerOnlyCount = counts.partnerOnly;
-        this.totalMatchesPages = Math.max(1, Math.ceil(this.filteredMatchesCount / this.pageSize));
-        this.totalBoOnlyPages = Math.max(1, Math.ceil(this.filteredBoOnlyCount / this.pageSize));
-        this.totalPartnerOnlyPages = Math.max(1, Math.ceil(this.filteredPartnerOnlyCount / this.pageSize));
-        const serviceBoTotal = this.filteredMatchesCount + this.filteredBoOnlyCount;
-        this.cachedTotalTransactions = serviceBoTotal;
-        this.totalTransactions = serviceBoTotal;
-        if (serviceBoTotal > 0) {
-            this.cachedMatchRate = (this.filteredMatchesCount / serviceBoTotal) * 100;
-            this.matchRate = this.cachedMatchRate;
-        } else {
-            this.cachedMatchRate = 0;
-            this.matchRate = 0;
-        }
+    private shouldDeferMagicHeavyFilters(): boolean {
+        const matches = this.response?.matches?.length ?? 0;
+        const boOnly = (this.response?.boOnly?.length ?? 0) + (this.response?.mismatches?.length ?? 0);
+        const partnerOnly = this.response?.partnerOnly?.length ?? 0;
+        return matches > 1500 || boOnly > 1500 || partnerOnly > 1500;
     }
 
-    /** Totaux affichés : lignes détaillées du service actif, sinon résumé magique. */
-    private magicDetailHasRowData(detail: ReconciliationResponse | null | undefined): boolean {
-        if (!detail) {
-            return false;
-        }
-        return (detail.matches?.length ?? 0) > 0
-            || (detail.boOnly?.length ?? 0) > 0
-            || (detail.mismatches?.length ?? 0) > 0
-            || (detail.partnerOnly?.length ?? 0) > 0;
-    }
+    /** Affiche immédiatement les KPI magiques (résumés par service) avant le filtrage complet. */
+    private bootstrapMagicFilteredDataForFastDisplay(): void {
+        this.currentJobId = this.reconciliationService.getCurrentJobId();
+        this.filteredMatches = [];
+        this.filteredBoOnly = [];
+        this.filteredPartnerOnly = [];
+        this.matchesLoaded = false;
+        this.boOnlyLoaded = false;
+        this.partnerOnlyLoaded = false;
 
-    private getMagicDisplayCounts(): { matches: number; boOnly: number; partnerOnly: number } {
-        const detail = this.getActiveMagicDetail();
-        if (this.magicDetailHasRowData(detail)) {
-            return {
-                matches: (detail!.matches ?? []).length,
-                boOnly: (detail!.mismatches ?? []).length + (detail!.boOnly ?? []).length,
-                partnerOnly: (detail!.partnerOnly ?? []).length
-            };
-        }
         const summary = this.findActiveMagicSummary();
         if (summary) {
-            return {
-                matches: summary.totalMatches ?? 0,
-                boOnly: summary.totalBoOnly ?? 0,
-                partnerOnly: summary.totalPartnerOnly ?? 0
-            };
-        }
-        return { matches: 0, boOnly: 0, partnerOnly: 0 };
-    }
-
-    /** Recalcule les totaux des onglets services depuis les responseParts (déjà filtrés par service). */
-    private refreshMagicServiceSummariesFromParts(): void {
-        const parts = this.appStateService.getMagicResponseParts();
-        if (!parts.length || !this.magicServiceSummaries.length) {
-            return;
-        }
-        this.magicServiceSummaries = this.magicServiceSummaries.map(summary => {
-            const part = this.findMagicResponsePart(summary);
-            if (!part) {
-                return summary;
-            }
-            const scoped = part.response;
-            return {
-                ...summary,
-                totalMatches: scoped.totalMatches ?? (scoped.matches?.length ?? 0),
-                totalBoOnly: scoped.totalBoOnly ?? 0,
-                totalPartnerOnly: scoped.totalPartnerOnly ?? 0,
-                totalBoRecords: scoped.totalBoRecords ?? 0,
-                totalPartnerRecords: scoped.totalPartnerRecords ?? 0
-            };
-        });
-        this.appStateService.setMagicServiceSummaries(this.magicServiceSummaries);
-    }
-
-    /** Libellé partenaire canonique pour le filtrage (pas le partitionTag d'affichage). */
-    private getScopePartnerService(): string {
-        const summary = this.findActiveMagicSummary();
-        return (summary?.partnerService || summary?.service || this.selectedMagicService || '').trim();
-    }
-
-    private getAllowedBoServicesForActiveSummary(): string[] {
-        const summary = this.findActiveMagicSummary();
-        return parseAllowedBoServiceLabels(summary?.boServices);
-    }
-
-    private resolveMagicColumnNames(): { boCol: string; partnerCol: string } | null {
-        const summary = this.findActiveMagicSummary();
-        if (summary?.boServiceColumn && summary?.partnerServiceColumn) {
-            return { boCol: summary.boServiceColumn, partnerCol: summary.partnerServiceColumn };
+            this.filteredMatchesCount = summary.totalMatches;
+            this.filteredBoOnlyCount = summary.totalBoOnly;
+            this.filteredPartnerOnlyCount = summary.totalPartnerOnly;
+            this.totalMatchesPages = Math.max(1, Math.ceil(this.filteredMatchesCount / this.pageSize));
+            this.totalBoOnlyPages = Math.max(1, Math.ceil(this.filteredBoOnlyCount / this.pageSize));
+            this.totalPartnerOnlyPages = Math.max(1, Math.ceil(this.filteredPartnerOnlyCount / this.pageSize));
         }
 
-        const stored = this.appStateService.getMagicServiceColumns();
-        if (stored?.boColumn && stored?.partnerColumn) {
-            return { boCol: stored.boColumn, partnerCol: stored.partnerColumn };
-        }
-
-        const part = this.resolveMagicServiceResponse();
-        const sample =
-            part?.matches?.[0]?.boData
-            ?? part?.boOnly?.[0]
-            ?? part?.mismatches?.[0]
-            ?? part?.partnerOnly?.[0];
-        if (!sample) {
-            return null;
-        }
-
-        const serviceCandidates = ['Service', 'service', 'SERV', 'TRANS TYPE', 'Trans Type', 'TYPE', 'Type'];
-        let boCol = '';
-        for (const candidate of serviceCandidates) {
-            if (resolveColumnKeyInRow(sample, candidate)) {
-                boCol = candidate;
-                break;
-            }
-        }
-        if (!boCol) {
-            return null;
-        }
-
-        return {
-            boCol,
-            partnerCol: summary?.partnerServiceColumn || stored?.partnerColumn || boCol
-        };
-    }
-
-    private scopeMagicDetail(detail: ReconciliationResponse): ReconciliationResponse {
-        const columns = this.resolveMagicColumnNames();
-        if (!columns) {
-            return detail;
-        }
-        return scopeReconciliationResultToPartnerService(
-            detail,
-            this.getScopePartnerService(),
-            columns.boCol,
-            columns.partnerCol,
-            this.getAllowedBoServicesForActiveSummary()
-        );
-    }
-
-    /** Réponse du service actif, filtrée sur le service partenaire sélectionné. */
-    private getActiveMagicDetail(): ReconciliationResponse | null {
-        const detail = this.getMagicDetailResponse();
-        if (!detail || !this.isMagicServiceView()) {
-            return detail;
-        }
-        // Les responseParts sont déjà filtrés par service lors de la réconciliation magique.
-        if (this.usesPerServiceMagicDetail()) {
-            return detail;
-        }
-        return this.scopeMagicDetail(detail);
-    }
-
-    private findMagicResponsePart(summary: MagicServiceSummary): MagicServiceResultPart | undefined {
-        const parts = this.appStateService.getMagicResponseParts();
-        const partnerFile = summary.partnerFileName || '';
-        const serviceKeys = new Set<string>([
-            summary.service,
-            summary.partnerService || '',
-            ...parseAllowedBoServiceLabels(summary.boServices)
-        ].filter(Boolean));
-        return parts.find(
-            p => serviceKeys.has(p.service)
-                && (!partnerFile || p.partnerFileName === partnerFile)
-        );
-    }
-
-    private tryLoadMagicServiceDetailFirst(): boolean {
-        if (!this.isMagicServiceView()) {
-            return false;
-        }
-        const detail = this.getActiveMagicDetail();
-        const hasDetail = !!detail && (
-            (detail.matches?.length ?? 0) > 0
-            || (detail.boOnly?.length ?? 0) > 0
-            || (detail.mismatches?.length ?? 0) > 0
-            || (detail.partnerOnly?.length ?? 0) > 0
-        );
-        if (!this.usesPerServiceMagicDetail() && !hasDetail) {
-            this.applyMagicSummaryCountsForDisplay();
-            return true;
-        }
-        if (!hasDetail) {
-            this.applyMagicSummaryCountsForDisplay();
-            return true;
-        }
-        this.assignFilteredDataFromMagicDetail();
-        this.updateCalculatedProperties(true);
-        return true;
-    }
-
-    /** Réponse détaillée du service magique actif (sans fusion globale). */
-    private resolveMagicServiceResponse(): ReconciliationResponse | null {
-        const parts = this.appStateService.getMagicResponseParts();
-        if (!parts.length) {
-            return this.response;
-        }
-        const summary = this.findActiveMagicSummary();
-        if (summary) {
-            const part = this.findMagicResponsePart(summary);
-            if (part) {
-                return part.response;
-            }
-        }
-        const partnerFile = this.selectedMagicPartnerFile
-            || this.appStateService.getSelectedMagicPartnerFile()
-            || '';
-        return parts.find(
-            p => p.service === this.selectedMagicService
-                && (!partnerFile || p.partnerFileName === partnerFile)
-        )?.response
-            ?? parts.find(p => p.service === this.selectedMagicService)?.response
-            ?? null;
-    }
-
-    private usesPerServiceMagicDetail(): boolean {
-        return this.isMagicServiceView() && this.appStateService.getMagicResponseParts().length > 0;
-    }
-
-    /** Source des listes : réponse du service actif, pas le stub agrégé. */
-    private getMagicDetailResponse(): ReconciliationResponse | null {
-        if (this.usesPerServiceMagicDetail()) {
-            return this.resolveMagicServiceResponse();
-        }
-        if (this.magicServiceSummaries.length > 0) {
-            return null;
-        }
-        return this.response;
-    }
-
-    /** Alimente les listes filtrées depuis la réponse du service sélectionné. */
-    private assignFilteredDataFromMagicDetail(): void {
-        const detail = this.getActiveMagicDetail();
-        if (!detail) {
-            return;
-        }
-
-        this.filteredMatches = detail.matches ?? [];
-        this.filteredBoOnly = [
-            ...(detail.mismatches ?? []),
-            ...(detail.boOnly ?? [])
-        ];
-        this.filteredPartnerOnly = detail.partnerOnly ?? [];
-        this.matchesLoaded = true;
-        this.boOnlyLoaded = true;
-        this.partnerOnlyLoaded = true;
-
-        this.filteredMatchesCount = this.filteredMatches.length;
-        this.filteredBoOnlyCount = this.filteredBoOnly.length;
-        this.filteredPartnerOnlyCount = this.filteredPartnerOnly.length;
-
-        this.totalMatchesPages = Math.max(1, Math.ceil(this.filteredMatchesCount / this.pageSize));
-        this.totalBoOnlyPages = Math.max(1, Math.ceil(this.filteredBoOnlyCount / this.pageSize));
-        this.totalPartnerOnlyPages = Math.max(1, Math.ceil(this.filteredPartnerOnlyCount / this.pageSize));
-
-        const serviceBoTotal = this.filteredMatchesCount + this.filteredBoOnlyCount;
-        this.cachedTotalTransactions = serviceBoTotal;
-        this.totalTransactions = serviceBoTotal;
-
-        this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
-        this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
-        this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
         this.syncMagicViewContextToTabsService();
-    }
-
-    /** Charge les listes filtrées en arrière-plan après l'affichage initial. */
-    private completeMagicFilteredDataLoad(): void {
-        if (!this.isMagicServiceView()) {
-            return;
-        }
-
-        const load = () => {
-            this.assignFilteredDataFromMagicDetail();
-            this.updateCalculatedProperties(true);
-            this.updatePagedData(true);
-            this.cdr.markForCheck();
-            this.cdr.detectChanges();
-        };
-
-        if (typeof requestIdleCallback !== 'undefined') {
-            requestIdleCallback(() => load(), { timeout: 150 });
-        } else {
-            queueMicrotask(load);
-        }
+        this.isInitializing = false;
+        this.cachedTotalTransactions = null;
+        this.cachedMatchRate = null;
+        this.getTotalTransactions();
+        this.getMatchRate();
+        this.updatePagedData(true);
+        this.cdr.markForCheck();
+        this.cdr.detectChanges();
+        this.calculateVolumesAsync();
     }
     
     /**
@@ -5126,15 +4838,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     private async loadMatchesDataLazy(): Promise<void> {
         const loadStartTime = performance.now();
         
-        if (this.tryLoadMagicServiceDetailFirst()) {
-            this.setCache('matches', this.filteredMatches);
-            return;
-        }
-
-        if (this.isMagicServiceView()) {
-            return;
-        }
-        
         // Vérifier le cache d'abord
         const cachedData = this.getFromCache('matches');
         if (cachedData) {
@@ -5337,15 +5040,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private async loadBoOnlyDataLazy(): Promise<void> {
         const loadStartTime = performance.now();
-        
-        if (this.tryLoadMagicServiceDetailFirst()) {
-            this.setCache('boOnly', this.filteredBoOnly);
-            return;
-        }
-
-        if (this.isMagicServiceView()) {
-            return;
-        }
         
         // Vérifier le cache d'abord
         const cachedData = this.getFromCache('boOnly');
@@ -5624,15 +5318,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private async loadPartnerOnlyDataLazy(): Promise<void> {
         const loadStartTime = performance.now();
-        
-        if (this.tryLoadMagicServiceDetailFirst()) {
-            this.setCache('partnerOnly', this.filteredPartnerOnly);
-            return;
-        }
-
-        if (this.isMagicServiceView()) {
-            return;
-        }
         
         // Vérifier le cache d'abord
         const cachedData = this.getFromCache('partnerOnly');
@@ -7994,9 +7679,11 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         // CORRECTION: Utiliser directement les données de la réponse au lieu des versions filtrées
         // pour garantir que le nombre total de transactions est toujours correct
         // Nombre de transactions = correspondances + écarts BO (filtré par service en mode magique)
-        if (this.magicServiceSummaries.length > 0 && this.selectedMagicService) {
-            const counts = this.getMagicDisplayCounts();
-            const result = counts.matches + counts.boOnly;
+        if (this.isMagicServiceView()) {
+            const summary = this.magicServiceSummaries.find(s => s.service === this.selectedMagicService);
+            const result = summary
+                ? summary.totalBoRecords
+                : (this.filteredMatchesCount + this.filteredBoOnlyCount);
             this.cachedTotalTransactions = result;
             this.totalTransactions = result;
             return result;
@@ -8038,7 +7725,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             this.matchRate = 0;
             return 0;
         }
-        const matches = this.filteredMatchesCount || this.filteredMatches.length || 0;
+        const matches = this.filteredMatches.length || 0;
         const result = (matches / total) * 100;
         
         // Mettre en cache et mettre à jour la propriété publique
@@ -8107,17 +7794,9 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const startTime = performance.now();
         
         const step1Start = performance.now();
-        const detail = this.isMagicServiceView() ? this.getActiveMagicDetail() : this.getMagicDetailResponse();
-        const matches = detail?.matches ?? this.response?.matches ?? [];
+        const matches = this.response?.matches || [];
+        const totalMatches = matches.length;
         const step1Duration = performance.now() - step1Start;
-
-        if (this.isMagicServiceView() && detail) {
-            return matches;
-        }
-
-        if (this.usesPerServiceMagicDetail()) {
-            return matches;
-        }
 
         if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
             const totalDuration = performance.now() - startTime;
@@ -8141,22 +7820,13 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         console.trace('🟠 [TEMPLATE] Stack trace getFilteredBoOnly()'); // Pour voir d'où vient l'appel
         
         // Pour TRXBO/OPPART, utiliser mismatches au lieu de boOnly
-        const detail = this.isMagicServiceView() ? this.getActiveMagicDetail() : this.getMagicDetailResponse();
-        const mismatches = detail?.mismatches ?? this.response?.mismatches ?? [];
-        const boOnly = detail?.boOnly ?? this.response?.boOnly ?? [];
+        const mismatches = this.response?.mismatches || [];
+        const boOnly = this.response?.boOnly || [];
 
         const combineStartTime = performance.now();
         // Combiner mismatches et boOnly pour l'affichage des écarts
         const allMismatches = [...mismatches, ...boOnly];
         const combineDuration = performance.now() - combineStartTime;
-
-        if (this.isMagicServiceView() && detail) {
-            return allMismatches;
-        }
-
-        if (this.usesPerServiceMagicDetail()) {
-            return allMismatches;
-        }
 
         if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
             const totalDuration = performance.now() - startTime;
@@ -8175,17 +7845,8 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     private getFilteredPartnerOnly(): Record<string, string>[] {
         const startTime = performance.now();
-        const detail = this.isMagicServiceView() ? this.getActiveMagicDetail() : this.getMagicDetailResponse();
-        const partnerOnly = detail?.partnerOnly ?? this.response?.partnerOnly ?? [];
+        const partnerOnly = this.response?.partnerOnly || [];
         const totalPartnerOnly = partnerOnly.length;
-        
-        if (this.isMagicServiceView() && detail) {
-            return partnerOnly;
-        }
-
-        if (this.usesPerServiceMagicDetail()) {
-            return partnerOnly;
-        }
         
         if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
             return partnerOnly;
@@ -8222,16 +7883,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     /** Réapplique le cloisonnement par service (réconciliation magique) sans recharger toute la page. */
     private refreshMagicServicePartitioning(): void {
-        if (!this.getMagicDetailResponse()) {
+        if (!this.response) {
             return;
         }
-        if (this.usesPerServiceMagicDetail()) {
-            this.assignFilteredDataFromMagicDetail();
-        } else {
-            this.filteredMatches = this.getFilteredMatches();
-            this.filteredBoOnly = this.getFilteredBoOnly();
-            this.filteredPartnerOnly = this.getFilteredPartnerOnly();
-        }
+        this.filteredMatches = this.getFilteredMatches();
+        this.filteredBoOnly = this.getFilteredBoOnly();
+        this.filteredPartnerOnly = this.getFilteredPartnerOnly();
         this.syncMagicViewContextToTabsService();
         this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
         this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
@@ -8354,16 +8011,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     goToMatches() {
         const buttonClickStartTime = performance.now();
-
-        this.syncMagicViewContextToTabsService();
-        if (this.isMagicServiceView() || this.shouldApplyServicePartition()) {
-            if (this.usesPerServiceMagicDetail()) {
-                this.assignFilteredDataFromMagicDetail();
-            } else {
-                this.filteredMatches = this.getFilteredMatches();
-            }
-            this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
-        }
         
         const setActiveTabStartTime = performance.now();
         // Utiliser setActiveTab pour avoir le même comportement que les autres boutons
@@ -8393,12 +8040,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.setActiveTab('boOnly');
         if (this.isMagicServiceView()) {
             this.syncMagicViewContextToTabsService();
-            if (this.usesPerServiceMagicDetail()) {
-                this.assignFilteredDataFromMagicDetail();
-                this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
-            } else {
-                this.reconciliationTabsService.setFilteredBoOnly(this.getFilteredBoOnly());
-            }
+            this.reconciliationTabsService.setFilteredBoOnly(this.getFilteredBoOnly());
         } else if (this.shouldApplyServicePartition()) {
             this.syncMagicViewContextToTabsService();
             this.reconciliationTabsService.setFilteredBoOnly(this.getFilteredBoOnly());
@@ -8427,12 +8069,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.setActiveTab('partnerOnly');
         if (this.isMagicServiceView() || this.shouldApplyServicePartition()) {
             this.syncMagicViewContextToTabsService();
-            if (this.usesPerServiceMagicDetail()) {
-                this.assignFilteredDataFromMagicDetail();
-                this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
-            } else {
-                this.reconciliationTabsService.setFilteredPartnerOnly(this.getFilteredPartnerOnly());
-            }
+            this.reconciliationTabsService.setFilteredPartnerOnly(this.getFilteredPartnerOnly());
         }
         const setActiveTabDuration = performance.now() - setActiveTabStartTime;
         
@@ -8731,9 +8368,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     get displayBoTransactionTotal(): number {
-        if (this.magicServiceSummaries.length > 0 && this.selectedMagicService) {
-            const counts = this.getMagicDisplayCounts();
-            return counts.matches + counts.boOnly;
+        if (this.isMagicServiceView()) {
+            const summary = this.findActiveMagicSummary();
+            if (summary) {
+                return summary.totalBoRecords;
+            }
+            return this.filteredMatchesCount + this.filteredBoOnlyCount;
         }
         return this.totalTransactions;
     }
@@ -8778,13 +8418,10 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             || '';
         const serviceFilter = this.getActiveServiceFilter();
         const partnerOnly = this.response?.partnerOnly || [];
-        const matchRows = (this.response?.matches || []).flatMap(m =>
-            [m.boData, m.partnerData].filter((row): row is Record<string, string> => !!row)
-        );
-        const magicTaggedDataset = hasMagicPartitionTags(matchRows)
-            || hasMagicPartitionTags(partnerOnly)
+        const magicTaggedDataset = hasMagicPartitionTags(partnerOnly)
             || hasMagicPartitionTags(this.response?.boOnly || [])
-            || hasMagicPartitionTags(this.response?.mismatches || []);
+            || hasMagicPartitionTags(this.response?.mismatches || [])
+            || this.magicServiceSummaries.length > 0;
 
         return recordMatchesMagicPartition(
             record,
@@ -8816,16 +8453,9 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.matchesPage = 1;
         this.boOnlyPage = 1;
         this.partnerOnlyPage = 1;
-        this.matchesLoaded = false;
-        this.boOnlyLoaded = false;
-        this.partnerOnlyLoaded = false;
-        this.applyMagicSummaryCountsForDisplay();
-        if (this.magicDetailHasRowData(this.getActiveMagicDetail())) {
-            this.assignFilteredDataFromMagicDetail();
-        }
+        this.initializeFilteredData();
         this.clearFilterDataCaches();
         this.invalidateCache();
-        this.updatePagedData(true);
         this.cdr.markForCheck();
     }
 

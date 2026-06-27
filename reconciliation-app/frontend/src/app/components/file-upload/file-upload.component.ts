@@ -1,7 +1,7 @@
 import { Component, EventEmitter, Input, Output, ChangeDetectorRef, NgZone, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, AutoProcessingModel, ProcessingResult, ColumnProcessingRule } from '../../services/auto-processing.service';
-import { PartnerConditionalKeysService, PARTNER_CONDITIONAL_KEY_COLUMN, BO_CONDITIONAL_KEY_COLUMN } from '../../services/partner-conditional-keys.service';
+import { PartnerConditionalKeysService, PARTNER_CONDITIONAL_KEY_COLUMN } from '../../services/partner-conditional-keys.service';
 import { ModelPreProcessingService } from '../../services/model-preprocessing.service';
 import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
@@ -18,14 +18,6 @@ import {
 } from '../../utils/bilingual-column.util';
 import { resolveColumnKeyInRow } from '../../utils/row-column.util';
 import { stripAllWhitespace } from '../../utils/concat.util';
-import {
-  isMsisdnPreserveColumn,
-  isLeadingZeroNumericString,
-  preserveLeadingZeroString,
-  formatGridCellAsString,
-  finalizeTextPreserveColumnValue,
-  normalizeLeadingZeroCellsInRows
-} from '../../utils/text-cell.util';
 import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../../utils/search-filter.util';
 import {
     formatSpreadsheetCellValue,
@@ -43,33 +35,8 @@ import { take } from 'rxjs/operators';
 import { PopupService } from '../../services/popup.service';
 import { FileWatcherService } from '../../services/file-watcher.service';
 import { ProgressIndicatorService } from '../../services/progress-indicator.service';
-import { KeySuggestionService } from '../../services/key-suggestion.service';
-import {
-  discoverReconciliationKeyColumns,
-  isReconciliationKeyColumn,
-  alignReconciliationKeyFormatsAsync,
-  areReconciliationKeysCompatible,
-  normalizeReconciliationKeyValue,
-  verifyReconciliationKeyFormats
-} from '../../utils/reconciliation-key.util';
 import { applyColumnProcessingRulesAsync } from '../../utils/column-processing.util';
 import { readCsvFileUltraFast, readCsvContentUltraFast } from '../../utils/fast-csv-reader.util';
-import {
-  findHeaderRowIndexInGrid,
-  findHeaderLineIndexInCsvLines,
-  looksLikeAirtelReportPreamble,
-  looksLikeAirtelTransactionalHeader
-} from '../../utils/model-header-detection.util';
-import {
-    findBoAgencyColumn,
-    findBoCountryColumn,
-    isTrxboLikeFile
-} from '../../utils/bo-column-detection.util';
-import {
-    buildColumnValueIndex,
-    buildColumnValueIndexAsync,
-    columnValueCountsToRecord
-} from '../../utils/selection-count.util';
 
 @Component({
     selector: 'app-file-upload',
@@ -194,21 +161,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     };
     private reconciliationProgressSubscription?: Subscription;
 
-    /** Sélection du pays pour TRXBO (avant agences) */
-    showCountrySelection = false;
-    availableCountries: string[] = [];
-    selectedCountries: string[] = [];
-    countrySearchFilter = '';
-    private countriesSelectionBeforeSearch: string[] | null = null;
-    countrySelectionData: Record<string, string>[] = [];
-    countryColumn: string | null = null;
-    countryLineCounts: Record<string, number> = {};
-    displayedCountries: string[] = [];
-    private selectedCountrySet = new Set<string>();
-    private countrySearchDebounceTimer?: number;
-    /** True si l'utilisateur a passé par le filtre pays dans ce chargement BO. */
-    boTrxboUsedCountryFilter = false;
-
     // Sélection d'agences pour TRXBO (étape 1)
     showAgencySelection = false;
     availableAgencies: string[] = [];
@@ -217,10 +169,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     private agenciesSelectionBeforeSearch: string[] | null = null;
     agencySelectionData: Record<string, string>[] = [];
     agencyColumn: string | null = null; // Colonne utilisée pour la sélection des agences
-    agencyLineCounts: Record<string, number> = {};
-    displayedAgencies: string[] = [];
-    private selectedAgencySet = new Set<string>();
-    private agencySearchDebounceTimer?: number;
 
     // Sélection de services pour TRXBO (étape 2)
     showServiceSelection = false;
@@ -229,11 +177,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     serviceSearchFilter = '';
     private servicesSelectionBeforeSearch: string[] | null = null;
     serviceSelectionData: Record<string, string>[] = [];
-    boServiceColumn: string | null = null;
-    serviceLineCounts: Record<string, number> = {};
-    displayedServices: string[] = [];
-    private selectedServiceSet = new Set<string>();
-    private serviceSearchDebounceTimer?: number;
 
     // Sélection des statuts pour TRXBO en mode automatique (étape 3)
     showAutoStatusSelection = false;
@@ -242,10 +185,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     autoStatusSearchFilter = '';
     autoStatusSelectionData: Record<string, string>[] = [];
     autoStatusColumn: string | null = null;
-    autoStatusLineCounts: Record<string, number> = {};
-    displayedAutoStatuses: string[] = [];
-    private selectedAutoStatusSet = new Set<string>();
-    private autoStatusSearchDebounceTimer?: number;
 
     // Sélection manuelle de services
     showManualServiceSelection = false;
@@ -254,12 +193,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     manualServiceSearchFilter = '';
     private manualServicesSelectionBeforeSearch: string[] | null = null;
     manualServiceSelectionData: Record<string, string>[] = [];
-    manualServiceColumn: string | null = null;
     manualStatusColumn: string | null = null; // Colonne statut pour TRXBO en mode manuel
-    manualServiceLineCounts: Record<string, number> = {};
-    displayedManualServices: string[] = [];
-    private selectedManualServiceSet = new Set<string>();
-    private manualServiceSearchDebounceTimer?: number;
     
     // Sélection des statuts pour TRXBO en mode manuel (étape 3)
     showManualStatusSelection = false;
@@ -267,10 +201,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     manualSelectedStatuses: string[] = [];
     manualStatusSearchFilter = '';
     manualStatusSelectionData: Record<string, string>[] = []; // Données déjà filtrées par agence et service
-    manualStatusLineCounts: Record<string, number> = {};
-    displayedManualStatuses: string[] = [];
-    private selectedManualStatusSet = new Set<string>();
-    private manualStatusSearchDebounceTimer?: number;
 
     // Sélection de services/type/statut pour les fichiers partenaires
     showPartnerServiceSelection = false;
@@ -335,7 +265,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         private modelPreProcessingService: ModelPreProcessingService,
         private partnerConditionalKeysService: PartnerConditionalKeysService,
         private fileWatcherService: FileWatcherService,
-        private keySuggestionService: KeySuggestionService,
         private cd: ChangeDetectorRef,
         private ngZone: NgZone
     ) {
@@ -1162,16 +1091,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         exportRows?: Record<string, string>[];
         warningMessage?: string;
     }> {
-        const columnRules = await this.autoProcessingService.getColumnProcessingRules(
-            model.id!,
-            AutoProcessingService.RECONCILIATION_MODULE
-        );
-        const expectedHeaderColumns = await this.resolveModelExpectedHeaderColumns(model, columnRules);
-
         const needsCompilation = await this.needsAssistedCompilation(files);
         const compiled = needsCompilation
-            ? await this.compileAssistedTreatmentFileRows(files, expectedHeaderColumns)
-            : await this.loadSingleAssistedTreatmentFile(files[0], expectedHeaderColumns);
+            ? await this.compileAssistedTreatmentFileRows(files)
+            : await this.loadSingleAssistedTreatmentFile(files[0]);
 
         await this.updateTraitementProgress(
             `Lecture terminée (${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)) — ${model.name}...`
@@ -1184,10 +1107,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             };
         }
 
+        const columnRules = await this.autoProcessingService.getColumnProcessingRules(
+            model.id!,
+            AutoProcessingService.RECONCILIATION_MODULE
+        );
         const inputColumns = this.collectAssistedTreatmentInputColumns(model, columnRules);
         let workingRows = compiled.rows;
-        const needsEnrichment = this.needsAssistedColumnEnrichment(compiled.rows[0], inputColumns)
-            || this.orangeMoneyUtilsService.isOrangeMoneyModel(model);
+        const needsEnrichment = this.needsAssistedColumnEnrichment(compiled.rows[0], inputColumns);
 
         if (needsEnrichment) {
             workingRows = await this.enrichAssistedRowsAsync(
@@ -1252,6 +1178,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return { success: false, warningMessage: 'Aucun résultat après application des règles.' };
         }
 
+        const dedupResult = await this.removeDuplicateTreatmentRowsAsync(processed);
+        const uniqueProcessed = dedupResult.uniqueRows;
+
+        if (!uniqueProcessed.length) {
+            return { success: false, warningMessage: 'Aucune ligne unique après déduplication.' };
+        }
+
         const useColumnFilter = !this.isTraitementMultiModelMode || this.selectedTraitementModelIds.size === 1;
         const exportColumns = useColumnFilter ? this.getSelectedTraitementExportColumns() : [];
         if (useColumnFilter && this.traitementColumnFilterEnabled && this.traitementOutputColumns.length > 0 && exportColumns.length === 0) {
@@ -1261,47 +1194,27 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             };
         }
 
-        let exportRows = processed;
+        let exportRows = uniqueProcessed;
         if (exportColumns.length) {
             exportRows = this.modelPreProcessingService.projectRowsToExportColumns(
-                processed,
+                uniqueProcessed,
                 exportColumns,
                 columnRules,
                 model
             );
         }
 
-        const sanitized = this.modelPreProcessingService.dropEmptyColumnsFromRows(
-            exportRows,
-            exportColumns.length ? exportColumns : undefined
-        );
-        exportRows = sanitized.rows;
-        const finalExportColumns = sanitized.columns;
-
-        if (!exportRows.length) {
-            return { success: false, warningMessage: 'Aucune colonne avec données pour le fichier final.' };
-        }
-
-        const dedupResult = await this.removeDuplicateTreatmentRowsAsync(exportRows, finalExportColumns);
-        exportRows = dedupResult.uniqueRows;
-
-        if (!exportRows.length) {
-            return { success: false, warningMessage: 'Aucune ligne unique après déduplication.' };
-        }
-
-        exportRows = normalizeLeadingZeroCellsInRows(exportRows);
-
         const outputName = this.buildProcessedOutputFileName(model, compiled.referenceFile);
         await this.updateTraitementProgress(`Téléchargement : ${outputName}`);
         await this.downloadProcessedTreatmentFile(exportRows, outputName, {
             skipNormalize: true,
-            columns: finalExportColumns.length ? finalExportColumns : undefined
+            columns: exportColumns.length ? exportColumns : undefined
         });
 
         return {
             success: true,
             outputName,
-            lineCount: exportRows.length,
+            lineCount: uniqueProcessed.length,
             duplicatesRemoved: dedupResult.duplicatesRemoved,
             preProcessingResultMessage,
             exportRows
@@ -1387,30 +1300,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     /** Lecture directe d'un seul fichier (CSV ou Excel mono-feuille) — sans étape de compilation. */
-    private async resolveModelExpectedHeaderColumns(
-        model: AutoProcessingModel,
-        columnRules: ColumnProcessingRule[] = []
-    ): Promise<string[]> {
-        const templateColumns = await this.resolveModelTemplateColumns(model);
-        if (templateColumns.length >= 2) {
-            return templateColumns;
-        }
-
-        const inputColumns = this.collectAssistedTreatmentInputColumns(model, columnRules);
-        if (inputColumns.length >= 2) {
-            return inputColumns;
-        }
-
-        return this.modelPreProcessingService.getDefaultTemplateColumns(
-            model.templateFile,
-            model.filePattern
-        );
-    }
-
-    private async loadSingleAssistedTreatmentFile(
-        file: File,
-        expectedHeaderColumns: string[] = []
-    ): Promise<{
+    private async loadSingleAssistedTreatmentFile(file: File): Promise<{
         rows: Record<string, string>[];
         sourceSummary: string;
         referenceFile: File;
@@ -1419,7 +1309,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.traitementProgressMessage = `Lecture ultra-rapide : ${file.name} (${fileSizeMB} Mo)`;
         this.cd.detectChanges();
 
-        const parsed = await this.readAssistedTreatmentFileRows(file, expectedHeaderColumns);
+        const parsed = await this.readAssistedTreatmentFileRows(file);
         const headerInfo = parsed.headerLine >= 0
             ? `, en-tête ligne ${parsed.headerLine + 1}`
             : '';
@@ -1435,10 +1325,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     /** Fusionne plusieurs fichiers ou feuilles Excel en un seul jeu de lignes. */
-    private async compileAssistedTreatmentFileRows(
-        files: File[],
-        expectedHeaderColumns: string[] = []
-    ): Promise<{
+    private async compileAssistedTreatmentFileRows(files: File[]): Promise<{
         rows: Record<string, string>[];
         sourceSummary: string;
         referenceFile: File;
@@ -1453,7 +1340,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 `Fusion ultra-rapide ${i + 1}/${files.length} : ${file.name} (${fileSizeMB} Mo)`;
             this.cd.detectChanges();
 
-            const parsed = await this.readAssistedTreatmentFileRows(file, expectedHeaderColumns);
+            const parsed = await this.readAssistedTreatmentFileRows(file);
             if (parsed.rows.length) {
                 this.appendRowsSafely(compiled, parsed.rows);
                 const headerInfo = parsed.headerLine >= 0
@@ -1511,10 +1398,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     private buildAssistedRowFromGridCells(headers: string[], rowData: any[]): Record<string, string> {
         const row: Record<string, string> = {};
         for (let index = 0; index < headers.length; index++) {
-            const header = headers[index];
             const value = rowData[index];
-            row[header] = value !== undefined && value !== null
-                ? fixCellEncodingIfNeeded(formatGridCellAsString(header, value))
+            row[headers[index]] = value !== undefined && value !== null
+                ? fixCellEncodingIfNeeded(String(value).trim())
                 : '';
         }
         return row;
@@ -1569,8 +1455,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     private resolveAssistedCsvHeader(
         lines: string[],
-        delimiter: string,
-        expectedHeaderColumns: string[] = []
+        delimiter: string
     ): {
         headerLine: number;
         headers: string[];
@@ -1578,36 +1463,21 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         skippedBeforeHeader: number;
         source: string;
     } {
-        if (expectedHeaderColumns.length >= 2) {
-            const modelLineIndex = findHeaderLineIndexInCsvLines(
-                lines,
-                delimiter,
-                expectedHeaderColumns,
-                80
-            );
-            if (modelLineIndex !== null) {
-                const headerCells = this.splitCsvLineFast(lines[modelLineIndex], delimiter);
-                const headers = headerCells.map((header, index) =>
-                    this.normalizeColumnName(fixGarbledCharacters(header.trim()) || `Col${index + 1}`)
-                );
-                return {
-                    headerLine: modelLineIndex,
-                    headers,
-                    dataStartLine: modelLineIndex + 1,
-                    skippedBeforeHeader: modelLineIndex,
-                    source: 'modèle watch-folder'
-                };
-            }
-        }
-
-        for (let i = 0; i < Math.min(20, lines.length); i++) {
+        for (let i = 0; i < Math.min(15, lines.length); i++) {
             const line = lines[i];
             if (!line.trim()) {
                 continue;
             }
-            const cells = this.splitCsvLineFast(line, delimiter);
-            if (looksLikeAirtelTransactionalHeader(cells)) {
-                const headers = cells.map((header, index) =>
+            const lower = line.toLowerCase();
+            const hasTransactionId = lower.includes('transaction id') || lower.includes('transaction_id');
+            const hasSerialOrSender =
+                lower.includes('s. no') ||
+                lower.includes('s.no') ||
+                lower.includes('sender msisdn') ||
+                lower.includes('sender_msisdn');
+            if (hasTransactionId && hasSerialOrSender) {
+                const headerCells = this.splitCsvLineFast(line, delimiter);
+                const headers = headerCells.map((header, index) =>
                     this.normalizeColumnName(fixGarbledCharacters(header.trim()) || `Col${index + 1}`)
                 );
                 return {
@@ -1615,7 +1485,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     headers,
                     dataStartLine: i + 1,
                     skippedBeforeHeader: i,
-                    source: 'Airtel Transaction Report'
+                    source: 'Airtel User Transaction Report'
                 };
             }
         }
@@ -1645,7 +1515,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             };
         }
 
-        const assistedHeader = this.detectAssistedTreatmentHeader(headerGrid, expectedHeaderColumns);
+        const assistedHeader = this.detectAssistedTreatmentHeader(headerGrid);
         const headerLine = assistedHeader.headerRowIndex;
         const headerRow = assistedHeader.headerRow;
         const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
@@ -1787,10 +1657,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     /**
      * Détecte la ligne d'en-tête et ignore les lignes avant l'en-tête et les lignes inutiles.
      */
-    private parseAssistedTreatmentGrid(
-        jsonData: any[][],
-        expectedHeaderColumns: string[] = []
-    ): {
+    private parseAssistedTreatmentGrid(jsonData: any[][]): {
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
@@ -1800,7 +1667,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         const normalizedGrid = this.normalizeAssistedTreatmentGrid(jsonData);
-        const assistedHeader = this.detectAssistedTreatmentHeader(normalizedGrid, expectedHeaderColumns);
+        const assistedHeader = this.detectAssistedTreatmentHeader(normalizedGrid);
         const headerLine = assistedHeader.headerRowIndex;
         const headerRow = assistedHeader.headerRow;
         const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
@@ -1844,8 +1711,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     private async parseAssistedTreatmentGridAsync(
         jsonData: any[][],
-        progressLabel = 'Lecture Excel',
-        expectedHeaderColumns: string[] = []
+        progressLabel = 'Lecture Excel'
     ): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
@@ -1856,7 +1722,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         const headerGrid = this.buildAssistedHeaderDetectionGrid(jsonData);
-        const assistedHeader = this.detectAssistedTreatmentHeader(headerGrid, expectedHeaderColumns);
+        const assistedHeader = this.detectAssistedTreatmentHeader(headerGrid);
         const headerLine = assistedHeader.headerRowIndex;
         const headerRow = assistedHeader.headerRow;
         const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
@@ -1916,10 +1782,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     /** Lit toutes les feuilles Excel et fusionne les lignes utiles (rapports multi-feuilles Orange Money, etc.). */
-    private async parseAssistedTreatmentWorkbook(
-        workbook: XLSX.WorkBook,
-        expectedHeaderColumns: string[] = []
-    ): Promise<{
+    private async parseAssistedTreatmentWorkbook(workbook: XLSX.WorkBook): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
@@ -1941,16 +1804,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         const firstParse = await this.parseAssistedTreatmentGridAsync(
             firstGrid,
-            multiSheet ? 'Fusion feuille 1' : 'Lecture Excel',
-            expectedHeaderColumns
+            multiSheet ? 'Fusion feuille 1' : 'Lecture Excel'
         );
         if (!multiSheet) {
             return firstParse;
         }
 
         const assistedHeader = this.detectAssistedTreatmentHeader(
-            this.buildAssistedHeaderDetectionGrid(firstGrid),
-            expectedHeaderColumns
+            this.buildAssistedHeaderDetectionGrid(firstGrid)
         );
         const headerRow = assistedHeader.headerRow.map(h => this.normalizeColumnName(h || ''));
         const headers = firstParse.rows.length
@@ -2132,33 +1993,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     /**
      * Détecte la ligne d'en-tête (Airtel User Transaction Report, puis heuristique générale).
      */
-    private detectAssistedTreatmentHeader(
-        jsonData: any[][],
-        expectedHeaderColumns: string[] = []
-    ): {
+    private detectAssistedTreatmentHeader(jsonData: any[][]): {
         headerRowIndex: number;
         headerRow: string[];
         source: string;
     } {
-        if (expectedHeaderColumns.length >= 2) {
-            const modelHeaderIndex = findHeaderRowIndexInGrid(jsonData, expectedHeaderColumns, 80);
-            if (modelHeaderIndex !== null) {
-                const headerRow = this.extractAssistedGridRowStrings(jsonData[modelHeaderIndex]);
-                return {
-                    headerRowIndex: modelHeaderIndex,
-                    headerRow,
-                    source: 'modèle watch-folder'
-                };
-            }
-        }
-
         const airtelHeaderIndex = this.detectAirtelUserTransactionReportHeaderIndex(jsonData);
         if (airtelHeaderIndex !== null) {
             const headerRow = this.extractAssistedGridRowStrings(jsonData[airtelHeaderIndex]);
             return {
                 headerRowIndex: airtelHeaderIndex,
                 headerRow,
-                source: 'Airtel Transaction Report'
+                source: 'Airtel User Transaction Report'
             };
         }
 
@@ -2195,12 +2041,22 @@ export class FileUploadComponent implements OnInit, OnDestroy {
      * (ex. S. No., Transaction ID, Sender Msisdn…).
      */
     private detectAirtelUserTransactionReportHeaderIndex(jsonData: any[][]): number | null {
-        const scanLimit = Math.min(20, jsonData.length);
+        const scanLimit = Math.min(12, jsonData.length);
         let isAirtelReport = false;
 
         for (let i = 0; i < scanLimit; i++) {
-            const rowCells = this.extractAssistedGridRowStrings(jsonData[i]);
-            if (looksLikeAirtelReportPreamble(rowCells)) {
+            const rowText = this.getAssistedGridRowText(jsonData[i]).toLowerCase();
+            if (
+                rowText.includes('user_transaction_report') ||
+                rowText.includes('user transaction report')
+            ) {
+                isAirtelReport = true;
+                break;
+            }
+            if (
+                rowText.includes('selection criteria') &&
+                (rowText.includes('from date') || rowText.includes('to date'))
+            ) {
                 isAirtelReport = true;
                 break;
             }
@@ -2210,9 +2066,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return null;
         }
 
-        for (let i = 0; i < Math.min(20, jsonData.length); i++) {
-            const rowCells = this.extractAssistedGridRowStrings(jsonData[i]);
-            if (looksLikeAirtelTransactionalHeader(rowCells)) {
+        for (let i = 0; i < Math.min(15, jsonData.length); i++) {
+            const rowText = this.getAssistedGridRowText(jsonData[i]).toLowerCase();
+            const hasTransactionId = rowText.includes('transaction id') || rowText.includes('transaction_id');
+            const hasSerialOrSender =
+                rowText.includes('s. no') ||
+                rowText.includes('s.no') ||
+                rowText.includes('sender msisdn') ||
+                rowText.includes('sender_msisdn');
+            if (hasTransactionId && hasSerialOrSender) {
                 return i;
             }
         }
@@ -2448,10 +2310,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return cleaned || 'modele';
     }
 
-    private removeDuplicateTreatmentRows(
-        rows: Record<string, string>[],
-        columns?: string[]
-    ): {
+    private removeDuplicateTreatmentRows(rows: Record<string, string>[]): {
         uniqueRows: Record<string, string>[];
         duplicatesRemoved: number;
     } {
@@ -2459,7 +2318,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const uniqueRows: Record<string, string>[] = [];
         let duplicatesRemoved = 0;
 
-        const orderedKeys = this.modelPreProcessingService.getNonemptyExportColumns(rows, columns);
+        const orderedKeys = Object.keys(rows[0]);
 
         for (const row of rows) {
             const key = this.buildTreatmentRowDedupKey(row, orderedKeys);
@@ -2477,10 +2336,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return { uniqueRows, duplicatesRemoved };
     }
 
-    private async removeDuplicateTreatmentRowsAsync(
-        rows: Record<string, string>[],
-        columns?: string[]
-    ): Promise<{
+    private async removeDuplicateTreatmentRowsAsync(rows: Record<string, string>[]): Promise<{
         uniqueRows: Record<string, string>[];
         duplicatesRemoved: number;
     }> {
@@ -2491,7 +2347,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const seen = new Set<string>();
         const uniqueRows: Record<string, string>[] = [];
         let duplicatesRemoved = 0;
-        const orderedKeys = this.modelPreProcessingService.getNonemptyExportColumns(rows, columns);
+        const orderedKeys = Object.keys(rows[0]);
         const batchSize = rows.length > 100000 ? 20000 : 2000;
 
         for (let i = 0; i < rows.length; i++) {
@@ -2519,8 +2375,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         let key = '';
         for (let i = 0; i < orderedKeys.length; i++) {
             const k = orderedKeys[i];
-            const raw = String(row[k] ?? '').trim().replace(/\s+/g, ' ');
-            key += `${raw}\u0001`;
+            key += `${row[k] ?? ''}\u0001`;
         }
         return key;
     }
@@ -2773,13 +2628,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     private stripKeyColumnWhitespace(rows: Record<string, string>[]): Record<string, string>[] {
+        const keyPatterns = ['cle', 'key', 'reference', 'referenceid', 'idtransaction', 'reconciliation'];
+        const isKeyColumn = (col: string): boolean => {
+            const lower = col.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+            return keyPatterns.some(k => lower === k || lower.includes(k));
+        };
+
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             for (const col of Object.keys(row)) {
-                if (isMsisdnPreserveColumn(col)) {
-                    row[col] = stripAllWhitespace(finalizeTextPreserveColumnValue(col, row[col]));
-                } else if (isReconciliationKeyColumn(col)) {
-                    row[col] = normalizeReconciliationKeyValue(row[col]);
+                if (isKeyColumn(col)) {
+                    row[col] = stripAllWhitespace(row[col]);
                 }
             }
         }
@@ -2792,7 +2651,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         options?: { skipNormalize?: boolean; columns?: string[] }
     ): Promise<void> {
         let exportRows = data;
-        exportRows = normalizeLeadingZeroCellsInRows(exportRows);
         if (!options?.skipNormalize && data.length > 3000) {
             exportRows = await this.normalizeDataAsync(data, async (done, total) => {
                 await this.updateTraitementProgress(
@@ -2803,15 +2661,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             exportRows = this.normalizeData(data);
         }
 
-        const sanitized = this.modelPreProcessingService.dropEmptyColumnsFromRows(
-            exportRows,
-            options?.columns
-        );
-        exportRows = sanitized.rows;
-
-        const columns = sanitized.columns.length
-            ? sanitized.columns
-            : this.modelPreProcessingService.getNonemptyExportColumns(exportRows);
+        const columns = options?.columns?.length
+            ? options.columns
+            : this.getColumnsFromData(exportRows);
         const lowerName = outputBaseName.toLowerCase();
         const exportOptions = {
             chunkSize: exportRows.length > 100000 ? 5000 : exportRows.length > 20000 ? 2000 : 1000,
@@ -2867,7 +2719,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             }
 
             await this.yieldToMainThread(true);
-            this.startBoTrxboSelectionFlowAsync(this.autoBoData);
+            if (await this.detectTRXBOAndExtractServicesAsync(this.autoBoData)) {
+                if (this.availableAgencies.length > 0) {
+                    this.showAgencySelectionStep();
+                } else {
+                    this.showServiceSelectionStep();
+                }
+            }
         } else {
             this.autoPartnerSourceFormat = treatedFormat;
             this.autoPartnerData = data;
@@ -2923,336 +2781,33 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return [...seen].sort();
     }
 
-    private assignCountryIndex(data: Record<string, string>[], column: string): void {
-        const index = buildColumnValueIndex(data, column);
-        this.availableCountries = index.values;
-        this.countryLineCounts = columnValueCountsToRecord(index.counts);
-        this.displayedCountries = index.values;
-    }
-
-    private async assignCountryIndexAsync(data: Record<string, string>[], column: string): Promise<void> {
-        const index = await buildColumnValueIndexAsync(data, column, () => this.yieldToMainThread(true));
-        this.availableCountries = index.values;
-        this.countryLineCounts = columnValueCountsToRecord(index.counts);
-        this.displayedCountries = index.values;
-    }
-
-    private assignAgencyIndex(data: Record<string, string>[], column: string): void {
-        const index = buildColumnValueIndex(data, column);
-        this.availableAgencies = index.values;
-        this.agencyLineCounts = columnValueCountsToRecord(index.counts);
-        this.displayedAgencies = index.values;
-    }
-
-    private async assignAgencyIndexAsync(data: Record<string, string>[], column: string): Promise<void> {
-        const index = await buildColumnValueIndexAsync(data, column, () => this.yieldToMainThread(true));
-        this.availableAgencies = index.values;
-        this.agencyLineCounts = columnValueCountsToRecord(index.counts);
-        this.displayedAgencies = index.values;
-    }
-
-    private assignBoServiceIndex(data: Record<string, string>[], column: string): void {
-        const index = buildColumnValueIndex(data, column);
-        this.availableServices = index.values;
-        this.serviceLineCounts = columnValueCountsToRecord(index.counts);
-        this.displayedServices = index.values;
-    }
-
-    private async assignBoServiceIndexAsync(data: Record<string, string>[], column: string): Promise<void> {
-        const index = await buildColumnValueIndexAsync(data, column, () => this.yieldToMainThread(true));
-        this.availableServices = index.values;
-        this.serviceLineCounts = columnValueCountsToRecord(index.counts);
-        this.displayedServices = index.values;
-    }
-
-    private assignManualServiceIndex(data: Record<string, string>[], column: string): void {
-        const index = buildColumnValueIndex(data, column);
-        this.manualAvailableServices = index.values;
-        this.manualServiceLineCounts = columnValueCountsToRecord(index.counts);
-        this.displayedManualServices = index.values;
-    }
-
-    private assignAutoStatusIndex(data: Record<string, string>[], column: string): void {
-        const index = buildColumnValueIndex(data, column);
-        this.autoAvailableStatuses = index.values;
-        this.autoStatusLineCounts = columnValueCountsToRecord(index.counts);
-        this.displayedAutoStatuses = index.values;
-    }
-
-    private assignManualStatusIndex(data: Record<string, string>[], column: string): void {
-        const index = buildColumnValueIndex(data, column);
-        this.manualAvailableStatuses = index.values;
-        this.manualStatusLineCounts = columnValueCountsToRecord(index.counts);
-        this.displayedManualStatuses = index.values;
-    }
-
-    trackSelectionValue(_index: number, value: string): string {
-        return value;
-    }
-
-    private refreshDisplayedCountries(): void {
-        if (!hasCommaSeparatedSearchFilter(this.countrySearchFilter)) {
-            this.displayedCountries = this.availableCountries;
-            return;
-        }
-        this.displayedCountries = this.availableCountries.filter(country =>
-            matchesCommaSeparatedFilter(
-                this.countrySearchFilter,
-                country,
-                this.countryLineCounts[country] ?? 0
-            )
-        );
-    }
-
-    private refreshDisplayedAgencies(): void {
-        if (!hasCommaSeparatedSearchFilter(this.agencySearchFilter)) {
-            this.displayedAgencies = this.availableAgencies;
-            return;
-        }
-        this.displayedAgencies = this.availableAgencies.filter(agency =>
-            matchesCommaSeparatedFilter(
-                this.agencySearchFilter,
-                agency,
-                this.agencyLineCounts[agency] ?? 0
-            )
-        );
-    }
-
-    private refreshDisplayedServices(): void {
-        if (!hasCommaSeparatedSearchFilter(this.serviceSearchFilter)) {
-            this.displayedServices = this.availableServices;
-            return;
-        }
-        this.displayedServices = this.availableServices.filter(service =>
-            matchesCommaSeparatedFilter(
-                this.serviceSearchFilter,
-                service,
-                this.serviceLineCounts[service] ?? 0
-            )
-        );
-    }
-
-    private refreshDisplayedAutoStatuses(): void {
-        if (!hasCommaSeparatedSearchFilter(this.autoStatusSearchFilter)) {
-            this.displayedAutoStatuses = this.autoAvailableStatuses;
-            return;
-        }
-        this.displayedAutoStatuses = this.autoAvailableStatuses.filter(status =>
-            matchesCommaSeparatedFilter(
-                this.autoStatusSearchFilter,
-                status,
-                this.autoStatusLineCounts[status] ?? 0
-            )
-        );
-    }
-
-    private refreshDisplayedManualServices(): void {
-        if (!hasCommaSeparatedSearchFilter(this.manualServiceSearchFilter)) {
-            this.displayedManualServices = this.manualAvailableServices;
-            return;
-        }
-        this.displayedManualServices = this.manualAvailableServices.filter(service =>
-            matchesCommaSeparatedFilter(
-                this.manualServiceSearchFilter,
-                service,
-                this.manualServiceLineCounts[service] ?? 0
-            )
-        );
-    }
-
-    private refreshDisplayedManualStatuses(): void {
-        if (!hasCommaSeparatedSearchFilter(this.manualStatusSearchFilter)) {
-            this.displayedManualStatuses = this.manualAvailableStatuses;
-            return;
-        }
-        this.displayedManualStatuses = this.manualAvailableStatuses.filter(status =>
-            matchesCommaSeparatedFilter(
-                this.manualStatusSearchFilter,
-                status,
-                this.manualStatusLineCounts[status] ?? 0
-            )
-        );
-    }
-
-    private syncCountrySelectionSet(): void {
-        this.selectedCountrySet = new Set(this.selectedCountries);
-    }
-
-    private syncAgencySelectionSet(): void {
-        this.selectedAgencySet = new Set(this.selectedAgencies);
-    }
-
-    private syncServiceSelectionSet(): void {
-        this.selectedServiceSet = new Set(this.selectedServices);
-    }
-
-    private syncAutoStatusSelectionSet(): void {
-        this.selectedAutoStatusSet = new Set(this.autoSelectedStatuses);
-    }
-
-    private syncManualServiceSelectionSet(): void {
-        this.selectedManualServiceSet = new Set(this.manualSelectedServices);
-    }
-
-    private syncManualStatusSelectionSet(): void {
-        this.selectedManualStatusSet = new Set(this.manualSelectedStatuses);
-    }
-
-    isCountrySelected(country: string): boolean {
-        return this.selectedCountrySet.has(country);
-    }
-
-    isAgencySelected(agency: string): boolean {
-        return this.selectedAgencySet.has(agency);
-    }
-
-    isServiceSelected(service: string): boolean {
-        return this.selectedServiceSet.has(service);
-    }
-
-    isAutoStatusSelected(status: string): boolean {
-        return this.selectedAutoStatusSet.has(status);
-    }
-
-    isManualServiceSelected(service: string): boolean {
-        return this.selectedManualServiceSet.has(service);
-    }
-
-    isManualStatusSelected(status: string): boolean {
-        return this.selectedManualStatusSet.has(status);
-    }
-
-    getCountryLineCount(country: string): number {
-        return this.countryLineCounts[country] ?? 0;
-    }
-
-    getAgencyLineCount(agency: string): number {
-        return this.agencyLineCounts[agency] ?? 0;
-    }
-
-    getServiceLineCount(service: string): number {
-        return this.serviceLineCounts[service] ?? 0;
-    }
-
-    getAutoStatusLineCount(status: string): number {
-        return this.autoStatusLineCounts[status] ?? 0;
-    }
-
-    getManualServiceLineCount(service: string): number {
-        return this.manualServiceLineCounts[service] ?? 0;
-    }
-
-    getManualStatusLineCount(status: string): number {
-        return this.manualStatusLineCounts[status] ?? 0;
-    }
-
-    private async startBoTrxboSelectionFlowAsync(data: Record<string, string>[]): Promise<void> {
-        const step = await this.detectTRXBOSelectionStepAsync(data);
-        this.applyBoTrxboSelectionStep(step);
-    }
-
-    private startBoTrxboSelectionFlow(data: Record<string, string>[]): void {
-        const step = this.detectTRXBOSelectionStep(data);
-        this.applyBoTrxboSelectionStep(step);
-    }
-
-    private applyBoTrxboSelectionStep(step: false | 'country' | 'agency' | 'services'): void {
-        if (step === 'country') {
-            this.showCountrySelectionStep();
-        } else if (step === 'agency') {
-            this.showAgencySelectionStep();
-        } else if (step === 'services') {
-            if (this.reconciliationMode === 'manual') {
-                this.showManualServiceSelectionStep();
-            } else {
-                this.showServiceSelectionStep();
-            }
-        }
-    }
-
-    private detectTRXBOSelectionStep(data: Record<string, string>[]): false | 'country' | 'agency' | 'services' {
-        if (!data?.length) {
-            return false;
-        }
-
-        const columns = Object.keys(data[0]);
-        if (!isTrxboLikeFile(columns)) {
-            return false;
-        }
-
-        const countryColumn = findBoCountryColumn(columns, data[0]);
-        if (countryColumn) {
-            this.countryColumn = countryColumn;
-            this.countrySelectionData = data;
-            this.assignCountryIndex(data, countryColumn);
-            return 'country';
-        }
-
-        return this.prepareBoAgencyOrServicesStep(data);
-    }
-
-    private async detectTRXBOSelectionStepAsync(
-        data: Record<string, string>[]
-    ): Promise<false | 'country' | 'agency' | 'services'> {
-        if (!data?.length) {
-            return false;
-        }
-
-        const columns = Object.keys(data[0]);
-        if (!isTrxboLikeFile(columns)) {
-            return false;
-        }
-
-        const countryColumn = findBoCountryColumn(columns, data[0]);
-        if (countryColumn) {
-            this.countryColumn = countryColumn;
-            this.countrySelectionData = data;
-            await this.assignCountryIndexAsync(data, countryColumn);
-            return 'country';
-        }
-
-        return this.prepareBoAgencyOrServicesStepAsync(data);
-    }
-
-    private prepareBoAgencyOrServicesStep(
-        data: Record<string, string>[]
-    ): false | 'agency' | 'services' {
-        const columns = Object.keys(data[0]);
-        const agencyColumn = findBoAgencyColumn(columns);
-
-        if (agencyColumn) {
-            this.agencyColumn = agencyColumn;
-            this.agencySelectionData = data;
-            this.assignAgencyIndex(data, agencyColumn);
-            return 'agency';
-        }
-
-        if (this.reconciliationMode === 'manual') {
-            return this.extractServicesFromTRXBOForManual(data) ? 'services' : false;
-        }
-
-        return this.extractServicesFromTRXBO(data) ? 'services' : false;
-    }
-
-    private async prepareBoAgencyOrServicesStepAsync(
-        data: Record<string, string>[]
-    ): Promise<false | 'agency' | 'services'> {
-        const columns = Object.keys(data[0]);
-        const agencyColumn = findBoAgencyColumn(columns);
-
-        if (agencyColumn) {
-            this.agencyColumn = agencyColumn;
-            this.agencySelectionData = data;
-            await this.assignAgencyIndexAsync(data, agencyColumn);
-            return 'agency';
-        }
-
-        return this.extractServicesFromTRXBOAsync(data) ? 'services' : false;
-    }
-
     private async detectTRXBOAndExtractServicesAsync(data: Record<string, string>[]): Promise<boolean> {
-        const step = await this.detectTRXBOSelectionStepAsync(data);
-        return step !== false;
+        if (!data?.length) {
+            return false;
+        }
+
+        const columns = Object.keys(data[0]);
+        const hasServiceColumn = columns.some(col => {
+            const lower = col.toLowerCase();
+            return lower.includes('service') || lower.includes('serv');
+        });
+        if (!hasServiceColumn) {
+            return false;
+        }
+
+        const agencyColumn = columns.find(col => {
+            const lower = col.toLowerCase();
+            return lower.includes('agence') || lower.includes('agency');
+        });
+
+        if (agencyColumn) {
+            this.availableAgencies = await this.collectUniqueColumnValuesAsync(data, agencyColumn);
+            this.agencySelectionData = data;
+            this.agencyColumn = agencyColumn;
+            return true;
+        }
+
+        return this.extractServicesFromTRXBOAsync(data);
     }
 
     private async extractServicesFromTRXBOAsync(data: Record<string, string>[]): Promise<boolean> {
@@ -3275,8 +2830,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return false;
         }
 
-        this.boServiceColumn = serviceColumn;
-        await this.assignBoServiceIndexAsync(data, serviceColumn);
+        this.availableServices = await this.collectUniqueColumnValuesAsync(data, serviceColumn);
         this.serviceSelectionData = data;
         return true;
     }
@@ -3309,9 +2863,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             const colLower = col.toLowerCase();
             return colLower.includes('service') || colLower.includes('serv') || colLower.includes('type');
         });
-        const statusColumn = columns.find(col =>
-            this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(col)
-        );
+        const statusColumn = columns.find(col => {
+            const colLower = col.toLowerCase();
+            return colLower.includes('statut') || colLower.includes('status') || colLower.includes('état')
+                || colLower.includes('généré le') || colLower.includes('genere le');
+        });
         const agencyColumn = columns.find(col => {
             const lower = col.toLowerCase();
             return lower.includes('agence') || lower.includes('agency');
@@ -3339,10 +2895,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return 'services';
     }
 
-    private readAssistedTreatmentFileRows(
-        file: File,
-        expectedHeaderColumns: string[] = []
-    ): Promise<{
+    private readAssistedTreatmentFileRows(file: File): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
@@ -3350,11 +2903,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const fileName = file.name.toLowerCase();
 
         if (fileName.endsWith('.csv')) {
-            return this.readAssistedTreatmentCsvFileFast(file, expectedHeaderColumns);
+            return this.readAssistedTreatmentCsvFileFast(file);
         }
 
         if (this.isExcelFile(fileName)) {
-            return this.readAssistedTreatmentExcelFile(file, expectedHeaderColumns);
+            return this.readAssistedTreatmentExcelFile(file);
         }
 
         return Promise.reject(new Error('Format non supporté. Utilisez CSV ou Excel.'));
@@ -3363,17 +2916,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     /**
      * Lecture CSV ultra-rapide — PapaParse + Web Worker pour les gros fichiers.
      */
-    private async readAssistedTreatmentCsvFileFast(
-        file: File,
-        expectedHeaderColumns: string[] = []
-    ): Promise<{
+    private async readAssistedTreatmentCsvFileFast(file: File): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
     }> {
         return readCsvFileUltraFast(file, {
             stripAirtelPreamble: true,
-            expectedHeaderColumns,
             normalizeHeader: (header, index) =>
                 this.normalizeColumnName(header || `Col${index + 1}`),
             onProgress: (processed, total) => {
@@ -3387,10 +2936,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         });
     }
 
-    private async readAssistedTreatmentExcelFile(
-        file: File,
-        expectedHeaderColumns: string[] = []
-    ): Promise<{
+    private async readAssistedTreatmentExcelFile(file: File): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
@@ -3420,7 +2966,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
             await this.yieldToMainThread();
             const workbookStart = performance.now();
-            const parsed = await this.parseAssistedTreatmentWorkbook(workbook, expectedHeaderColumns);
+            const parsed = await this.parseAssistedTreatmentWorkbook(workbook);
             return parsed;
         } catch (error) {
             throw error instanceof Error ? error : new Error(String(error));
@@ -3601,11 +3147,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         // Réinitialiser les sélections dérivées des fichiers BO
         if (fileType === 'bo') {
-            this.availableCountries = [];
-            this.selectedCountries = [];
-            this.countrySelectionData = [];
-            this.countryColumn = null;
-            this.boTrxboUsedCountryFilter = false;
             this.availableAgencies = [];
             this.selectedAgencies = [];
             this.agencySelectionData = [];
@@ -3649,7 +3190,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         // Fermer les modales de sélection si ouvertes
-        this.showCountrySelection = false;
         this.showAgencySelection = false;
         this.showServiceSelection = false;
         this.showManualServiceSelection = false;
@@ -3879,20 +3419,37 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Méthode pour appliquer le filtrage automatique Orange Money dans la réconciliation
     private applyAutomaticOrangeMoneyFilterForReconciliation(result: any): void {
+        
+        // Vérifier si le fichier traité est un fichier Orange Money
         const fileName = result.fileName || '';
-        const model = this.findProcessingModelById(result.modelId);
-        const shouldApply = this.orangeMoneyUtilsService.shouldApplyOrangeMoneyTreatment(fileName, model);
-
-        if (!shouldApply) {
-            return;
-        }
-
-        if (result.processedData && result.processedData.length > 0) {
-            const filteredData = this.filterOrangeMoneyData(result.processedData);
-            result.processedData = filteredData;
-            result.orangeMoneyFilterApplied = true;
-            result.filteredRowsCount = filteredData.length;
-            this.showOrangeMoneyFilterNotification(result);
+        const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+        
+        if (isOrangeMoneyFile) {
+            
+            // Vérifier si le modèle utilisé est un modèle Orange Money
+            const modelId = result.modelId || '';
+            const isOrangeMoneyModel = modelId.toLowerCase().includes('orange') || 
+                                     modelId.toLowerCase().includes('ciomcm') ||
+                                     modelId.toLowerCase().includes('orange money');
+            
+            if (isOrangeMoneyModel) {
+                
+                // Appliquer le filtrage sur les données traitées
+                if (result.processedData && result.processedData.length > 0) {
+                    const filteredData = this.filterOrangeMoneyData(result.processedData);
+                    
+                    
+                    // Mettre à jour les résultats avec les données filtrées
+                    result.processedData = filteredData;
+                    result.orangeMoneyFilterApplied = true;
+                    result.filteredRowsCount = filteredData.length;
+                    
+                    // Afficher une notification
+                    this.showOrangeMoneyFilterNotification(result);
+                }
+            } else {
+            }
+        } else {
         }
     }
 
@@ -3909,8 +3466,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         if (isOrangeMoneyFile) {
             
             const filteredData = data.filter(row => {
-                const statutColumn = Object.keys(row).find(key =>
-                    this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(key)
+                // Chercher la colonne "Statut" dans les données
+                const statutColumn = Object.keys(row).find(key => 
+                    key.toLowerCase().includes('statut') || 
+                    key.toLowerCase().includes('status')
                 );
                 
                 if (statutColumn) {
@@ -3929,8 +3488,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         } else {
             // Traitement normal pour les autres fichiers
             const filteredData = data.filter(row => {
-                const statutColumn = Object.keys(row).find(key =>
-                    this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(key)
+                // Chercher la colonne "Statut" dans les données
+                const statutColumn = Object.keys(row).find(key => 
+                    key.toLowerCase().includes('statut') || 
+                    key.toLowerCase().includes('status')
                 );
                 
                 if (statutColumn) {
@@ -3964,41 +3525,29 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     // Méthode pour appliquer le filtrage automatique Orange Money dans le file upload
     private applyAutomaticOrangeMoneyFilterForFileUpload(fileName: string, isBo: boolean): void {
-        const model = this.findProcessingModelForFile(fileName)
-            ?? this.findProcessingModelById(isBo ? this.assistedBoTreatmentModelId : this.assistedPartnerReconciliationModelId);
-        const shouldApply = this.orangeMoneyUtilsService.shouldApplyOrangeMoneyTreatment(fileName, model);
-
-        if (!shouldApply) {
-            return;
+        
+        // Vérifier si le fichier traité est un fichier Orange Money
+        const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+        
+        if (isOrangeMoneyFile) {
+            
+            // Appliquer le filtrage sur les données appropriées
+            if (isBo && this.boData.length > 0) {
+                const originalCount = this.boData.length;
+                this.boData = this.filterOrangeMoneyData(this.boData);
+                const filteredCount = this.boData.length;
+                
+                this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'BO', originalCount, filteredCount);
+            } else if (!isBo && this.partnerData.length > 0) {
+                const originalCount = this.partnerData.length;
+                this.partnerData = this.filterOrangeMoneyData(this.partnerData);
+                const filteredCount = this.partnerData.length;
+                
+                this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'Partenaire', originalCount, filteredCount);
+            } else {
+            }
+        } else {
         }
-
-        if (isBo && this.boData.length > 0) {
-            const originalCount = this.boData.length;
-            this.boData = this.filterOrangeMoneyData(this.boData);
-            const filteredCount = this.boData.length;
-            this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'BO', originalCount, filteredCount);
-        } else if (!isBo && this.partnerData.length > 0) {
-            const originalCount = this.partnerData.length;
-            this.partnerData = this.filterOrangeMoneyData(this.partnerData);
-            const filteredCount = this.partnerData.length;
-            this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'Partenaire', originalCount, filteredCount);
-        }
-    }
-
-    private findProcessingModelById(modelId?: string | null): AutoProcessingModel | undefined {
-        if (!modelId) {
-            return undefined;
-        }
-        return this.traitementModels.find(m => this.getTraitementModelId(m) === modelId);
-    }
-
-    private findProcessingModelForFile(fileName: string): AutoProcessingModel | undefined {
-        if (!fileName || !this.traitementModels.length) {
-            return undefined;
-        }
-        return this.traitementModels.find(model =>
-            !!model.filePattern && this.matchesFilePattern(fileName, model.filePattern)
-        );
     }
 
     // Méthode pour afficher une notification de filtrage Orange Money pour le file upload
@@ -4078,15 +3627,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return normalizedRows;
         }
 
-        const matchedModel = this.findProcessingModelForFile(fileName || '');
-        const isOrangeMoneyByModel = this.orangeMoneyUtilsService.isOrangeMoneyModel(matchedModel);
-
         // Détection d'un fichier Orange Money basée sur la présence de colonnes clés
-        const looksLikeOM = isOrangeMoneyByModel || (
-            headers.some(h => lower(h).includes('référence') || lower(h).includes('reference'))
-            && headers.some(h => this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(h))
-            && headers.some(h => lower(h).includes('date'))
-        );
+        const looksLikeOM = headers.some(h => lower(h).includes('référence') || lower(h).includes('reference'))
+            && headers.some(h => lower(h).includes('statut') || lower(h).includes('status'))
+            && headers.some(h => lower(h).includes('date'));
 
         
         if (!looksLikeOM) {
@@ -4247,8 +3791,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                             
                             // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services (pour le mode manuel)
                             setTimeout(() => {
-                                if (this.boData?.length) {
-                                    this.startBoTrxboSelectionFlow(this.boData);
+                                if (this.boData && this.boData.length > 0) {
+                                    if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
+                                        if (this.availableAgencies.length > 0) {
+                                            this.showAgencySelectionStep();
+                                        } else {
+                                            this.showManualServiceSelectionStep();
+                                        }
+                                    }
                                 }
                             }, 100);
                         } else {
@@ -4497,10 +4047,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     cleanedRow[cleanKey] = '';
                 } else if (isDateColumnName(cleanKey) && isExcelSerialDateValue(cell)) {
                     cleanedRow[cleanKey] = formatSpreadsheetDateValue(cell);
-                } else if (isMsisdnPreserveColumn(cleanKey)) {
-                    cleanedRow[cleanKey] = finalizeTextPreserveColumnValue(cleanKey, cell);
-                } else if (isReconciliationKeyColumn(cleanKey)) {
-                    cleanedRow[cleanKey] = normalizeReconciliationKeyValue(cell);
                 } else {
                     cleanedRow[cleanKey] = String(cell);
                 }
@@ -4508,10 +4054,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 const str = String(cell);
                 if (isDateColumnName(cleanKey) && isExcelSerialDateValue(str)) {
                     cleanedRow[cleanKey] = formatSpreadsheetDateValue(str);
-                } else if (isMsisdnPreserveColumn(cleanKey) || isLeadingZeroNumericString(str)) {
-                    cleanedRow[cleanKey] = fixCellEncoding(finalizeTextPreserveColumnValue(cleanKey, str));
-                } else if (isReconciliationKeyColumn(cleanKey)) {
-                    cleanedRow[cleanKey] = normalizeReconciliationKeyValue(str);
                 } else {
                     cleanedRow[cleanKey] = fixCellEncoding(str);
                 }
@@ -4546,10 +4088,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const formatted = formatSpreadsheetCellValue(header, value);
         if (formatted === undefined || formatted === null || formatted === '') {
             row[header] = '';
-            return;
-        }
-        if (isMsisdnPreserveColumn(header) || isLeadingZeroNumericString(formatted)) {
-            row[header] = fixCellEncoding(finalizeTextPreserveColumnValue(header, formatted));
             return;
         }
         row[header] = typeof formatted === 'string' ? fixCellEncoding(formatted) : formatted;
@@ -4936,8 +4474,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services (pour le mode manuel)
                         if (this.reconciliationMode === 'manual') {
                             setTimeout(() => {
-                                if (this.boData?.length) {
-                                    this.startBoTrxboSelectionFlow(this.boData);
+                                if (this.boData && this.boData.length > 0) {
+                                    if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
+                                        if (this.availableAgencies.length > 0) {
+                                            this.showAgencySelectionStep();
+                                        } else {
+                                            this.showManualServiceSelectionStep();
+                                        }
+                                    }
                                 }
                             }, 100);
                         }
@@ -4985,8 +4529,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services (pour le mode manuel)
                         if (this.reconciliationMode === 'manual') {
                             setTimeout(() => {
-                                if (this.boData?.length) {
-                                    this.startBoTrxboSelectionFlow(this.boData);
+                                if (this.boData && this.boData.length > 0) {
+                                    if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
+                                        if (this.availableAgencies.length > 0) {
+                                            this.showAgencySelectionStep();
+                                        } else {
+                                            this.showManualServiceSelectionStep();
+                                        }
+                                    }
                                 }
                             }, 100);
                         }
@@ -5075,7 +4625,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
         
         // Fallback orienté Orange Money: si la meilleure ligne ne contient pas assez d'indices, chercher plus bas
-        const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status','paiement','payment','application','généré le','genere le'];
+        const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status'];
         const bestOmMatches = (bestHeaderRow || []).reduce((acc, c) => {
             const v = (c || '').toString().toLowerCase();
             return acc + (omTargets.some(t => v.includes(t)) ? 1 : 0);
@@ -5120,7 +4670,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         
         // Bonus pour les mots-clés d'en-tête
         const headerKeywords = [
-            'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Application :', 'Statut', 'Généré le :', 'Mode',
+            'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Statut', 'Mode',
             'Compte', 'Wallet', 'Pseudo', 'Débit', 'Crédit', 'Montant', 'Commissions',
             'Opération', 'Agent', 'Correspondant', 'Sous-réseau', 'Transaction',
             'ID', 'External', 'Reference', 'Amount', 'Status', 'Phone', 'Email',
@@ -5152,7 +4702,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         // Heuristique spécifique Orange Money
         const rowLower = rowStrings.map(c => c.toLowerCase());
-        const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status','paiement','payment','application','généré le','genere le'];
+        const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status'];
         const omMatches = rowLower.reduce((acc, v) => acc + (omTargets.some(t => v.includes(t)) ? 1 : 0), 0);
         score += omMatches * 5;
         if (omMatches >= 5) score += 30;
@@ -5283,7 +4833,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     getColumnsFromData(data: any[]): string[] {
         if (data.length === 0) return [];
-        return this.modelPreProcessingService.getNonemptyExportColumns(data);
+        return Object.keys(data[0]);
     }
 
     // Méthodes pour le mode automatique
@@ -5308,9 +4858,44 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
     }
 
-    // Méthode pour détecter si le fichier est TRXBO et préparer le flux pays / agences / services
+    // Méthode pour détecter si le fichier est TRXBO et extraire les agences (étape 1)
     private detectTRXBOAndExtractServices(data: Record<string, string>[]): boolean {
-        return this.detectTRXBOSelectionStep(data) !== false;
+        if (!data || data.length === 0) return false;
+        
+        const firstRow = data[0];
+        const columns = Object.keys(firstRow);
+        
+        // Vérifier si c'est un fichier TRXBO (contient une colonne "Service" ou "service")
+        const hasServiceColumn = columns.some(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (hasServiceColumn) {
+            
+            // D'abord, chercher la colonne Agence pour filtrer
+            const agencyColumn = columns.find(col => 
+                col.toLowerCase().includes('agence') || 
+                col.toLowerCase().includes('agency')
+            );
+            
+            if (agencyColumn) {
+                
+                // Extraire toutes les agences uniques
+                const agencies = this.collectUniqueColumnValues(data, agencyColumn);
+                this.availableAgencies = agencies;
+                this.agencySelectionData = data;
+                this.agencyColumn = agencyColumn;
+                
+                
+                return true;
+            } else {
+                // Pas de colonne Agence, passer directement à l'extraction des services
+                return this.extractServicesFromTRXBO(data);
+            }
+        }
+        
+        return false;
     }
 
     // Méthode pour extraire les services après filtrage par agence
@@ -5334,8 +4919,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.autoStatusColumn = statusColumn || null;
         
         if (serviceColumn) {
-            this.boServiceColumn = serviceColumn;
-            this.assignBoServiceIndex(data, serviceColumn);
+            // Extraire tous les services uniques
+            const services = this.collectUniqueColumnValues(data, serviceColumn);
+            this.availableServices = services;
             this.serviceSelectionData = data;
             
             if (statusColumn) {
@@ -5347,8 +4933,44 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return false;
     }
 
+    // Méthode pour détecter TRXBO et extraire les agences pour le mode manuel (étape 1)
     private detectTRXBOAndExtractServicesForManual(data: Record<string, string>[]): boolean {
-        return this.detectTRXBOSelectionStep(data) !== false;
+        if (!data || data.length === 0) return false;
+        
+        const firstRow = data[0];
+        const columns = Object.keys(firstRow);
+        
+        // Vérifier si c'est un fichier TRXBO (contient une colonne "Service" ou "service")
+        const hasServiceColumn = columns.some(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (hasServiceColumn) {
+            
+            // D'abord, chercher la colonne Agence pour filtrer
+            const agencyColumn = columns.find(col => 
+                col.toLowerCase().includes('agence') || 
+                col.toLowerCase().includes('agency')
+            );
+            
+            if (agencyColumn) {
+                
+                // Extraire toutes les agences uniques
+                const agencies = this.collectUniqueColumnValues(data, agencyColumn);
+                this.availableAgencies = agencies;
+                this.agencySelectionData = data;
+                this.agencyColumn = agencyColumn;
+                
+                
+                return true;
+            } else {
+                // Pas de colonne Agence, passer directement à l'extraction des services
+                return this.extractServicesFromTRXBOForManual(data);
+            }
+        }
+        
+        return false;
     }
 
     // Méthode pour extraire les services après filtrage par agence (mode manuel)
@@ -5374,8 +4996,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         });
         
         if (serviceColumn) {
-            this.manualServiceColumn = serviceColumn;
-            this.assignManualServiceIndex(data, serviceColumn);
+            // Extraire tous les services uniques
+            const services = [...new Set(data.map(row => row[serviceColumn]).filter(service => service && service.trim()))];
+            this.manualAvailableServices = services.sort();
             this.manualServiceSelectionData = data;
             this.manualStatusColumn = statusColumn || null;
             
@@ -5410,9 +5033,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                    colLower.includes('type');
         });
         
-        const statusColumn = columns.find(col =>
-            this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(col)
-        );
+        const statusColumn = columns.find(col => {
+            const colLower = col.toLowerCase();
+            return colLower.includes('statut') ||
+                   colLower.includes('status') ||
+                   colLower.includes('état') ||
+                   colLower.includes('généré le') ||
+                   colLower.includes('genere le');
+        });
 
         const agencyColumn = columns.find(col => {
             const c = col.toLowerCase();
@@ -5473,9 +5101,14 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         });
         
         // Chercher une colonne statut
-        const statusColumn = columns.find(col =>
-            this.orangeMoneyUtilsService.matchesOrangeMoneyStatutColumn(col)
-        );
+        const statusColumn = columns.find(col => {
+            const colLower = col.toLowerCase();
+            return colLower.includes('statut') || 
+                   colLower.includes('status') ||
+                   colLower.includes('état') ||
+                   colLower.includes('généré le') ||
+                   colLower.includes('genere le');
+        });
         
         const agencyColumn = columns.find(col => {
             const c = col.toLowerCase();
@@ -5538,161 +5171,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.showPartnerServiceSelectionStep();
     }
 
-    // ——— Pays fichier BO (TRXBO), avant agences ———
-
-    get boAgencyStepLabel(): string {
-        return this.boTrxboUsedCountryFilter
-            ? 'Étape 2/3 - Sélection des agences (après filtrage par pays)'
-            : 'Étape 1/2 - Sélection des agences avant les services';
-    }
-
-    get boAutoServiceStepLabel(): string {
-        return this.boTrxboUsedCountryFilter
-            ? 'Étape 3/3 - Services après filtrage par pays et agence'
-            : 'Étape 2/2 - Services après filtrage par agence';
-    }
-
-    private showCountrySelectionStep(): void {
-        this.countrySearchFilter = '';
-        this.countriesSelectionBeforeSearch = null;
-        this.selectedCountries = [...this.availableCountries];
-        this.syncCountrySelectionSet();
-        this.refreshDisplayedCountries();
-        requestAnimationFrame(() => {
-            this.showCountrySelection = true;
-            this.cd.detectChanges();
-        });
-    }
-
-    confirmCountrySelection(): void {
-        if (this.selectedCountries.length === 0) {
-            this.errorMessage = 'Veuillez sélectionner au moins un pays.';
-            return;
-        }
-        if (!this.countryColumn || !this.countrySelectionData?.length) {
-            this.errorMessage = 'Erreur : colonne Pays non trouvée.';
-            return;
-        }
-
-        const filteredData = this.countrySelectionData.filter(row =>
-            this.selectedCountries.includes(String(row[this.countryColumn!] ?? '').trim())
-        );
-
-        if (!filteredData.length) {
-            this.errorMessage = 'Aucune ligne pour les pays sélectionnés.';
-            return;
-        }
-
-        this.boTrxboUsedCountryFilter = true;
-        this.showCountrySelection = false;
-        this.resetCountrySelectionState();
-
-        const step = this.prepareBoAgencyOrServicesStep(filteredData);
-        this.applyBoTrxboSelectionStep(step);
-    }
-
-    cancelCountrySelection(): void {
-        this.showCountrySelection = false;
-        this.boTrxboUsedCountryFilter = false;
-        this.resetCountrySelectionState();
-    }
-
-    skipCountrySelection(): void {
-        if (!this.availableCountries.length) {
-            const source = this.countrySelectionData?.length ? this.countrySelectionData : [];
-            if (!source.length) {
-                this.errorMessage = 'Aucune donnée disponible pour continuer.';
-                return;
-            }
-            this.boTrxboUsedCountryFilter = false;
-            this.showCountrySelection = false;
-            this.resetCountrySelectionState();
-            const step = this.prepareBoAgencyOrServicesStep(source);
-            this.applyBoTrxboSelectionStep(step);
-            return;
-        }
-
-        this.selectedCountries = [...this.availableCountries];
-        this.confirmCountrySelection();
-    }
-
-    private resetCountrySelectionState(): void {
-        this.countrySearchFilter = '';
-        this.countriesSelectionBeforeSearch = null;
-        this.availableCountries = [];
-        this.selectedCountries = [];
-        this.countrySelectionData = [];
-        this.countryColumn = null;
-        this.countryLineCounts = {};
-        this.displayedCountries = [];
-        this.selectedCountrySet.clear();
-    }
-
-    onCountrySelectionChange(event: Event, country: string): void {
-        const checkbox = event.target as HTMLInputElement;
-        if (checkbox.checked) {
-            if (!this.selectedCountrySet.has(country)) {
-                this.selectedCountrySet.add(country);
-                this.selectedCountries.push(country);
-            }
-        } else {
-            this.selectedCountrySet.delete(country);
-            this.selectedCountries = this.selectedCountries.filter(c => c !== country);
-        }
-    }
-
-    onCountrySearchFilterChange(value: string): void {
-        if (!hasCommaSeparatedSearchFilter(value)) {
-            if (this.countriesSelectionBeforeSearch !== null) {
-                this.selectedCountries = [...this.countriesSelectionBeforeSearch];
-                this.syncCountrySelectionSet();
-                this.countriesSelectionBeforeSearch = null;
-            }
-        } else if (this.countriesSelectionBeforeSearch === null) {
-            this.countriesSelectionBeforeSearch = [...this.selectedCountries];
-        }
-        this.countrySearchFilter = value;
-        clearTimeout(this.countrySearchDebounceTimer);
-        this.countrySearchDebounceTimer = window.setTimeout(() => {
-            this.refreshDisplayedCountries();
-            if (hasCommaSeparatedSearchFilter(this.countrySearchFilter)) {
-                this.selectedCountries = this.displayedCountries.filter(c => this.selectedCountrySet.has(c));
-                this.displayedCountries.forEach(c => {
-                    if (!this.selectedCountrySet.has(c)) {
-                        this.selectedCountrySet.add(c);
-                        this.selectedCountries.push(c);
-                    }
-                });
-            }
-            this.cd.markForCheck();
-        }, 120);
-    }
-
-    selectAllCountries(): void {
-        for (const country of this.displayedCountries) {
-            if (!this.selectedCountrySet.has(country)) {
-                this.selectedCountrySet.add(country);
-                this.selectedCountries.push(country);
-            }
-        }
-    }
-
-    deselectAllCountries(): void {
-        const visible = new Set(this.displayedCountries);
-        this.selectedCountries = this.selectedCountries.filter(c => !visible.has(c));
-        this.syncCountrySelectionSet();
-    }
-
     // Méthode pour afficher la sélection des agences (TRXBO - étape 1)
     private showAgencySelectionStep(): void {
+        this.showAgencySelection = true;
         this.agencySearchFilter = '';
-        this.selectedAgencies = [...this.availableAgencies];
-        this.syncAgencySelectionSet();
-        this.refreshDisplayedAgencies();
-        requestAnimationFrame(() => {
-            this.showAgencySelection = true;
-            this.cd.detectChanges();
-        });
+        this.selectedAgencies = [...this.availableAgencies]; // Sélectionner toutes par défaut
     }
 
     // Méthode pour confirmer la sélection des agences (TRXBO)
@@ -5748,15 +5231,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     // Méthode pour annuler la sélection des agences
     cancelAgencySelection(): void {
         this.showAgencySelection = false;
-        this.boTrxboUsedCountryFilter = false;
         this.agencySearchFilter = '';
         this.availableAgencies = [];
         this.selectedAgencies = [];
         this.agencySelectionData = [];
         this.agencyColumn = null;
-        this.agencyLineCounts = {};
-        this.displayedAgencies = [];
-        this.selectedAgencySet.clear();
     }
 
     // ——— Agences fichier partenaire (mode manuel), même principe que TRXBO ———
@@ -5929,16 +5408,38 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     onAgencySelectionChange(event: Event, agency: string): void {
         const checkbox = event.target as HTMLInputElement;
         if (checkbox.checked) {
-            if (!this.selectedAgencySet.has(agency)) {
-                this.selectedAgencySet.add(agency);
+            if (!this.selectedAgencies.includes(agency)) {
                 this.selectedAgencies.push(agency);
             }
         } else {
-            this.selectedAgencySet.delete(agency);
             this.selectedAgencies = this.selectedAgencies.filter(a => a !== agency);
         }
     }
 
+    // Méthode pour compter le nombre de lignes par agence
+    getAgencyCount(agency: string): number {
+        if (!this.agencySelectionData || this.agencySelectionData.length === 0 || !this.agencyColumn) return 0;
+        
+        return this.agencySelectionData.filter(row => row[this.agencyColumn!] === agency).length;
+    }
+
+    /** Liste des agences filtrée par le critère de recherche (popup) */
+    get filteredAvailableAgencies(): string[] {
+        if (!hasCommaSeparatedSearchFilter(this.agencySearchFilter)) return this.availableAgencies;
+        return this.availableAgencies.filter(agency =>
+            matchesCommaSeparatedFilter(
+                this.agencySearchFilter,
+                agency,
+                this.getAgencyCount(agency)
+            )
+        );
+    }
+
+    /**
+     * Auto-cocher selon la recherche, de façon cloisonnée :
+     * - si un terme est saisi : ne sélectionner que les éléments visibles (filtrés)
+     * - si la recherche est vidée : restaurer la sélection précédente
+     */
     onAgencySearchFilterChange(value: string): void {
         const hasFilter = hasCommaSeparatedSearchFilter(value);
         const hadSnapshot = Array.isArray(this.agenciesSelectionBeforeSearch);
@@ -5946,45 +5447,34 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.agenciesSelectionBeforeSearch = [...this.selectedAgencies];
         }
         this.agencySearchFilter = value;
-        clearTimeout(this.agencySearchDebounceTimer);
-        this.agencySearchDebounceTimer = window.setTimeout(() => {
-            this.refreshDisplayedAgencies();
-            if (hasFilter) {
-                this.selectedAgencies = [...this.displayedAgencies];
-                this.syncAgencySelectionSet();
-            } else if (hadSnapshot) {
-                this.selectedAgencies = [...(this.agenciesSelectionBeforeSearch || [])];
-                this.syncAgencySelectionSet();
-                this.agenciesSelectionBeforeSearch = null;
-            }
-            this.cd.markForCheck();
-        }, 120);
-    }
-
-    selectAllAgencies(): void {
-        for (const agency of this.displayedAgencies) {
-            if (!this.selectedAgencySet.has(agency)) {
-                this.selectedAgencySet.add(agency);
-                this.selectedAgencies.push(agency);
-            }
+        if (hasFilter) {
+            this.selectedAgencies = [...this.filteredAvailableAgencies];
+        } else if (hadSnapshot) {
+            this.selectedAgencies = [...(this.agenciesSelectionBeforeSearch || [])];
+            this.agenciesSelectionBeforeSearch = null;
         }
     }
 
-    deselectAllAgencies(): void {
-        const visible = new Set(this.displayedAgencies);
-        this.selectedAgencies = this.selectedAgencies.filter(a => !visible.has(a));
-        this.syncAgencySelectionSet();
+    // Méthode pour sélectionner toutes les agences (visibles si filtre actif)
+    selectAllAgencies(): void {
+        const toSelect = this.filteredAvailableAgencies;
+        toSelect.forEach(agency => {
+            if (!this.selectedAgencies.includes(agency)) this.selectedAgencies.push(agency);
+        });
+        this.selectedAgencies = [...this.selectedAgencies];
     }
 
+    // Méthode pour désélectionner toutes les agences (visibles si filtre actif)
+    deselectAllAgencies(): void {
+        const toDeselect = this.filteredAvailableAgencies;
+        this.selectedAgencies = this.selectedAgencies.filter(a => !toDeselect.includes(a));
+    }
+
+    // Méthode pour afficher la sélection des services
     private showServiceSelectionStep(): void {
+        this.showServiceSelection = true;
         this.serviceSearchFilter = '';
-        this.selectedServices = [...this.availableServices];
-        this.syncServiceSelectionSet();
-        this.refreshDisplayedServices();
-        requestAnimationFrame(() => {
-            this.showServiceSelection = true;
-            this.cd.detectChanges();
-        });
+        this.selectedServices = [...this.availableServices]; // Sélectionner tous par défaut
     }
 
 
@@ -5997,7 +5487,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         
         // Filtrer les données pour ne garder que les lignes des services sélectionnés
-        const serviceColumn = this.boServiceColumn ?? Object.keys(this.serviceSelectionData[0]).find(col => 
+        const serviceColumn = Object.keys(this.serviceSelectionData[0]).find(col => 
             col.toLowerCase().includes('service') || 
             col.toLowerCase().includes('serv')
         );
@@ -6013,7 +5503,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
             // Si une colonne statut existe, afficher le popup de sélection des statuts
             if (this.autoStatusColumn && filteredData.length > 0) {
-                this.assignAutoStatusIndex(filteredData, this.autoStatusColumn);
+                const statuses = [...new Set(
+                    filteredData.map(row => row[this.autoStatusColumn!])
+                        .filter(s => s && s.toString().trim())
+                )];
+                this.autoAvailableStatuses = statuses.sort();
                 this.autoStatusSelectionData = filteredData;
                 this.showAutoStatusSelectionStep();
                 this.cd.detectChanges();
@@ -6036,7 +5530,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 return;
             }
             if (this.autoStatusColumn && sourceData.length > 0) {
-                this.assignAutoStatusIndex(sourceData, this.autoStatusColumn);
+                const statuses = [...new Set(
+                    sourceData.map(row => row[this.autoStatusColumn!]).filter(s => s && s.toString().trim())
+                )];
+                this.autoAvailableStatuses = statuses.sort();
                 this.autoStatusSelectionData = sourceData;
                 this.showServiceSelection = false;
                 this.showAutoStatusSelectionStep();
@@ -6060,31 +5557,19 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.availableServices = [];
         this.selectedServices = [];
         this.serviceSelectionData = [];
-        this.boServiceColumn = null;
-        this.serviceLineCounts = {};
-        this.displayedServices = [];
-        this.selectedServiceSet.clear();
         // Nettoyer aussi les données de statut auto
         this.autoStatusColumn = null;
         this.showAutoStatusSelection = false;
         this.autoAvailableStatuses = [];
         this.autoSelectedStatuses = [];
         this.autoStatusSelectionData = [];
-        this.autoStatusLineCounts = {};
-        this.displayedAutoStatuses = [];
-        this.selectedAutoStatusSet.clear();
     }
 
     // ----- Statuts mode automatique (étape 3) -----
     private showAutoStatusSelectionStep(): void {
+        this.showAutoStatusSelection = true;
         this.autoStatusSearchFilter = '';
-        this.autoSelectedStatuses = [...this.autoAvailableStatuses];
-        this.syncAutoStatusSelectionSet();
-        this.refreshDisplayedAutoStatuses();
-        requestAnimationFrame(() => {
-            this.showAutoStatusSelection = true;
-            this.cd.detectChanges();
-        });
+        this.autoSelectedStatuses = [...this.autoAvailableStatuses]; // tous sélectionnés par défaut
     }
 
     confirmAutoStatusSelection(): void {
@@ -6130,46 +5615,44 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.autoAvailableStatuses = [];
         this.autoSelectedStatuses = [];
         this.autoStatusSelectionData = [];
-        this.autoStatusLineCounts = {};
-        this.displayedAutoStatuses = [];
-        this.selectedAutoStatusSet.clear();
     }
 
     onAutoStatusSelectionChange(event: Event, status: string): void {
         const checkbox = event.target as HTMLInputElement;
         if (checkbox.checked) {
-            if (!this.selectedAutoStatusSet.has(status)) {
-                this.selectedAutoStatusSet.add(status);
+            if (!this.autoSelectedStatuses.includes(status)) {
                 this.autoSelectedStatuses.push(status);
             }
         } else {
-            this.selectedAutoStatusSet.delete(status);
             this.autoSelectedStatuses = this.autoSelectedStatuses.filter(s => s !== status);
         }
     }
 
-    onAutoStatusSearchFilterChange(value: string): void {
-        this.autoStatusSearchFilter = value;
-        clearTimeout(this.autoStatusSearchDebounceTimer);
-        this.autoStatusSearchDebounceTimer = window.setTimeout(() => {
-            this.refreshDisplayedAutoStatuses();
-            this.cd.markForCheck();
-        }, 120);
+    getAutoStatusCount(status: string): number {
+        if (!this.autoStatusSelectionData.length || !this.autoStatusColumn) return 0;
+        return this.autoStatusSelectionData.filter(row => row[this.autoStatusColumn!] === status).length;
+    }
+
+    get filteredAutoAvailableStatuses(): string[] {
+        if (!hasCommaSeparatedSearchFilter(this.autoStatusSearchFilter)) return this.autoAvailableStatuses;
+        return this.autoAvailableStatuses.filter(st =>
+            matchesCommaSeparatedFilter(
+                this.autoStatusSearchFilter,
+                st,
+                this.getAutoStatusCount(st)
+            )
+        );
     }
 
     selectAllAutoStatuses(): void {
-        for (const status of this.displayedAutoStatuses) {
-            if (!this.selectedAutoStatusSet.has(status)) {
-                this.selectedAutoStatusSet.add(status);
-                this.autoSelectedStatuses.push(status);
-            }
-        }
+        const toSelect = this.filteredAutoAvailableStatuses;
+        toSelect.forEach(st => { if (!this.autoSelectedStatuses.includes(st)) this.autoSelectedStatuses.push(st); });
+        this.autoSelectedStatuses = [...this.autoSelectedStatuses];
     }
 
     deselectAllAutoStatuses(): void {
-        const visible = new Set(this.displayedAutoStatuses);
-        this.autoSelectedStatuses = this.autoSelectedStatuses.filter(st => !visible.has(st));
-        this.syncAutoStatusSelectionSet();
+        const toDeselect = this.filteredAutoAvailableStatuses;
+        this.autoSelectedStatuses = this.autoSelectedStatuses.filter(st => !toDeselect.includes(st));
     }
     // ----- Fin statuts mode automatique -----
 
@@ -6184,14 +5667,39 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     onServiceSelectionChange(event: Event, service: string): void {
         const checkbox = event.target as HTMLInputElement;
         if (checkbox.checked) {
-            if (!this.selectedServiceSet.has(service)) {
-                this.selectedServiceSet.add(service);
+            if (!this.selectedServices.includes(service)) {
                 this.selectedServices.push(service);
             }
         } else {
-            this.selectedServiceSet.delete(service);
             this.selectedServices = this.selectedServices.filter(s => s !== service);
         }
+    }
+
+    // Méthode pour compter le nombre de lignes par service
+    getServiceCount(service: string): number {
+        if (!this.serviceSelectionData || this.serviceSelectionData.length === 0) return 0;
+        
+        const serviceColumn = Object.keys(this.serviceSelectionData[0]).find(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (serviceColumn) {
+            return this.serviceSelectionData.filter(row => row[serviceColumn] === service).length;
+        }
+        
+        return 0;
+    }
+
+    get filteredAvailableServices(): string[] {
+        if (!hasCommaSeparatedSearchFilter(this.serviceSearchFilter)) return this.availableServices;
+        return this.availableServices.filter(s =>
+            matchesCommaSeparatedFilter(
+                this.serviceSearchFilter,
+                s,
+                this.getServiceCount(s)
+            )
+        );
     }
 
     onServiceSearchFilterChange(value: string): void {
@@ -6201,34 +5709,23 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.servicesSelectionBeforeSearch = [...this.selectedServices];
         }
         this.serviceSearchFilter = value;
-        clearTimeout(this.serviceSearchDebounceTimer);
-        this.serviceSearchDebounceTimer = window.setTimeout(() => {
-            this.refreshDisplayedServices();
-            if (hasFilter) {
-                this.selectedServices = [...this.displayedServices];
-                this.syncServiceSelectionSet();
-            } else if (hadSnapshot) {
-                this.selectedServices = [...(this.servicesSelectionBeforeSearch || [])];
-                this.syncServiceSelectionSet();
-                this.servicesSelectionBeforeSearch = null;
-            }
-            this.cd.markForCheck();
-        }, 120);
-    }
-
-    selectAllServices(): void {
-        for (const service of this.displayedServices) {
-            if (!this.selectedServiceSet.has(service)) {
-                this.selectedServiceSet.add(service);
-                this.selectedServices.push(service);
-            }
+        if (hasFilter) {
+            this.selectedServices = [...this.filteredAvailableServices];
+        } else if (hadSnapshot) {
+            this.selectedServices = [...(this.servicesSelectionBeforeSearch || [])];
+            this.servicesSelectionBeforeSearch = null;
         }
     }
 
+    selectAllServices(): void {
+        const toSelect = this.filteredAvailableServices;
+        toSelect.forEach(s => { if (!this.selectedServices.includes(s)) this.selectedServices.push(s); });
+        this.selectedServices = [...this.selectedServices];
+    }
+
     deselectAllServices(): void {
-        const visible = new Set(this.displayedServices);
-        this.selectedServices = this.selectedServices.filter(s => !visible.has(s));
-        this.syncServiceSelectionSet();
+        const toDeselect = this.filteredAvailableServices;
+        this.selectedServices = this.selectedServices.filter(s => !toDeselect.includes(s));
     }
 
     // Méthode pour afficher la sélection des services/type/statut pour le partenaire (mode automatique)
@@ -6463,9 +5960,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 const firstRow = filteredData[0];
                 const columns = Object.keys(firstRow);
             
-                const paymentColumn = columns.find(col =>
-                    this.orangeMoneyUtilsService.matchesOrangeMoneyPaiementColumn(col)
-                );
+                const paymentColumn = columns.find(col => {
+                    const colLower = col.toLowerCase();
+                    return colLower.includes('paiement') || 
+                           colLower.includes('payment') ||
+                           colLower.includes('moyen de paiement') ||
+                           colLower.includes('moyen paiement') ||
+                           colLower.includes('application :') ||
+                           colLower.includes('application:') ||
+                           colLower.includes('application');
+                });
             
                 if (paymentColumn) {
                 
@@ -6775,7 +6279,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             if (isBo) {
                 this.autoBoSourceFormat = 'csv';
                 this.autoBoData = data;
-                this.startBoTrxboSelectionFlow(this.autoBoData);
+                if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
+                    if (this.availableAgencies.length > 0) {
+                        this.showAgencySelectionStep();
+                    } else {
+                        this.showServiceSelectionStep();
+                    }
+                }
             } else {
                 this.autoPartnerSourceFormat = 'csv';
                 this.autoPartnerData = data;
@@ -6999,7 +6509,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         this.autoBoData = rows;
                         
                         // Vérifier si c'est un fichier TRXBO et déclencher la sélection des agences ou services
-                        this.startBoTrxboSelectionFlow(this.autoBoData);
+                        if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
+                            if (this.availableAgencies.length > 0) {
+                                this.showAgencySelectionStep();
+                            } else {
+                                this.showServiceSelectionStep();
+                            }
+                        }
                     } else {
                         this.autoPartnerData = this.convertDebitCreditToNumber(rows);
                         
@@ -7175,8 +6691,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     
                     if (isBo) {
                         this.autoBoData = rows;
-                        this.startBoTrxboSelectionFlow(this.autoBoData);
-                    } else {
+                        if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
+                        this.showServiceSelectionStep();
+                    }
+                } else {
                     this.autoPartnerData = this.convertDebitCreditToNumber(rows);
                     
                     // Vérifier si le fichier partenaire contient des colonnes service/type/statut
@@ -7458,19 +6976,62 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         confidence: number;
         modelId?: string;
     } | null {
-        const resolved = this.partnerConditionalKeysService.resolveReconciliationKeyColumns(
+        const conditional = this.partnerConditionalKeysService.tryResolveConditionalPartnerKey(
             model,
             boData,
             partnerData
         );
-        if (!resolved) {
+        if (conditional) {
+            return {
+                ...conditional,
+                source: 'model',
+                confidence: 1.0,
+                modelId: model.modelId || model.id
+            };
+        }
+
+        if (!model.reconciliationKeys?.partnerKeys?.length) {
             return null;
         }
-        if (!areReconciliationKeysCompatible(boData, partnerData, resolved.boKeyColumn, resolved.partnerKeyColumn)) {
+
+        let boKeyColumn = '';
+        let partnerKeyColumn = '';
+
+        const boKeys = model.reconciliationKeys.boKeys || [];
+        const partnerKeys = model.reconciliationKeys.partnerKeys || [];
+
+        if (boKeys.length > 0 && partnerKeys.length > 0) {
+            const foundBoKey = this.findExistingColumn(boData, boKeys);
+            const foundPartnerKey = this.findExistingColumn(partnerData, partnerKeys);
+            if (foundBoKey && foundPartnerKey) {
+                boKeyColumn = foundBoKey;
+                partnerKeyColumn = foundPartnerKey;
+            }
+        }
+
+        if (!boKeyColumn || !partnerKeyColumn) {
+            const boModels = model.reconciliationKeys.boModels || [];
+            for (const boModelId of boModels) {
+                const boModelKeys = model.reconciliationKeys.boModelKeys?.[boModelId];
+                if (boModelKeys?.length && partnerKeys.length) {
+                    const foundBoKey = this.findExistingColumn(boData, boModelKeys);
+                    const foundPartnerKey = this.findExistingColumn(partnerData, partnerKeys);
+                    if (foundBoKey && foundPartnerKey) {
+                        boKeyColumn = foundBoKey;
+                        partnerKeyColumn = foundPartnerKey;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!boKeyColumn || !partnerKeyColumn) {
             return null;
         }
+
         return {
-            ...resolved,
+            boKeyColumn,
+            partnerKeyColumn,
             source: 'model',
             confidence: 1.0,
             modelId: model.modelId || model.id
@@ -7488,14 +7049,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     ): Promise<{
         boKeyColumn: string;
         partnerKeyColumn: string;
-        source: 'model' | 'discovery';
+        source: 'model';
         confidence: number;
         modelId?: string;
     }> {
         boFileName = (boFileName || this.getResolvedAutoBoFileName()).trim();
         partnerFileName = (partnerFileName || this.getResolvedAutoPartnerFileName()).trim();
 
-        let matchedModelId: string | undefined;
 
         try {
             const models = await this.autoProcessingService.getAllModelsUnrestricted();
@@ -7506,7 +7066,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     (m.id || m.modelId) === this.assistedPartnerReconciliationModelId
                 );
                 if (preselected) {
-                    matchedModelId = preselected.modelId || preselected.id;
                     const fromTreatment = this.resolveKeysFromPartnerModel(preselected, boData, partnerData);
                     if (fromTreatment) {
                         return fromTreatment;
@@ -7538,37 +7097,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             }
 
             for (const model of partnerModels) {
-                matchedModelId = model.modelId || model.id;
                 const resolved = this.resolveKeysFromPartnerModel(model, boData, partnerData);
                 if (resolved) {
                     return resolved;
                 }
             }
 
-            // Priorité 4 : modèle trouvé par pattern mais clés non résolues — conserver l'ID pour boTreatments
-            if (!matchedModelId && partnerFileName) {
-                const patternMatch = models.find(model =>
-                    (model.fileType === 'partner' || model.fileType === 'both') &&
-                    this.matchesFilePattern(partnerFileName, model.filePattern)
-                );
-                matchedModelId = patternMatch?.modelId || patternMatch?.id;
-            }
-
         } catch (error) {
-        }
-
-        const discovered = discoverReconciliationKeyColumns(
-            boData,
-            partnerData,
-            this.keySuggestionService
-        );
-        if (discovered) {
-            return {
-                ...discovered,
-                source: 'discovery',
-                confidence: 0.85,
-                modelId: matchedModelId
-            };
         }
 
         throw new Error(
@@ -7580,8 +7115,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     private modelHasPartnerKeyConfig(model: AutoProcessingModel): boolean {
         return !!(
             model.reconciliationKeys?.partnerKeys?.length ||
-            this.partnerConditionalKeysService.isEnabled(model.reconciliationKeys?.partnerConditionalKeys) ||
-            this.partnerConditionalKeysService.isBoConditionalEnabled(model.reconciliationKeys?.boConditionalKeys)
+            this.partnerConditionalKeysService.isEnabled(model.reconciliationKeys?.partnerConditionalKeys)
         );
     }
 
@@ -8119,34 +7653,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     partnerFileName
                 );
 
-                const formatPreview = verifyReconciliationKeyFormats(
-                    this.autoBoData,
-                    this.autoPartnerData,
-                    keyDetectionResult.boKeyColumn,
-                    keyDetectionResult.partnerKeyColumn
-                );
-                this.reconciliationProgress = {
-                    ...this.reconciliationProgress,
-                    step: formatPreview.needsNormalization
-                        ? `Clés détectées — correction de format prévue (${Math.round(formatPreview.overlapRatioAfter * 100)}% recouvrement après normalisation)`
-                        : `Clés détectées — format compatible (${Math.round(formatPreview.overlapRatioAfter * 100)}% recouvrement)`
-                };
-                this.cd.detectChanges();
-
                 // Afficher les résultats de la détection
 
                 // Afficher un message informatif pour le modèle
-                const detectionMessage = keyDetectionResult.source === 'discovery'
-                    ? `✅ Clés détectées automatiquement (${keyDetectionResult.boKeyColumn} ↔ ${keyDetectionResult.partnerKeyColumn}) - Confiance: ${Math.round(keyDetectionResult.confidence * 100)}%`
-                    : `✅ Clés trouvées via modèle (${keyDetectionResult.modelId || 'auto'}) - Confiance: ${Math.round(keyDetectionResult.confidence * 100)}%`;
+                const detectionMessage = `✅ Clés trouvées via modèle (${keyDetectionResult.modelId}) - Confiance: ${Math.round(keyDetectionResult.confidence * 100)}%`;
 
                 // Traiter les données
                 let processedBoData = this.autoBoData;
                 let processedPartnerData = this.autoPartnerData;
                 let partnerKeyColumn = keyDetectionResult.partnerKeyColumn;
-                let boKeyColumn = keyDetectionResult.boKeyColumn;
 
-                // Appliquer les traitements du modèle (boTreatments + clés conditionnelles)
+                // Appliquer les traitements du modèle (boTreatments + clés conditionnelles partenaire)
                 if (keyDetectionResult.modelId) {
                     try {
                         const models = await this.autoProcessingService.getAllModelsUnrestricted();
@@ -8159,15 +7676,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                                 processedBoData,
                                 usedModel.reconciliationKeys.boTreatments
                             );
-                        }
-
-                        const boConditionalConfig = usedModel?.reconciliationKeys?.boConditionalKeys;
-                        if (this.partnerConditionalKeysService.isBoConditionalEnabled(boConditionalConfig)) {
-                            processedBoData = this.partnerConditionalKeysService.applyBoConditionalKeys(
-                                processedBoData,
-                                boConditionalConfig!
-                            );
-                            boKeyColumn = BO_CONDITIONAL_KEY_COLUMN;
                         }
 
                         const conditionalConfig = usedModel?.reconciliationKeys?.partnerConditionalKeys;
@@ -8184,7 +7692,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
                 // Configurer les colonnes de comparaison
                 const comparisonColumns = [{
-                    boColumn: boKeyColumn,
+                    boColumn: keyDetectionResult.boKeyColumn,
                     partnerColumn: partnerKeyColumn
             }];
 
@@ -8192,16 +7700,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 // 🔍 VÉRIFICATION CRITIQUE: Vérifier que les colonnes existent dans les données
                 if (processedBoData.length > 0) {
                     const boColumns = Object.keys(processedBoData[0]);
-                    const boKeyExists = boColumns.includes(boKeyColumn);
+                    const boKeyExists = boColumns.includes(keyDetectionResult.boKeyColumn);
                     if (!boKeyExists) {
                         // Chercher des colonnes similaires
                         const similarColumns = boColumns.filter(col => 
-                            col.toLowerCase().includes(boKeyColumn.toLowerCase()) ||
-                            boKeyColumn.toLowerCase().includes(col.toLowerCase())
+                            col.toLowerCase().includes(keyDetectionResult.boKeyColumn.toLowerCase()) ||
+                            keyDetectionResult.boKeyColumn.toLowerCase().includes(col.toLowerCase())
                         );
                         if (similarColumns.length > 0) {
                         }
-                        throw new Error(`Colonne clé BO "${boKeyColumn}" introuvable dans les données. Colonnes disponibles: ${boColumns.join(', ')}`);
+                        throw new Error(`Colonne clé BO "${keyDetectionResult.boKeyColumn}" introuvable dans les données. Colonnes disponibles: ${boColumns.join(', ')}`);
                     }
                 }
                 
@@ -8228,43 +7736,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     this.cd.detectChanges();
                 }
             );
-            let normalizedBoData = prepared.bo;
-            let normalizedPartnerData = prepared.partner;
-
-            this.reconciliationProgress = {
-                ...this.reconciliationProgress,
-                step: 'Vérification du format des clés...'
-            };
-            this.cd.detectChanges();
-
-            const formatCheck = await alignReconciliationKeyFormatsAsync(
-                normalizedBoData,
-                normalizedPartnerData,
-                boKeyColumn,
-                partnerKeyColumn,
-                {
-                    yieldEvery: normalizedBoData.length + normalizedPartnerData.length > 50000 ? 20000 : 10000,
-                    yieldFn: () => this.yieldToMainThread(true),
-                    onProgress: (message) => {
-                        this.reconciliationProgress = { ...this.reconciliationProgress, step: message };
-                        this.cd.detectChanges();
-                    }
-                }
-            );
-
-            if (formatCheck.overlapRatioAfter < 0.01 && formatCheck.overlapAfter === 0) {
-                throw new Error(
-                    `Les colonnes clé « ${boKeyColumn} » et « ${partnerKeyColumn} » n'ont aucune valeur commune ` +
-                    `après alignement du format. Vérifiez les colonnes de réconciliation.`
-                );
-            }
+            const normalizedBoData = prepared.bo;
+            const normalizedPartnerData = prepared.partner;
             
             
             // Créer la requête de réconciliation
                     const reconciliationRequest = {
                         boFileContent: normalizedBoData,
                         partnerFileContent: normalizedPartnerData,
-                    boKeyColumn: boKeyColumn,
+                    boKeyColumn: keyDetectionResult.boKeyColumn,
                     partnerKeyColumn: partnerKeyColumn,
                         comparisonColumns: comparisonColumns,
                 boColumnFilters: []
@@ -8412,14 +7892,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     private showManualServiceSelectionStep(): void {
+        this.showManualServiceSelection = true;
         this.manualServiceSearchFilter = '';
-        this.manualSelectedServices = [...this.manualAvailableServices];
-        this.syncManualServiceSelectionSet();
-        this.refreshDisplayedManualServices();
-        requestAnimationFrame(() => {
-            this.showManualServiceSelection = true;
-            this.cd.detectChanges();
-        });
+        this.manualSelectedServices = [...this.manualAvailableServices]; // Sélectionner tous par défaut
     }
 
     confirmManualServiceSelection(): void {
@@ -8429,7 +7904,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         
-        const serviceColumn = this.manualServiceColumn ?? Object.keys(this.manualServiceSelectionData[0]).find(col => 
+        // Filtrer les données pour ne garder que les lignes des services sélectionnés
+        const serviceColumn = Object.keys(this.manualServiceSelectionData[0]).find(col => 
             col.toLowerCase().includes('service') || 
             col.toLowerCase().includes('serv')
         );
@@ -8440,12 +7916,23 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
             
             
+            // Si une colonne statut existe, extraire les statuts et afficher la sélection
             if (this.manualStatusColumn && filteredData.length > 0) {
-                this.assignManualStatusIndex(filteredData, this.manualStatusColumn);
+                // Extraire les statuts uniques des données filtrées par service
+                const statuses = [...new Set(
+                    filteredData.map(row => row[this.manualStatusColumn!])
+                        .filter(status => status && status.toString().trim())
+                )];
+                
+                this.manualAvailableStatuses = statuses.sort();
                 this.manualStatusSelectionData = filteredData;
                 
+                
+                // Masquer la sélection des services et afficher la sélection des statuts
                 this.showManualServiceSelection = false;
                 this.showManualStatusSelectionStep();
+                
+                // Forcer la détection des changements pour mettre à jour la vue
                 this.cd.detectChanges();
             } else {
                 // Pas de colonne statut, mettre à jour les données BO directement
@@ -8470,7 +7957,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 return;
             }
             if (this.manualStatusColumn && sourceData.length > 0) {
-                this.assignManualStatusIndex(sourceData, this.manualStatusColumn);
+                const statuses = [...new Set(
+                    sourceData.map(row => row[this.manualStatusColumn!]).filter(s => s && s.toString().trim())
+                )];
+                this.manualAvailableStatuses = statuses.sort();
                 this.manualStatusSelectionData = sourceData;
                 this.showManualServiceSelection = false;
                 this.showManualStatusSelectionStep();
@@ -8493,18 +7983,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.manualAvailableServices = [];
         this.manualSelectedServices = [];
         this.manualServiceSelectionData = [];
-        this.manualServiceColumn = null;
-        this.manualServiceLineCounts = {};
-        this.displayedManualServices = [];
-        this.selectedManualServiceSet.clear();
+        // Nettoyer aussi les variables de statut
         this.manualStatusColumn = null;
         this.showManualStatusSelection = false;
         this.manualAvailableStatuses = [];
         this.manualSelectedStatuses = [];
         this.manualStatusSelectionData = [];
-        this.manualStatusLineCounts = {};
-        this.displayedManualStatuses = [];
-        this.selectedManualStatusSet.clear();
     }
 
     private continueWithManualReconciliation(): void {
@@ -8532,14 +8016,23 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     onManualServiceSelectionChange(event: Event, service: string): void {
         const checkbox = event.target as HTMLInputElement;
         if (checkbox.checked) {
-            if (!this.selectedManualServiceSet.has(service)) {
-                this.selectedManualServiceSet.add(service);
+            if (!this.manualSelectedServices.includes(service)) {
                 this.manualSelectedServices.push(service);
             }
         } else {
-            this.selectedManualServiceSet.delete(service);
             this.manualSelectedServices = this.manualSelectedServices.filter(s => s !== service);
         }
+    }
+
+    get filteredManualAvailableServices(): string[] {
+        if (!hasCommaSeparatedSearchFilter(this.manualServiceSearchFilter)) return this.manualAvailableServices;
+        return this.manualAvailableServices.filter(s =>
+            matchesCommaSeparatedFilter(
+                this.manualServiceSearchFilter,
+                s,
+                this.getManualServiceCount(s)
+            )
+        );
     }
 
     onManualServiceSearchFilterChange(value: string): void {
@@ -8549,45 +8042,45 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             this.manualServicesSelectionBeforeSearch = [...this.manualSelectedServices];
         }
         this.manualServiceSearchFilter = value;
-        clearTimeout(this.manualServiceSearchDebounceTimer);
-        this.manualServiceSearchDebounceTimer = window.setTimeout(() => {
-            this.refreshDisplayedManualServices();
-            if (hasFilter) {
-                this.manualSelectedServices = [...this.displayedManualServices];
-                this.syncManualServiceSelectionSet();
-            } else if (hadSnapshot) {
-                this.manualSelectedServices = [...(this.manualServicesSelectionBeforeSearch || [])];
-                this.syncManualServiceSelectionSet();
-                this.manualServicesSelectionBeforeSearch = null;
-            }
-            this.cd.markForCheck();
-        }, 120);
-    }
-
-    selectAllManualServices(): void {
-        for (const service of this.displayedManualServices) {
-            if (!this.selectedManualServiceSet.has(service)) {
-                this.selectedManualServiceSet.add(service);
-                this.manualSelectedServices.push(service);
-            }
+        if (hasFilter) {
+            this.manualSelectedServices = [...this.filteredManualAvailableServices];
+        } else if (hadSnapshot) {
+            this.manualSelectedServices = [...(this.manualServicesSelectionBeforeSearch || [])];
+            this.manualServicesSelectionBeforeSearch = null;
         }
     }
 
-    deselectAllManualServices(): void {
-        const visible = new Set(this.displayedManualServices);
-        this.manualSelectedServices = this.manualSelectedServices.filter(s => !visible.has(s));
-        this.syncManualServiceSelectionSet();
+    getManualServiceCount(service: string): number {
+        if (!this.manualServiceSelectionData || this.manualServiceSelectionData.length === 0) return 0;
+        
+        const serviceColumn = Object.keys(this.manualServiceSelectionData[0]).find(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (serviceColumn) {
+            return this.manualServiceSelectionData.filter(row => row[serviceColumn] === service).length;
+        }
+        
+        return 0;
     }
 
+    selectAllManualServices(): void {
+        const toSelect = this.filteredManualAvailableServices;
+        toSelect.forEach(s => { if (!this.manualSelectedServices.includes(s)) this.manualSelectedServices.push(s); });
+        this.manualSelectedServices = [...this.manualSelectedServices];
+    }
+
+    deselectAllManualServices(): void {
+        const toDeselect = this.filteredManualAvailableServices;
+        this.manualSelectedServices = this.manualSelectedServices.filter(s => !toDeselect.includes(s));
+    }
+
+    // Méthode pour afficher la sélection des statuts pour TRXBO en mode manuel (étape 3)
     private showManualStatusSelectionStep(): void {
+        this.showManualStatusSelection = true;
         this.manualStatusSearchFilter = '';
-        this.manualSelectedStatuses = [...this.manualAvailableStatuses];
-        this.syncManualStatusSelectionSet();
-        this.refreshDisplayedManualStatuses();
-        requestAnimationFrame(() => {
-            this.showManualStatusSelection = true;
-            this.cd.detectChanges();
-        });
+        this.manualSelectedStatuses = [...this.manualAvailableStatuses]; // Sélectionner tous par défaut
     }
 
     // Méthode pour confirmer la sélection des statuts (mode manuel)
@@ -8644,46 +8137,48 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.manualAvailableStatuses = [];
         this.manualSelectedStatuses = [];
         this.manualStatusSelectionData = [];
-        this.manualStatusLineCounts = {};
-        this.displayedManualStatuses = [];
-        this.selectedManualStatusSet.clear();
     }
 
+    // Méthode pour gérer le changement de sélection des statuts (mode manuel)
     onManualStatusSelectionChange(event: Event, status: string): void {
         const checkbox = event.target as HTMLInputElement;
         if (checkbox.checked) {
-            if (!this.selectedManualStatusSet.has(status)) {
-                this.selectedManualStatusSet.add(status);
+            if (!this.manualSelectedStatuses.includes(status)) {
                 this.manualSelectedStatuses.push(status);
             }
         } else {
-            this.selectedManualStatusSet.delete(status);
             this.manualSelectedStatuses = this.manualSelectedStatuses.filter(s => s !== status);
         }
     }
 
-    onManualStatusSearchFilterChange(value: string): void {
-        this.manualStatusSearchFilter = value;
-        clearTimeout(this.manualStatusSearchDebounceTimer);
-        this.manualStatusSearchDebounceTimer = window.setTimeout(() => {
-            this.refreshDisplayedManualStatuses();
-            this.cd.markForCheck();
-        }, 120);
+    // Méthode pour compter le nombre de lignes par statut (mode manuel)
+    getManualStatusCount(status: string): number {
+        if (!this.manualStatusSelectionData || this.manualStatusSelectionData.length === 0 || !this.manualStatusColumn) return 0;
+        
+        return this.manualStatusSelectionData.filter(row => row[this.manualStatusColumn!] === status).length;
+    }
+
+    get filteredManualAvailableStatuses(): string[] {
+        if (!hasCommaSeparatedSearchFilter(this.manualStatusSearchFilter)) return this.manualAvailableStatuses;
+        return this.manualAvailableStatuses.filter(st =>
+            matchesCommaSeparatedFilter(
+                this.manualStatusSearchFilter,
+                st,
+                this.getManualStatusCount(st)
+            )
+        );
     }
 
     selectAllManualStatuses(): void {
-        for (const status of this.displayedManualStatuses) {
-            if (!this.selectedManualStatusSet.has(status)) {
-                this.selectedManualStatusSet.add(status);
-                this.manualSelectedStatuses.push(status);
-            }
-        }
+        const toSelect = this.filteredManualAvailableStatuses;
+        toSelect.forEach(st => { if (!this.manualSelectedStatuses.includes(st)) this.manualSelectedStatuses.push(st); });
+        this.manualSelectedStatuses = [...this.manualSelectedStatuses];
     }
 
+    // Méthode pour désélectionner tous les statuts (mode manuel)
     deselectAllManualStatuses(): void {
-        const visible = new Set(this.displayedManualStatuses);
-        this.manualSelectedStatuses = this.manualSelectedStatuses.filter(st => !visible.has(st));
-        this.syncManualStatusSelectionSet();
+        const toDeselect = this.filteredManualAvailableStatuses;
+        this.manualSelectedStatuses = this.manualSelectedStatuses.filter(st => !toDeselect.includes(st));
     }
 
     // Méthodes pour l'aide et la configuration des modèles

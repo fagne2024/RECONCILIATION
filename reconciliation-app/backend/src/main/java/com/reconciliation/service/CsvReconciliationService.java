@@ -314,7 +314,7 @@ public class CsvReconciliationService implements DisposableBean {
                 double progress = (double) processedRecords / totalRecords * 100;
                 double recordsPerSecond = processedRecords / (elapsedTime / 1000.0);
                 
-                logger.debug("📊 Progression: {}% ({}/{} enregistrements) - Vitesse: {} rec/s - Temps: {} ms", 
+                logger.info("📊 Progression: {}% ({}/{} enregistrements) - Vitesse: {} rec/s - Temps: {} ms", 
                     String.format("%.2f", progress), processedRecords, totalRecords, String.format("%.0f", recordsPerSecond), elapsedTime);
 
                 publishProgress(

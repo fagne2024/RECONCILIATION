@@ -31,8 +31,30 @@ import {
 } from '../../constants/reconciliation-env-options';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import {
+    resolveTraitementKind,
+    TraitementKind
+} from '../../shared/result8rec-audit-display';
 
 export type DashboardMetric = 'volume' | 'transactions' | 'revenu';
+
+type RecoSummaryStatus = 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
+
+type RecoStatusFilter =
+    | 'ALL'
+    | 'RECONCILIE'
+    | 'EN_COURS_VALIDATION'
+    | 'EN_COURS_CLOTURE'
+    | 'EN_COURS_TRAITEMENT'
+    | 'NON_RECONCILIE';
+
+interface RecoDayCell {
+    date: string;
+    status: RecoSummaryStatus;
+    ticketId: string;
+    env: string;
+    traitementKind?: TraitementKind;
+}
 
 /** Agrégat affiché dans la popup Statistiques réconciliation (nombres + volumes + %). */
 export interface TransactStatsSnapshot {
@@ -147,12 +169,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         service: string;
         label?: string;
         country?: string;
-        days: {
-            date: string;
-            status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
-            ticketId: string;
-            env: string;
-        }[];
+        days: RecoDayCell[];
     }[] = [];
     weekDays: { label: string; date: string }[] = [];
     visibleWeekDays: { label: string; date: string }[] = [];
@@ -161,10 +178,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
         total: 0,
         reconcilie: 0,
         enCours: 0,
+        enCoursSupport: 0,
+        enCoursCdo: 0,
+        enCoursGroup: 0,
         nonReco: 0,
         tauxReconcilie: 0
     };
-    reconciliationStatusFilter: 'ALL' | 'RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE' = 'ALL';
+    reconciliationStatusFilter: RecoStatusFilter = 'ALL';
     reconciliationPageIndex: number = 0;
     readonly reconciliationPageSize: number = 3;
     private allReconciliationServices: string[] = [];
@@ -180,12 +200,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         service: string;
         label?: string;
         country?: string;
-        days: {
-            date: string;
-            status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
-            ticketId: string;
-            env: string;
-        }[];
+        days: RecoDayCell[];
     }[] = [];
     // Filtres du popup Vue semaine
     recoViewCountry: string = '';
@@ -204,6 +219,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
         total: 0,
         reconcilie: 0,
         enCours: 0,
+        enCoursSupport: 0,
+        enCoursCdo: 0,
+        enCoursGroup: 0,
         nonReco: 0,
         tauxReconcilie: 0
     };
@@ -466,6 +484,101 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return n === 'termine';
     }
 
+    private readonly traitementKindPriority: Record<TraitementKind, number> = {
+        none: 0,
+        support: 1,
+        cdo: 2,
+        group: 3,
+        termine: 4
+    };
+
+    /** Niveau de traitement le plus avancé parmi les lignes non terminées. */
+    private resolveDominantTraitementKind(
+        lines: { traitement?: string | null }[]
+    ): TraitementKind {
+        let best: TraitementKind = 'support';
+        let bestPriority = 0;
+        for (const line of lines) {
+            if (this.isTraitementTermineLabel(line.traitement)) {
+                continue;
+            }
+            const kind = resolveTraitementKind(line.traitement);
+            const priority = this.traitementKindPriority[kind] ?? 0;
+            if (priority > bestPriority) {
+                bestPriority = priority;
+                best = kind === 'none' ? 'support' : kind;
+            }
+        }
+        return bestPriority === 0 ? 'support' : best;
+    }
+
+    private buildRecoDayCellStatus(
+        matchingForDay: Result8RecData[],
+        dayDate: string,
+        env: string
+    ): RecoDayCell {
+        let status: RecoSummaryStatus;
+        let ticketId = '';
+        let traitementKind: TraitementKind | undefined;
+
+        if (!matchingForDay.length) {
+            status = 'NON_RECONCILIE';
+        } else {
+            const anyNotTermine = matchingForDay.some(
+                (line) => !this.isTraitementTermineLabel(line.traitement)
+            );
+            if (anyNotTermine) {
+                status = 'EN_COURS';
+                traitementKind = this.resolveDominantTraitementKind(matchingForDay);
+            } else {
+                status = 'RECONCILIE';
+            }
+            const ticketLine = matchingForDay.find(
+                (line) => (line.glpiId || '').trim().length > 0
+            );
+            ticketId = ticketLine ? (ticketLine.glpiId || '') : '';
+        }
+
+        return { date: dayDate, status, ticketId, env, traitementKind };
+    }
+
+    getStatusPillNgClass(day: RecoDayCell): Record<string, boolean> {
+        return {
+            'status-ok': day.status === 'RECONCILIE',
+            'status-nok': day.status === 'NON_RECONCILIE',
+            'status-en-cours': day.status === 'EN_COURS' && day.traitementKind === 'support',
+            'status-en-cours-cdo': day.status === 'EN_COURS' && day.traitementKind === 'cdo',
+            'status-en-cours-group': day.status === 'EN_COURS' && day.traitementKind === 'group',
+            'status-en-cours-default':
+                day.status === 'EN_COURS' &&
+                day.traitementKind !== 'support' &&
+                day.traitementKind !== 'cdo' &&
+                day.traitementKind !== 'group'
+        };
+    }
+
+    getStatusPillLabel(day: RecoDayCell): string {
+        if (day.status === 'RECONCILIE') {
+            return 'Réconcilié';
+        }
+        if (day.status === 'NON_RECONCILIE') {
+            return 'Non réconcilié';
+        }
+        if (day.status === 'EN_COURS') {
+            switch (day.traitementKind) {
+                case 'group':
+                    return 'En cours de clôture';
+                case 'cdo':
+                    return 'En cours de validation';
+                case 'support':
+                    return 'En cours de traitement';
+                default:
+                    return 'En cours...';
+            }
+        }
+        return 'Non réconcilié';
+    }
+
     private updateVisibleDaysWindow() {
         if (!this.weekDays || this.weekDays.length === 0) {
             this.visibleWeekDays = [];
@@ -511,10 +624,54 @@ export class DashboardComponent implements OnInit, OnDestroy {
             .filter(day => !!day);
     }
 
+    private readonly recoChartColors = {
+        reconcilie: '#388e3c',
+        enCoursSupport: '#f59e0b',
+        enCoursCdo: '#17a2b8',
+        enCoursGroup: '#4ade80',
+        nonReco: '#f57c00'
+    };
+
+    private countEnCoursKind(day: RecoDayCell): 'support' | 'cdo' | 'group' {
+        if (day.traitementKind === 'cdo' || day.traitementKind === 'group') {
+            return day.traitementKind;
+        }
+        return 'support';
+    }
+
+    private dayMatchesStatusFilter(day: RecoDayCell, filter: RecoStatusFilter): boolean {
+        if (filter === 'ALL') {
+            return true;
+        }
+        if (filter === 'RECONCILIE') {
+            return day.status === 'RECONCILIE';
+        }
+        if (filter === 'NON_RECONCILIE') {
+            return day.status === 'NON_RECONCILIE';
+        }
+        if (day.status !== 'EN_COURS') {
+            return false;
+        }
+        const kind = this.countEnCoursKind(day);
+        if (filter === 'EN_COURS_VALIDATION') {
+            return kind === 'cdo';
+        }
+        if (filter === 'EN_COURS_CLOTURE') {
+            return kind === 'group';
+        }
+        if (filter === 'EN_COURS_TRAITEMENT') {
+            return kind === 'support';
+        }
+        return false;
+    }
+
     private computeReconciliationStats() {
         let total = 0;
         let reconcilie = 0;
         let enCours = 0;
+        let enCoursSupport = 0;
+        let enCoursCdo = 0;
+        let enCoursGroup = 0;
         let nonReco = 0;
 
         this.reconciliationSummaryRows.forEach(row => {
@@ -527,6 +684,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     reconcilie++;
                 } else if (day.status === 'EN_COURS') {
                     enCours++;
+                    switch (this.countEnCoursKind(day)) {
+                        case 'group':
+                            enCoursGroup++;
+                            break;
+                        case 'cdo':
+                            enCoursCdo++;
+                            break;
+                        default:
+                            enCoursSupport++;
+                            break;
+                    }
                 } else if (day.status === 'NON_RECONCILIE') {
                     nonReco++;
                 }
@@ -539,6 +707,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
             total,
             reconcilie,
             enCours,
+            enCoursSupport,
+            enCoursCdo,
+            enCoursGroup,
             nonReco,
             tauxReconcilie: taux
         };
@@ -548,11 +719,30 @@ export class DashboardComponent implements OnInit, OnDestroy {
     /** Met à jour les données des graphiques donut et évolution par jour. */
     private updateRecoChartsData(): void {
         const s = this.recoStats;
+        const c = this.recoChartColors;
         this.recoDonutChartData = {
-            labels: ['Réconcilié', 'En cours', 'Non réconcilié'],
+            labels: [
+                'Réconcilié',
+                'En cours de traitement',
+                'En cours de validation',
+                'En cours de clôture',
+                'Non réconcilié'
+            ],
             datasets: [{
-                data: [s.reconcilie, s.enCours, s.nonReco],
-                backgroundColor: ['#388e3c', '#1976d2', '#f57c00'],
+                data: [
+                    s.reconcilie,
+                    s.enCoursSupport,
+                    s.enCoursCdo,
+                    s.enCoursGroup,
+                    s.nonReco
+                ],
+                backgroundColor: [
+                    c.reconcilie,
+                    c.enCoursSupport,
+                    c.enCoursCdo,
+                    c.enCoursGroup,
+                    c.nonReco
+                ],
                 borderWidth: 0
             }]
         };
@@ -560,38 +750,71 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.recoEvolutionChartData = {
             labels: evolution.labels,
             datasets: [
-                { label: 'Réconcilié', data: evolution.reconcilie, backgroundColor: '#388e3c', stack: 'stack1' },
-                { label: 'En cours', data: evolution.enCours, backgroundColor: '#1976d2', stack: 'stack1' },
-                { label: 'Non réconcilié', data: evolution.nonReco, backgroundColor: '#f57c00', stack: 'stack1' }
+                { label: 'Réconcilié', data: evolution.reconcilie, backgroundColor: c.reconcilie, stack: 'stack1' },
+                { label: 'En cours de traitement', data: evolution.enCoursSupport, backgroundColor: c.enCoursSupport, stack: 'stack1' },
+                { label: 'En cours de validation', data: evolution.enCoursCdo, backgroundColor: c.enCoursCdo, stack: 'stack1' },
+                { label: 'En cours de clôture', data: evolution.enCoursGroup, backgroundColor: c.enCoursGroup, stack: 'stack1' },
+                { label: 'Non réconcilié', data: evolution.nonReco, backgroundColor: c.nonReco, stack: 'stack1' }
             ]
         };
     }
 
     /** Retourne les totaux par jour pour le graphique évolution (Lun, Mar, ...). */
-    private getRecoEvolutionByDay(): { labels: string[]; reconcilie: number[]; enCours: number[]; nonReco: number[] } {
+    private getRecoEvolutionByDay(): {
+        labels: string[];
+        reconcilie: number[];
+        enCoursSupport: number[];
+        enCoursCdo: number[];
+        enCoursGroup: number[];
+        nonReco: number[];
+    } {
         const labels: string[] = [];
         const reconcilie: number[] = [];
-        const enCours: number[] = [];
+        const enCoursSupport: number[] = [];
+        const enCoursCdo: number[] = [];
+        const enCoursGroup: number[] = [];
         const nonReco: number[] = [];
         if (!this.weekDays.length || !this.reconciliationSummaryRows.length) {
-            return { labels, reconcilie, enCours, nonReco };
+            return { labels, reconcilie, enCoursSupport, enCoursCdo, enCoursGroup, nonReco };
         }
         const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
         this.weekDays.forEach((dayInfo, dayIndex) => {
             labels.push(dayNames[dayIndex] || dayInfo.label.split(' ')[0]);
-            let r = 0, e = 0, n = 0;
+            let r = 0;
+            let es = 0;
+            let ec = 0;
+            let eg = 0;
+            let n = 0;
             this.reconciliationSummaryRows.forEach(row => {
                 const day = row.days[dayIndex];
-                if (!day || !day.status) return;
-                if (day.status === 'RECONCILIE') r++;
-                else if (day.status === 'EN_COURS') e++;
-                else n++;
+                if (!day || !day.status) {
+                    return;
+                }
+                if (day.status === 'RECONCILIE') {
+                    r++;
+                } else if (day.status === 'EN_COURS') {
+                    switch (this.countEnCoursKind(day)) {
+                        case 'group':
+                            eg++;
+                            break;
+                        case 'cdo':
+                            ec++;
+                            break;
+                        default:
+                            es++;
+                            break;
+                    }
+                } else {
+                    n++;
+                }
             });
             reconcilie.push(r);
-            enCours.push(e);
+            enCoursSupport.push(es);
+            enCoursCdo.push(ec);
+            enCoursGroup.push(eg);
             nonReco.push(n);
         });
-        return { labels, reconcilie, enCours, nonReco };
+        return { labels, reconcilie, enCoursSupport, enCoursCdo, enCoursGroup, nonReco };
     }
 
     getPagedReconciliationRows() {
@@ -1735,26 +1958,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     return dateOnly === dayInfo.date;
                 });
 
-                let status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
-                let ticketId = '';
-
-                if (!matchingForDay.length) {
-                    status = 'NON_RECONCILIE';
-                } else {
-                    const anyNotTermine = matchingForDay.some(line =>
-                        !this.isTraitementTermineLabel(line.traitement)
-                    );
-                    status = anyNotTermine ? 'EN_COURS' : 'RECONCILIE';
-                    const ticketLine = matchingForDay.find(line => (line.glpiId || '').trim().length > 0);
-                    ticketId = ticketLine ? (ticketLine.glpiId || '') : '';
-                }
-
-                return {
-                    date: dayInfo.date,
-                    status,
-                    ticketId,
-                    env: targetEnv
-                };
+                return this.buildRecoDayCellStatus(matchingForDay, dayInfo.date, targetEnv);
             });
 
             rows.push({
@@ -2197,26 +2401,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
                                     const dateOnly = this.extractResult8DateOnly(item.date);
                                     return dateOnly === dayInfo.date;
                                 });
-                                let status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
-                                let ticketId = '';
-                                if (!matchingForDay.length) {
-                                    status = 'NON_RECONCILIE';
-                                } else {
-                                    const anyNotTermine = matchingForDay.some(line =>
-                                        !this.isTraitementTermineLabel(line.traitement)
-                                    );
-                                    status = anyNotTermine ? 'EN_COURS' : 'RECONCILIE';
-                                    const ticketLine = matchingForDay.find(line => (line.glpiId || '').trim().length > 0);
-                                    ticketId = ticketLine ? (ticketLine.glpiId || '') : '';
-                                }
-                                return {
-                                    date: dayInfo.date,
-                                    status,
-                                    ticketId,
-                                    env: targetEnv === 'ALL'
+                                return this.buildRecoDayCellStatus(
+                                    matchingForDay,
+                                    dayInfo.date,
+                                    targetEnv === 'ALL'
                                         ? (matchingForDay[0] ? this.getResult8RecItemEnv(matchingForDay[0]) : '')
                                         : targetEnv
-                                };
+                                );
                             });
                             rows.push({ service: serviceName, label, country: rowCountry, days: dayStatuses });
                         });
@@ -2576,21 +2767,62 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return `${dateStr}|${service}|${country}|${env}`;
     }
 
-    private computeReconciliationStatsFromRows(rows: { service: string; days: { date: string; status: string }[] }[]): { total: number; reconcilie: number; enCours: number; nonReco: number; tauxReconcilie: number } {
-        let total = 0, reconcilie = 0, enCours = 0, nonReco = 0;
+    private computeReconciliationStatsFromRows(
+        rows: { service: string; days: RecoDayCell[] }[]
+    ): {
+        total: number;
+        reconcilie: number;
+        enCours: number;
+        enCoursSupport: number;
+        enCoursCdo: number;
+        enCoursGroup: number;
+        nonReco: number;
+        tauxReconcilie: number;
+    } {
+        let total = 0;
+        let reconcilie = 0;
+        let enCours = 0;
+        let enCoursSupport = 0;
+        let enCoursCdo = 0;
+        let enCoursGroup = 0;
+        let nonReco = 0;
         rows.forEach(row => {
             row.days.forEach(day => {
                 total++;
-                if (day.status === 'RECONCILIE') reconcilie++;
-                else if (day.status === 'EN_COURS') enCours++;
-                else nonReco++;
+                if (day.status === 'RECONCILIE') {
+                    reconcilie++;
+                } else if (day.status === 'EN_COURS') {
+                    enCours++;
+                    switch (this.countEnCoursKind(day)) {
+                        case 'group':
+                            enCoursGroup++;
+                            break;
+                        case 'cdo':
+                            enCoursCdo++;
+                            break;
+                        default:
+                            enCoursSupport++;
+                            break;
+                    }
+                } else {
+                    nonReco++;
+                }
             });
         });
         const taux = total > 0 ? (reconcilie * 100) / total : 0;
-        return { total, reconcilie, enCours, nonReco, tauxReconcilie: taux };
+        return {
+            total,
+            reconcilie,
+            enCours,
+            enCoursSupport,
+            enCoursCdo,
+            enCoursGroup,
+            nonReco,
+            tauxReconcilie: taux
+        };
     }
 
-    setReconciliationStatusFilter(status: 'RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE'): void {
+    setReconciliationStatusFilter(status: Exclude<RecoStatusFilter, 'ALL'>): void {
         this.reconciliationStatusFilter =
             this.reconciliationStatusFilter === status ? 'ALL' : status;
     }
@@ -2599,9 +2831,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
         if (!this.reconciliationSummaryRows || this.reconciliationStatusFilter === 'ALL') {
             return this.reconciliationSummaryRows;
         }
-        const target = this.reconciliationStatusFilter;
+        const filter = this.reconciliationStatusFilter;
         return this.reconciliationSummaryRows.filter(row =>
-            row.days.some(day => day.status === target)
+            row.days.some(day => this.dayMatchesStatusFilter(day, filter))
         );
     }
 

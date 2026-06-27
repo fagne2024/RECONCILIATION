@@ -103,18 +103,13 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
           return;
         }
         this.response = response;
-        this.ensureMagicViewContextFromState();
         const matches = response.matches || [];
-        const magicCtx = this.reconciliationTabsService.getMagicViewContext();
-        const magicPartitionActive = !!(magicCtx.service || magicCtx.partnerFile);
-        const signature = `${response.totalMatches ?? 0}_${response.totalBoOnly ?? 0}_${response.totalPartnerOnly ?? 0}_${matches.length}_${magicCtx.service}_${magicCtx.partnerFile}`;
+        const signature = `${response.totalMatches ?? 0}_${response.totalBoOnly ?? 0}_${response.totalPartnerOnly ?? 0}_${matches.length}`;
         const cached = this.reconciliationTabsService.getFilteredMatches();
-        const canUseMagicCache = magicPartitionActive;
-        const canUseFullCache = (
+        const useCache = cached.length > 0 && (
           cached.length === (response.totalMatches ?? 0) ||
           (matches.length > 0 && cached.length === matches.length)
         ) && this.lastProcessedSignature === signature;
-        const useCache = cached.length > 0 && (canUseMagicCache || canUseFullCache);
         if (useCache && cached.length > 0) {
           this.applyCachedMatches(cached);
           this.lastProcessedSignature = signature;
@@ -167,7 +162,6 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
           return typeOperation.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL');
         });
       }
-      filtered = this.reconciliationTabsService.filterMatchesByMagicView(filtered);
       
       const total = filtered.length;
       if (total === 0) {
@@ -937,33 +931,11 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
    * Construit les données de préremplissage pour ecart-bo-summary à partir des correspondances affichées.
    * Agence : "multiAgence" si plusieurs agences distinctes, sinon l'agence unique.
    */
-  private ensureMagicViewContextFromState(): void {
-    const magicCtx = this.reconciliationTabsService.getMagicViewContext();
-    if (magicCtx.service || magicCtx.partnerFile) {
-      return;
-    }
-    const service = (this.appStateService.getSelectedMagicService() || '').trim();
-    const partnerFile = (this.appStateService.getSelectedMagicPartnerFile() || '').trim();
-    if (service || partnerFile) {
-      this.reconciliationTabsService.setMagicViewContext(service, partnerFile);
-    }
-  }
-
-  /** Correspondances du service magique actif (sans cumul multi-services). */
-  private getMagicScopedMatches(): Match[] {
-    return this.reconciliationTabsService.filterMatchesByMagicView(this.filteredMatches || []);
-  }
-
   getMatchesSummaryForEcartBoSummary(): EcartBoSummaryPrefill | null {
-    const matches = this.getMagicScopedMatches();
+    const matches = this.filteredMatches;
     if (!matches || matches.length === 0) {
       return null;
     }
-    const magicService = (
-      this.reconciliationTabsService.getMagicViewContext().service
-      || this.appStateService.getSelectedMagicService()
-      || ''
-    ).trim();
     const agenceKeys = [
       'Agence',
       'agence',
@@ -1022,11 +994,10 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     }
 
     const agence = agencies.size > 1 ? 'multiAgence' : (Array.from(agencies)[0] || '');
-    const volume = this.calculateVolumeForMatches(matches);
+    const volume = this.calculateTotalVolume();
     const nombre = matches.length;
-    const serviceForPrefill = magicService || service;
 
-    if (!agence || !serviceForPrefill || !pays) {
+    if (!agence || !service || !pays) {
       return null;
     }
 
@@ -1047,41 +1018,11 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     return {
       date: dateFormatted,
       agence,
-      service: serviceForPrefill,
+      service,
       pays,
       nombre,
       volume
     };
-  }
-
-  private calculateVolumeForMatches(matches: Match[]): number {
-    return matches.reduce((total, match) => {
-      const boData = match.boData || {};
-      const volumeKeys = ['montant', 'Montant', 'MONTANT', 'Volume', 'volume', 'amount', 'Amount'];
-
-      for (const key of volumeKeys) {
-        const originalKey = this.getOriginalKey(boData, key);
-        if (boData[originalKey]) {
-          const value = parseFloat(String(boData[originalKey]));
-          if (!isNaN(value)) {
-            return total + value;
-          }
-        }
-      }
-
-      const partnerData = match.partnerData || {};
-      for (const key of volumeKeys) {
-        const originalKey = this.getOriginalKey(partnerData, key);
-        if (partnerData[originalKey]) {
-          const value = parseFloat(String(partnerData[originalKey]));
-          if (!isNaN(value)) {
-            return total + value;
-          }
-        }
-      }
-
-      return total;
-    }, 0);
   }
 
   /**
