@@ -1,7 +1,8 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { Router, NavigationEnd } from '@angular/router';
-import { filter, take } from 'rxjs/operators';
-import { forkJoin, Subscription } from 'rxjs';
+import { catchError, filter, finalize, take } from 'rxjs/operators';
+import { forkJoin, of, Subscription } from 'rxjs';
+import { ServiceReferencesDashboardPanelComponent } from '../service-references/service-references-dashboard-panel.component';
 import {
     DashboardService,
     DashboardMetrics,
@@ -103,6 +104,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return (this.totalFiles || 0) * 2;
     }
     loading: boolean = true;
+    /** Actualisation manuelle en cours (bouton Actualiser). */
+    refreshing = false;
+    private dashboardMountedAt = Date.now();
     error: string | null = null;
 
     // Métriques détaillées
@@ -665,6 +669,49 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return false;
     }
 
+    /**
+     * Taux de couverture de la semaine en cours (lun → J-1) :
+     * (services × jours saisis) / (services × jours attendus).
+     * Ex. lundi seul tout saisi → 100 % ; mardi ouvert sans saisie → 50 %.
+     */
+    private computeWeeklyReconciliationRate(
+        total: number,
+        reconcilie: number,
+        enCours: number
+    ): number {
+        if (total <= 0) {
+            return 0;
+        }
+        const setCount = reconcilie + enCours;
+        return (setCount * 100) / total;
+    }
+
+    /** Taux affiché : couverture semaine (saisi = réconcilié + en cours). */
+    get recoCoverageRatePercent(): number {
+        return this.computeWeeklyReconciliationRate(
+            this.recoStats.total,
+            this.recoStats.reconcilie,
+            this.recoStats.enCours
+        );
+    }
+
+    /** Nombre de cases saisies (réconcilié + en cours) — aligné sur le taux réconcilié. */
+    get recoCoverageCount(): number {
+        return this.recoStats.reconcilie + this.recoStats.enCours;
+    }
+
+    getRecoViewCoverageCount(): number {
+        return this.recoViewStats.reconcilie + this.recoViewStats.enCours;
+    }
+
+    getRecoViewCoverageRatePercent(): number {
+        return this.computeWeeklyReconciliationRate(
+            this.recoViewStats.total,
+            this.recoViewStats.reconcilie,
+            this.recoViewStats.enCours
+        );
+    }
+
     private computeReconciliationStats() {
         let total = 0;
         let reconcilie = 0;
@@ -701,7 +748,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
             });
         });
 
-        const taux = total > 0 ? (reconcilie * 100) / total : 0;
+        const taux = this.computeWeeklyReconciliationRate(total, reconcilie, enCours);
 
         this.recoStats = {
             total,
@@ -720,6 +767,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     private updateRecoChartsData(): void {
         const s = this.recoStats;
         const c = this.recoChartColors;
+        const coverage = s.reconcilie + s.enCours;
         this.recoDonutChartData = {
             labels: [
                 'Réconcilié',
@@ -730,10 +778,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
             ],
             datasets: [{
                 data: [
-                    s.reconcilie,
-                    s.enCoursSupport,
-                    s.enCoursCdo,
-                    s.enCoursGroup,
+                    coverage,
+                    0,
+                    0,
+                    0,
                     s.nonReco
                 ],
                 backgroundColor: [
@@ -1240,6 +1288,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     @ViewChild('agencySelect') agencySelect!: MatSelect;
     @ViewChild('serviceSelect') serviceSelect!: MatSelect;
     @ViewChild('countrySelect') countrySelect!: MatSelect;
+    @ViewChild('serviceRefPanel') serviceRefPanel?: ServiceReferencesDashboardPanelComponent;
 
     // SUPPRIMER testMulti et testOptions
 
@@ -1557,6 +1606,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
             if (event instanceof NavigationEnd) {
                 const path = (event.urlAfterRedirects || event.url || '').split('?')[0];
                 if (path === '/' || path === '/dashboard') {
+                    // Évite un double chargement juste après l'initialisation du composant
+                    if (Date.now() - this.dashboardMountedAt < 1500) {
+                        return;
+                    }
                     this.refreshMetrics();
                 }
             }
@@ -1654,24 +1707,62 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.loadReconciliationSummary();
     }
 
-    private loadDashboardData() {
-        this.loading = true;
+    private loadDashboardData(manageLoading = true) {
+        if (manageLoading) {
+            this.loading = true;
+        }
         this.error = null;
 
         this.dashboardService.getDashboardMetrics(this.metricsPeriod).subscribe({
             next: (metrics: DashboardMetrics) => {
-                this.totalReconciliations = metrics.totalReconciliations;
-                this.totalFiles = metrics.totalFiles;
-                this.lastActivity = metrics.lastActivity;
-                this.todayReconciliations = metrics.todayReconciliations;
-                this.loading = false;
+                this.applyDashboardMetrics(metrics);
+                if (manageLoading) {
+                    this.loading = false;
+                }
             },
             error: (error) => {
                 console.error('Error loading dashboard data:', error);
                 this.error = 'Erreur lors du chargement des données';
-                this.loading = false;
+                if (manageLoading) {
+                    this.loading = false;
+                }
             }
         });
+    }
+
+    private applyDashboardMetrics(metrics: DashboardMetrics): void {
+        this.totalReconciliations = metrics.totalReconciliations;
+        this.totalFiles = metrics.totalFiles;
+        this.lastActivity = metrics.lastActivity;
+        this.todayReconciliations = metrics.todayReconciliations;
+    }
+
+    private getDashboardFilterParams(): {
+        agencies?: string[];
+        services?: string[];
+        countries?: string[];
+        timeFilter?: string;
+        startDate?: string;
+        endDate?: string;
+    } {
+        const agencies = this.selectedAgency.length === 0 ? undefined : this.selectedAgency;
+        const services = this.selectedService.length === 0 ? undefined : this.selectedService;
+        const countries = this.selectedCountry.length === 0 ? undefined : this.selectedCountry;
+        const timeFilter = this.showAllData
+            ? undefined
+            : (this.selectedTimeFilter !== 'Tous' ? this.selectedTimeFilter : undefined);
+        return {
+            agencies,
+            services,
+            countries,
+            timeFilter,
+            startDate: this.startDate || undefined,
+            endDate: this.endDate || undefined
+        };
+    }
+
+    get isRefreshButtonBusy(): boolean {
+        return this.refreshing;
     }
 
     /**
@@ -2809,7 +2900,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                 }
             });
         });
-        const taux = total > 0 ? (reconcilie * 100) / total : 0;
+        const taux = this.computeWeeklyReconciliationRate(total, reconcilie, enCours);
         return {
             total,
             reconcilie,
@@ -2906,54 +2997,50 @@ export class DashboardComponent implements OnInit, OnDestroy {
         });
     }
 
-    private     loadDetailedMetrics() {
+    private loadDetailedMetrics() {
         this.detailedLoading = true;
         this.detailedError = null;
-        // Adapter les filtres envoyés au backend
-        const agencies = this.selectedAgency.length === 0 ? undefined : this.selectedAgency;
-        const services = this.selectedService.length === 0 ? undefined : this.selectedService;
-        const countries = this.selectedCountry.length === 0 ? undefined : this.selectedCountry;
-        // Si showAllData est activé, ne pas envoyer de filtre de temps
-        const timeFilter = this.showAllData ? undefined : (this.selectedTimeFilter !== 'Tous' ? this.selectedTimeFilter : undefined);
-        
+        const params = this.getDashboardFilterParams();
+
         this.dashboardService.getDetailedMetrics(
-            agencies,
-            services,
-            countries,
-            timeFilter,
-            this.startDate || undefined,
-            this.endDate || undefined
+            params.agencies,
+            params.services,
+            params.countries,
+            params.timeFilter,
+            params.startDate,
+            params.endDate
         ).subscribe({
             next: (metrics: DetailedMetrics) => {
-                // Log de la réponse du backend
-                console.log('[loadDetailedMetrics] Réponse du backend :', metrics);
-                // Si aucune donnée n'est trouvée, afficher un message explicite et vider les données
-                if (!metrics || (Array.isArray(metrics) && metrics.length === 0) || (typeof metrics === 'object' && Object.keys(metrics).length === 0)) {
-                    this.detailedMetrics = null;
-                    this.barChartData = { labels: [], datasets: [] };
-                    this.lineChartData = { labels: [], datasets: [] };
-                    this.detailedError = 'Aucune donnée pour ce pays';
-                    this.detailedLoading = false;
-                    this.updateBarChartData();
-                    return;
-                }
-                this.detailedMetrics = metrics;
-                this.detailedLoading = false;
-                this.detailedError = null;
-                this.filterOperationStats();
-                this.updateBarChartData();
+                this.applyDetailedMetrics(metrics);
             },
-            error: (error) => {
-                // En cas d'erreur, vider les données et afficher un message explicite
-                this.detailedMetrics = null;
-                this.filteredOperationStats = [];
-                this.filteredFrequencyStats = [];
-                this.barChartData = { labels: [], datasets: [] };
-                this.lineChartData = { labels: [], datasets: [] };
-                this.detailedError = 'Aucune donnée pour ce pays';
-                this.detailedLoading = false;
+            error: () => {
+                this.clearDetailedMetrics('Aucune donnée pour ce pays');
             }
         });
+    }
+
+    private applyDetailedMetrics(metrics: DetailedMetrics | null | undefined): void {
+        if (!metrics || (Array.isArray(metrics) && metrics.length === 0) ||
+            (typeof metrics === 'object' && Object.keys(metrics).length === 0)) {
+            this.clearDetailedMetrics('Aucune donnée pour ce pays');
+            return;
+        }
+        this.detailedMetrics = metrics;
+        this.detailedLoading = false;
+        this.detailedError = null;
+        this.filterOperationStats();
+        this.updateBarChartData();
+    }
+
+    private clearDetailedMetrics(message: string): void {
+        this.detailedMetrics = null;
+        this.filteredOperationStats = [];
+        this.filteredFrequencyStats = [];
+        this.barChartData = { labels: [], datasets: [] };
+        this.lineChartData = { labels: [], datasets: [] };
+        this.detailedError = message;
+        this.detailedLoading = false;
+        this.updateBarChartData();
     }
 
     /**
@@ -3012,27 +3099,21 @@ export class DashboardComponent implements OnInit, OnDestroy {
         };
     }
 
-    private     loadTransactionCreatedStats() {
+    private loadTransactionCreatedStats() {
         this.transactionCreatedLoading = true;
         this.transactionCreatedError = null;
-
-        const agencies = this.selectedAgency.length === 0 ? undefined : this.selectedAgency;
-        const services = this.selectedService.length === 0 ? undefined : this.selectedService;
-        const countries = this.selectedCountry.length === 0 ? undefined : this.selectedCountry;
-        // Si showAllData est activé, ne pas envoyer de filtre de temps
-        const timeFilter = this.showAllData ? undefined : (this.selectedTimeFilter !== 'Tous' ? this.selectedTimeFilter : undefined);
+        const params = this.getDashboardFilterParams();
 
         this.dashboardService.getTransactionCreatedStats(
-            agencies,
-            services,
-            countries,
-            timeFilter,
-            this.startDate || undefined,
-            this.endDate || undefined
+            params.agencies,
+            params.services,
+            params.countries,
+            params.timeFilter,
+            params.startDate,
+            params.endDate
         ).subscribe({
             next: (stats: TransactionCreatedStats) => {
-                this.transactionCreatedStats = stats;
-                this.transactionCreatedLoading = false;
+                this.applyTransactionCreatedStats(stats);
             },
             error: (error) => {
                 console.error('Error loading transaction created stats:', error);
@@ -3040,6 +3121,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
                 this.transactionCreatedLoading = false;
             }
         });
+    }
+
+    private applyTransactionCreatedStats(stats: TransactionCreatedStats | null | undefined): void {
+        this.transactionCreatedStats = stats ?? null;
+        this.transactionCreatedLoading = false;
+        this.transactionCreatedError = null;
     }
 
     filteredAgencySummary: any[] = [];
@@ -3291,24 +3378,75 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     refreshMetrics() {
+        if (this.refreshing) {
+            return;
+        }
+
+        this.refreshing = true;
         this.loading = true;
         this.error = null;
-        this.recoSummaryLoadToken++;
-        
-        // Recharger les métriques de base
-        this.loadDashboardData();
-        
-        // Réaligner l'état des réconciliations (nouveaux services, lignes après sauvegarde relevé, etc.)
+        this.detailedLoading = true;
+        this.transactionCreatedLoading = true;
+
+        const params = this.getDashboardFilterParams();
+
+        forkJoin({
+            metrics: this.dashboardService.getDashboardMetrics(this.metricsPeriod).pipe(
+                catchError((error) => {
+                    console.error('Error loading dashboard data:', error);
+                    this.error = 'Erreur lors du chargement des données';
+                    return of(null);
+                })
+            ),
+            detailed: this.dashboardService.getDetailedMetrics(
+                params.agencies,
+                params.services,
+                params.countries,
+                params.timeFilter,
+                params.startDate,
+                params.endDate
+            ).pipe(
+                catchError(() => {
+                    this.clearDetailedMetrics('Aucune donnée pour ce pays');
+                    return of(null);
+                })
+            ),
+            transactionCreated: this.dashboardService.getTransactionCreatedStats(
+                params.agencies,
+                params.services,
+                params.countries,
+                params.timeFilter,
+                params.startDate,
+                params.endDate
+            ).pipe(
+                catchError((error) => {
+                    console.error('Error loading transaction created stats:', error);
+                    this.transactionCreatedError =
+                        'Erreur lors du chargement des statistiques des transactions créées';
+                    this.transactionCreatedLoading = false;
+                    return of(null);
+                })
+            )
+        }).pipe(
+            finalize(() => {
+                this.loading = false;
+                this.refreshing = false;
+            })
+        ).subscribe(({ metrics, detailed, transactionCreated }) => {
+            if (metrics) {
+                this.applyDashboardMetrics(metrics);
+            }
+            if (detailed) {
+                this.applyDetailedMetrics(detailed);
+            }
+            if (transactionCreated) {
+                this.applyTransactionCreatedStats(transactionCreated);
+            }
+        });
+
+        // Résumé réconciliation (flux progressif, chargé en parallèle)
         this.loadReconciliationSummary();
-        
-        // Recharger les métriques détaillées (toujours, même sans filtres)
-        this.loadDetailedMetrics();
-        this.loadTransactionCreatedStats();
-        
-        // Afficher un message de confirmation
-        setTimeout(() => {
-            console.log('Dashboard metrics refreshed successfully');
-        }, 1000);
+        this.serviceRefPanel?.reloadData();
     }
 
     startNewReconciliation() {

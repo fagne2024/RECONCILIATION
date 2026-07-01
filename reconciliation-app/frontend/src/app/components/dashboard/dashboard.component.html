@@ -11,9 +11,15 @@
     </div>
     <div class="nav-spacer"></div>
     <div class="nav-actions">
-      <button class="nav-btn secondary" (click)="refreshMetrics()" [disabled]="loading">
-        <i class="fas fa-sync-alt" [class.fa-spin]="loading"></i>
-        {{ loading ? 'Chargement...' : 'Actualiser' }}
+      <button
+        type="button"
+        class="nav-btn secondary"
+        (click)="refreshMetrics()"
+        [disabled]="isRefreshButtonBusy"
+        title="Recharger les métriques et l'état des réconciliations"
+      >
+        <i class="fas fa-sync-alt" [class.fa-spin]="isRefreshButtonBusy"></i>
+        {{ isRefreshButtonBusy ? 'Actualisation...' : 'Actualiser' }}
       </button>
     </div>
   </nav>
@@ -34,6 +40,7 @@
                 </button>
             </div>
             <app-service-references-dashboard-panel
+                #serviceRefPanel
                 *ngIf="showServiceRefSection"
                 [loadOwnData]="true"
                 [showImportHint]="false"
@@ -221,7 +228,7 @@
                 </div>
                 <div class="reco-stat-item">
                     <span class="reco-stat-label">Réconciliés</span>
-                    <span class="reco-stat-value ok">{{ recoStats.reconcilie }}</span>
+                    <span class="reco-stat-value ok">{{ recoCoverageCount }}</span>
                 </div>
                 <div class="reco-stat-item">
                     <span class="reco-stat-label">En cours de validation</span>
@@ -238,7 +245,7 @@
                 <div class="reco-stat-item">
                     <span class="reco-stat-label">Taux réconcilié</span>
                     <span class="reco-stat-value ok">
-                        {{ recoStats.tauxReconcilie | number:'1.0-1' }} %
+                        {{ recoCoverageRatePercent | number:'1.0-1' }} %
                     </span>
                 </div>
             </div>
@@ -339,7 +346,7 @@
                         </canvas>
                     </div>
                     <div class="reco-chart-legend-detail">
-                        <div><span class="reco-legend-dot ok"></span> Réconcilié : {{ recoStats.reconcilie }} ({{ (recoStats.total > 0 ? (recoStats.reconcilie / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
+                        <div><span class="reco-legend-dot ok"></span> Réconcilié : {{ recoCoverageCount }} ({{ recoCoverageRatePercent | number:'1.0-0' }} %)</div>
                         <div><span class="reco-legend-dot pending-support"></span> En cours de traitement : {{ recoStats.enCoursSupport }} ({{ (recoStats.total > 0 ? (recoStats.enCoursSupport / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
                         <div><span class="reco-legend-dot pending-cdo"></span> En cours de validation : {{ recoStats.enCoursCdo }} ({{ (recoStats.total > 0 ? (recoStats.enCoursCdo / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
                         <div><span class="reco-legend-dot pending-group"></span> En cours de clôture : {{ recoStats.enCoursGroup }} ({{ (recoStats.total > 0 ? (recoStats.enCoursGroup / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
@@ -1174,7 +1181,7 @@
                     </div>
                     <div class="reco-stat-item">
                         <span class="reco-stat-label">Réconciliés</span>
-                        <span class="reco-stat-value ok">{{ recoViewStats.reconcilie }}</span>
+                        <span class="reco-stat-value ok">{{ getRecoViewCoverageCount() }}</span>
                     </div>
                     <div class="reco-stat-item">
                         <span class="reco-stat-label">En cours de validation</span>
@@ -1190,7 +1197,7 @@
                     </div>
                     <div class="reco-stat-item">
                         <span class="reco-stat-label">Taux réconcilié</span>
-                        <span class="reco-stat-value ok">{{ recoViewStats.tauxReconcilie | number:'1.0-1' }} %</span>
+                        <span class="reco-stat-value ok">{{ getRecoViewCoverageRatePercent() | number:'1.0-1' }} %</span>
                     </div>
                 </div>
             </div>

@@ -11,6 +11,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Observable, timer, throwError } from 'rxjs';
 import { retryWhen, mergeMap, finalize } from 'rxjs/operators';
 import { PopupService } from '../../services/popup.service';
+import {
+  APP_NAVIGATION_CATALOG,
+  AppNavigationGroup,
+  AppNavigationSubmenu,
+  getNavigationCatalogModuleNames
+} from '../../constants/app-navigation-catalog';
 
 @Component({
   selector: 'app-profil',
@@ -49,6 +55,14 @@ export class ProfilComponent implements OnInit {
   
   // Propriété pour contrôler l'affichage de la vue d'ensemble
   showOverview = false;
+
+  /** Arbre menus / sous-menus (aligné sidebar). */
+  readonly navigationCatalog = APP_NAVIGATION_CATALOG;
+  expandedNavGroups = new Set<string>(APP_NAVIGATION_CATALOG.map(group => group.key));
+  expandedSubmenuActions = new Set<string>();
+  showLegacyModuleGrid = false;
+  navMenuSearch = '';
+  showModuleSelection = false;
   
   // Nombre de permissions à afficher par défaut dans la liste
   defaultPermissionsDisplayCount = 10;
@@ -267,6 +281,7 @@ export class ProfilComponent implements OnInit {
         this.profilPermissions = pp;
         // Charger les permissions pour tous les modules associés
         this.preloadModulePermissions();
+        this.preloadNavigationModulePermissions();
       });
     }
   }
@@ -285,6 +300,351 @@ export class ProfilComponent implements OnInit {
         this.loadModulePermissionsForDisplay(module);
       }
     });
+  }
+
+  /** Précharge les permissions de tous les modules référencés dans le catalogue navigation. */
+  preloadNavigationModulePermissions(): void {
+    for (const moduleName of getNavigationCatalogModuleNames()) {
+      const module = this.findModuleByName(moduleName);
+      if (module?.id && !this.modulePermissionsCache[module.id] && !this.loadingModulePermissionsSet.has(module.id)) {
+        this.loadModulePermissionsForDisplay(module);
+      }
+    }
+  }
+
+  isNavGroupExpanded(groupKey: string): boolean {
+    return this.expandedNavGroups.has(groupKey);
+  }
+
+  toggleNavGroup(groupKey: string): void {
+    if (this.expandedNavGroups.has(groupKey)) {
+      this.expandedNavGroups.delete(groupKey);
+    } else {
+      this.expandedNavGroups.add(groupKey);
+    }
+  }
+
+  isSubmenuActionsExpanded(submenuKey: string): boolean {
+    return this.expandedSubmenuActions.has(submenuKey);
+  }
+
+  toggleSubmenuActions(submenuKey: string, moduleName?: string): void {
+    if (this.expandedSubmenuActions.has(submenuKey)) {
+      this.expandedSubmenuActions.delete(submenuKey);
+      return;
+    }
+    this.expandedSubmenuActions.add(submenuKey);
+    if (moduleName) {
+      const module = this.findModuleByName(moduleName);
+      if (module) {
+        this.loadModulePermissionsForDisplay(module);
+      }
+    }
+  }
+
+  findModuleByName(moduleName: string): Module | undefined {
+    const normalized = moduleName.trim().toLowerCase();
+    return this.modules.find(module => (module.nom || '').trim().toLowerCase() === normalized);
+  }
+
+  getNavGroupGrantedCount(group: AppNavigationGroup): { granted: number; total: number } {
+    if (group.children?.length) {
+      const granted = group.children.filter(sub => this.hasSubmenuModuleAccess(sub.moduleName)).length;
+      return { granted, total: group.children.length };
+    }
+    if (group.moduleName) {
+      return {
+        granted: this.hasSubmenuModuleAccess(group.moduleName) ? 1 : 0,
+        total: 1
+      };
+    }
+    return { granted: 0, total: 0 };
+  }
+
+  hasSubmenuModuleAccess(moduleName: string): boolean {
+    const module = this.findModuleByName(moduleName);
+    if (!module?.id || !this.selectedProfil) {
+      return false;
+    }
+    return this.profilPermissions.some(pp =>
+      pp.profil?.id === this.selectedProfil!.id
+      && pp.module?.id === module.id
+      && pp.permission?.nom
+      && pp.permission.nom !== 'module_associé'
+    );
+  }
+
+  getSubmenuActionPermissions(moduleName: string): Permission[] {
+    const module = this.findModuleByName(moduleName);
+    if (!module) {
+      return [];
+    }
+    return this.getDisplayedPermissions(module).filter(
+      permission => permission.nom !== 'module_associé'
+    );
+  }
+
+  isSubmenuPermissionsLoading(moduleName: string): boolean {
+    const module = this.findModuleByName(moduleName);
+    return module ? this.isModulePermissionsLoading(module) : false;
+  }
+
+  onSubmenuAccessChange(moduleName: string, event: Event): void {
+    if (!this.selectedProfil) {
+      return;
+    }
+    const checked = (event.target as HTMLInputElement).checked;
+    this.resolveModuleForName(moduleName, module => {
+      if (checked) {
+        this.grantSubmenuAccess(module);
+      } else {
+        this.revokeSubmenuAccess(module);
+      }
+    });
+  }
+
+  onSingleMenuAccessChange(group: AppNavigationGroup, event: Event): void {
+    if (!group.moduleName) {
+      return;
+    }
+    this.onSubmenuAccessChange(group.moduleName, event);
+  }
+
+  private resolveModuleForName(moduleName: string, onReady: (module: Module) => void): void {
+    const existing = this.findModuleByName(moduleName);
+    if (existing) {
+      onReady(existing);
+      return;
+    }
+    this.profilService.createModule({ nom: moduleName }).subscribe({
+      next: (created) => {
+        if (!this.modules.some(module => module.id === created.id)) {
+          this.modules = [...this.modules, created].sort((a, b) =>
+            (a.nom || '').localeCompare(b.nom || '', 'fr')
+          );
+        }
+        onReady(created);
+        this.cd.detectChanges();
+      },
+      error: (error) => {
+        console.error(`Impossible de créer le module « ${moduleName} »:`, error);
+        void this.popupService.showError(
+          `Le module « ${moduleName} » est introuvable et n'a pas pu être créé.`,
+          'Module manquant'
+        );
+      }
+    });
+  }
+
+  private grantSubmenuAccess(module: Module): void {
+    if (!this.selectedProfil?.id || !module.id) {
+      return;
+    }
+    if (this.isModuleAssociated(module)) {
+      return;
+    }
+
+    const applyGrant = (permissions: Permission[]) => {
+      const consulter = permissions.find(permission => permission.nom === 'consulter');
+      const fallback = permissions.find(permission => permission.nom !== 'module_associé');
+      const target = consulter || fallback;
+
+      if (!target?.id) {
+        const fakeEvent = { target: { checked: true } } as unknown as Event;
+        this.toggleModuleAssociation(module, fakeEvent);
+        return;
+      }
+
+      this.withRetry(
+        this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, target.id)
+      ).subscribe({
+        next: (pp) => {
+          if (!this.profilPermissions.some(existing =>
+            existing.id === pp.id
+            || (existing.module?.id === pp.module?.id
+              && existing.permission?.id === pp.permission?.id
+              && existing.profil?.id === pp.profil?.id)
+          )) {
+            this.profilPermissions.push(pp);
+          }
+          this.refreshAllProfilPermissionsForProfil(this.selectedProfil!.id!);
+          this.cd.detectChanges();
+        },
+        error: (error) => {
+          console.error(`Erreur lors de l'activation de l'accès pour ${module.nom}:`, error);
+        }
+      });
+    };
+
+    const cached = this.modulePermissionsCache[module.id];
+    if (cached) {
+      applyGrant(cached);
+      return;
+    }
+
+    this.profilService.getPermissionsForModule(module.id).subscribe({
+      next: (permissions) => {
+        this.modulePermissionsCache[module.id!] = permissions;
+        applyGrant(permissions);
+        this.cd.detectChanges();
+      },
+      error: (error) => {
+        console.error(`Erreur chargement permissions ${module.nom}:`, error);
+      }
+    });
+  }
+
+  private revokeSubmenuAccess(module: Module): void {
+    if (!module.id) {
+      return;
+    }
+    this.deselectAllPermissions(module);
+  }
+
+  togglePermissionForModuleName(moduleName: string, permission: Permission, event: Event): void {
+    const module = this.findModuleByName(moduleName);
+    if (!module) {
+      return;
+    }
+    this.togglePermission(module, permission, event);
+  }
+
+  hasPermissionForModuleName(moduleName: string, permission: Permission): boolean {
+    const module = this.findModuleByName(moduleName);
+    if (!module) {
+      return false;
+    }
+    return this.hasPermission(module, permission);
+  }
+
+  selectAllSubmenuActions(moduleName: string): void {
+    const module = this.findModuleByName(moduleName);
+    if (module) {
+      this.selectAllPermissions(module);
+    }
+  }
+
+  deselectAllSubmenuActions(moduleName: string): void {
+    const module = this.findModuleByName(moduleName);
+    if (module) {
+      this.deselectAllPermissions(module);
+    }
+  }
+
+  trackNavGroup(_index: number, group: AppNavigationGroup): string {
+    return group.key;
+  }
+
+  trackNavSubmenu(_index: number, submenu: AppNavigationSubmenu): string {
+    return submenu.key;
+  }
+
+  getSharedModuleHint(group: AppNavigationGroup, moduleName: string): string | null {
+    if (!group.children?.length) {
+      return null;
+    }
+    const count = group.children.filter(child => child.moduleName === moduleName).length;
+    return count > 1 ? 'Droit partagé avec les autres entrées de ce menu' : null;
+  }
+
+  get filteredNavigationCatalog(): AppNavigationGroup[] {
+    const query = this.navMenuSearch.trim().toLowerCase();
+    if (!query) {
+      return this.navigationCatalog;
+    }
+    return this.navigationCatalog
+      .map(group => {
+        const groupMatch =
+          group.label.toLowerCase().includes(query)
+          || (group.moduleName || '').toLowerCase().includes(query);
+        if (groupMatch) {
+          return group;
+        }
+        const children = group.children?.filter(sub =>
+          sub.label.toLowerCase().includes(query)
+          || sub.moduleName.toLowerCase().includes(query)
+          || sub.route.toLowerCase().includes(query)
+        );
+        if (children?.length) {
+          return { ...group, children };
+        }
+        return null;
+      })
+      .filter((group): group is AppNavigationGroup => group !== null);
+  }
+
+  get totalNavAccessStats(): { granted: number; total: number } {
+    let granted = 0;
+    let total = 0;
+    for (const group of this.navigationCatalog) {
+      const stats = this.getNavGroupGrantedCount(group);
+      granted += stats.granted;
+      total += stats.total;
+    }
+    return { granted, total };
+  }
+
+  get totalNavAccessPercent(): number {
+    const { granted, total } = this.totalNavAccessStats;
+    if (total === 0) {
+      return 0;
+    }
+    return Math.round((granted / total) * 100);
+  }
+
+  getNavGroupProgressPercent(group: AppNavigationGroup): number {
+    const { granted, total } = this.getNavGroupGrantedCount(group);
+    if (total === 0) {
+      return 0;
+    }
+    return Math.round((granted / total) * 100);
+  }
+
+  getNavGroupStatusClass(group: AppNavigationGroup): string {
+    const { granted, total } = this.getNavGroupGrantedCount(group);
+    if (total === 0 || granted === 0) {
+      return 'status-none';
+    }
+    if (granted >= total) {
+      return 'status-full';
+    }
+    return 'status-partial';
+  }
+
+  onNavMenuSearchChange(): void {
+    if (!this.navMenuSearch.trim()) {
+      return;
+    }
+    for (const group of this.filteredNavigationCatalog) {
+      this.expandedNavGroups.add(group.key);
+    }
+  }
+
+  clearNavMenuSearch(): void {
+    this.navMenuSearch = '';
+  }
+
+  expandAllNavGroups(): void {
+    for (const group of this.filteredNavigationCatalog) {
+      this.expandedNavGroups.add(group.key);
+    }
+  }
+
+  collapseAllNavGroups(): void {
+    for (const group of this.filteredNavigationCatalog) {
+      this.expandedNavGroups.delete(group.key);
+    }
+  }
+
+  collapseAllSubmenuActions(): void {
+    this.expandedSubmenuActions.clear();
+  }
+
+  closeDroitsPanel(): void {
+    this.selectedProfil = null;
+    this.profilPermissions = [];
+    this.expandedSubmenuActions.clear();
+    this.navMenuSearch = '';
   }
 
   createProfil() {

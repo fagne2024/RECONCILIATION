@@ -119,6 +119,46 @@
             {{ showEcartColumns ? 'Masquer écarts' : 'Écarts & taux' }}
           </button>
         </div>
+        <div class="ci-env-validation-bar" *ngIf="envValidationTotalCount">
+          <div class="ci-env-validation-status">
+            <span class="ci-env-validation-title">
+              <i class="fas fa-layer-group"></i>
+              Validation ENV {{ envValidationLabel }}
+            </span>
+            <span class="ci-env-validation-count" [class.ci-env-validation-count--done]="isEnvScopeFullyValidated">
+              {{ envValidationValidatedCount }} / {{ envValidationTotalCount }} service(s) validé(s)
+            </span>
+            <span class="ci-env-validation-badge ci-pill ci-pill--ok" *ngIf="isEnvScopeFullyValidated">
+              <i class="fas fa-check-circle"></i> ENV validé
+            </span>
+            <span class="ci-env-validation-badge ci-pill ci-pill--validation" *ngIf="!isEnvScopeFullyValidated">
+              En cours
+            </span>
+          </div>
+          <div class="ci-env-validation-actions" *ngIf="canValidateControleInterne || canRevokeControleInterne">
+            <button
+              type="button"
+              class="ci-btn-validate ci-btn-validate--env"
+              *ngIf="canValidateControleInterne && envValidationPendingCount > 0"
+              [disabled]="!canValidateEnvScope"
+              (click)="validerParEnv()"
+            >
+              <i class="fas" [ngClass]="validatingEnvBulk ? 'fa-spinner fa-spin' : 'fa-check-double'"></i>
+              Valider tout l'ENV
+            </button>
+            <button
+              type="button"
+              class="ci-btn-revoke ci-btn-revoke--env"
+              *ngIf="canRevokeControleInterne && envValidationValidatedCount > 0"
+              [disabled]="!canRevokeEnvScope"
+              (click)="annulerValidationParEnv()"
+              title="Annuler toutes les validations de cet ENV (administrateur)"
+            >
+              <i class="fas" [ngClass]="validatingEnvBulk ? 'fa-spinner fa-spin' : 'fa-undo'"></i>
+              Annuler tout l'ENV
+            </button>
+          </div>
+        </div>
         <div class="ci-section-totals" *ngIf="monthlyRows.length">
           <div class="ci-total-card ci-total-card--meta">
             <span class="ci-total-label">Lignes</span>
@@ -179,7 +219,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let row of monthlyRows; trackBy: trackByRow">
+              <tr *ngFor="let row of paginatedMonthlyRows; trackBy: trackByRow">
                 <td class="ci-col-month">{{ row.monthLabel }}</td>
                 <td class="ci-col-service ci-service" [title]="row.service">{{ row.service }}</td>
                 <td class="ci-col-tickets ci-tickets-cell">
@@ -253,6 +293,61 @@
               </tr>
             </tfoot>
           </table>
+        </div>
+        <div class="ci-pagination" *ngIf="monthlyRows.length > itemsPerPage">
+          <div class="ci-pagination-info">
+            Affichage de {{ getMonthlyPaginationStartIndex() }} à {{ getMonthlyPaginationEndIndex() }}
+            sur {{ monthlyRows.length | number:'1.0-0' }} ligne(s)
+          </div>
+          <div class="ci-pagination-controls">
+            <button
+              type="button"
+              class="ci-pagination-btn"
+              (click)="goToMonthlyPage(1)"
+              [disabled]="currentPage === 1"
+              title="Première page"
+            >
+              <i class="fas fa-angle-double-left"></i>
+            </button>
+            <button
+              type="button"
+              class="ci-pagination-btn"
+              (click)="previousMonthlyPage()"
+              [disabled]="currentPage === 1"
+              title="Page précédente"
+            >
+              <i class="fas fa-angle-left"></i>
+            </button>
+            <div class="ci-page-numbers">
+              <button
+                type="button"
+                *ngFor="let page of getMonthlyPageNumbers()"
+                class="ci-page-number"
+                [class.ci-page-number--active]="page === currentPage"
+                (click)="goToMonthlyPage(page)"
+              >
+                {{ page }}
+              </button>
+            </div>
+            <button
+              type="button"
+              class="ci-pagination-btn"
+              (click)="nextMonthlyPage()"
+              [disabled]="currentPage === totalPages"
+              title="Page suivante"
+            >
+              <i class="fas fa-angle-right"></i>
+            </button>
+            <button
+              type="button"
+              class="ci-pagination-btn"
+              (click)="goToMonthlyPage(totalPages)"
+              [disabled]="currentPage === totalPages"
+              title="Dernière page"
+            >
+              <i class="fas fa-angle-double-right"></i>
+            </button>
+          </div>
         </div>
         <ng-template #noMonthly>
           <p class="ci-empty">Aucune donnée pour ce périmètre.</p>

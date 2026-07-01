@@ -13,7 +13,7 @@ export function normalizeColumnKey(columnName: string): string {
 
 /** Trouve la clé réelle dans une ligne à partir du nom configuré. */
 export function resolveColumnKeyInRow(row: Record<string, string>, column: string): string | null {
-  if (!column) {
+  if (!column || !row) {
     return null;
   }
 
@@ -48,6 +48,10 @@ export function resolveCanonicalColumnKeysInRow(
   row: Record<string, string>,
   column: string
 ): string[] {
+  if (!row) {
+    return [];
+  }
+
   const primary = resolveColumnKeyInRow(row, column);
   if (!primary) {
     return [];

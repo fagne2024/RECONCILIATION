@@ -3,6 +3,7 @@ import {
   AutoProcessingModel,
   ColumnProcessingRule,
   DEFAULT_PRE_PROCESSING_SECTION_ORDER,
+  ENV_COLUMN_NAME,
   ModelFormatAction,
   ModelPreProcessingConfig,
   ModelPreProcessingSectionId,
@@ -15,7 +16,11 @@ import {
   parseConditionValues
 } from './auto-processing.service';
 import { buildConcatenatedValue } from '../utils/concat.util';
-import { getOrangeMoneyAliasHeadersForColumn } from '../utils/bilingual-column.util';
+import {
+  BO_RECONCILIATION_KEY_ALIASES,
+  PARTNER_REFERENCE_KEY_ALIASES
+} from '../utils/reconciliation-key.util';
+import { getOrangeMoneyAliasHeadersForColumn, dedupeBilingualColumnNames } from '../utils/bilingual-column.util';
 import { parseAmountValue } from '../utils/record-amount.util';
 import {
   normalizeColumnKey,
@@ -29,9 +34,12 @@ import {
   preserveLeadingZeroString,
   normalizeLeadingZeroCellsInRows,
   keepCharactersFromString,
-  finalizeAfterKeepCharacters,
+  finalizeRemoveCharactersCell,
   isMsisdnPreserveColumn
 } from '../utils/text-cell.util';
+
+/** Aligné sur COLUMN_RULES_SYNC_THRESHOLD : pas de micro-lots ni yield en dessous. */
+const PREPROCESS_INLINE_THRESHOLD = 20000;
 
 interface PrecomputedFormatTarget {
   keys: readonly string[];
@@ -74,6 +82,9 @@ export class ModelPreProcessingService {
             await options?.onProgress?.('Filtres du modèle...', 0, result.length);
             await options?.yieldFn?.();
             result = await this.applyRowFiltersAsync(result, config.rowFilters, batchSize, options);
+            if (!result.length) {
+              return result;
+            }
           }
           break;
         case 'formatActions':
@@ -127,7 +138,62 @@ export class ModelPreProcessingService {
       }
     }
 
+    result = this.applyEnvColumnToRows(result, config);
+
     return normalizeLeadingZeroCellsInRows(result);
+  }
+
+  private applyEnvColumnToRows(
+    rows: Record<string, string>[],
+    config?: ModelPreProcessingConfig | null
+  ): Record<string, string>[] {
+    const envValue = this.getActiveEnvColumnValue(config);
+    if (!envValue || !rows.length) {
+      return rows;
+    }
+
+    for (const row of rows) {
+      row[ENV_COLUMN_NAME] = envValue;
+    }
+    return rows;
+  }
+
+  getActiveEnvColumnValue(config?: ModelPreProcessingConfig | null): string | null {
+    if (!config?.envColumn?.enabled) {
+      return null;
+    }
+    const value = String(config.envColumn.value ?? '').trim();
+    return value || null;
+  }
+
+  isEnvColumnEnabled(config?: ModelPreProcessingConfig | null): boolean {
+    return this.getActiveEnvColumnValue(config) !== null;
+  }
+
+  isExportColumnFilterEnabled(config?: ModelPreProcessingConfig | null): boolean {
+    return !!config?.exportColumnFilter?.enabled;
+  }
+
+  buildExportColumnKeepMap(
+    catalog: string[],
+    filter?: { enabled?: boolean; keptColumns?: string[] } | null
+  ): Record<string, boolean> {
+    const map: Record<string, boolean> = {};
+    if (!catalog.length) {
+      return map;
+    }
+    const keptSet = filter?.keptColumns?.length ? new Set(filter.keptColumns) : null;
+    for (const col of catalog) {
+      map[col] = keptSet ? keptSet.has(col) : true;
+    }
+    return map;
+  }
+
+  getKeptExportColumns(
+    catalog: string[],
+    keepMap: Record<string, boolean>
+  ): string[] {
+    return catalog.filter(col => keepMap[col] !== false);
   }
 
   private async mapRowsBatched(
@@ -144,10 +210,19 @@ export class ModelPreProcessingService {
       return rows;
     }
 
-    const effectiveBatch = rows.length > 50000 ? batchSize : Math.min(batchSize, 500);
+    const inlineLimit = options?.yieldFn ? 8000 : PREPROCESS_INLINE_THRESHOLD;
+    if (rows.length <= inlineLimit) {
+      for (let i = 0; i < rows.length; i++) {
+        const updated = mapRow(rows[i]);
+        if (updated !== rows[i]) {
+          rows[i] = updated;
+        }
+      }
+      return rows;
+    }
+
+    const effectiveBatch = rows.length > 50000 ? batchSize : Math.min(batchSize, 5000);
     for (let start = 0; start < rows.length; start += effectiveBatch) {
-      await options?.onProgress?.(message, start, rows.length);
-      await options?.yieldFn?.();
       const end = Math.min(start + effectiveBatch, rows.length);
       for (let i = start; i < end; i++) {
         const updated = mapRow(rows[i]);
@@ -155,10 +230,16 @@ export class ModelPreProcessingService {
           rows[i] = updated;
         }
       }
-      await options?.onProgress?.(message, end, rows.length);
-      await options?.yieldFn?.();
+      if (end < rows.length) {
+        await options?.onProgress?.(message, end, rows.length);
+        await options?.yieldFn?.();
+      }
     }
     return rows;
+  }
+
+  private findSampleDataRow(rows: Record<string, string>[]): Record<string, string> | null {
+    return rows.find(row => row && Object.keys(row).length > 0) ?? null;
   }
 
   private async applyFormatActionsAsync(
@@ -171,7 +252,7 @@ export class ModelPreProcessingService {
     }
   ): Promise<Record<string, string>[]> {
     const enabledActions = actions.filter(action => action.enabled && action.columns?.length);
-    if (!enabledActions.length) {
+    if (!enabledActions.length || !rows.length) {
       return rows;
     }
 
@@ -179,23 +260,30 @@ export class ModelPreProcessingService {
       (a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER)
     );
 
-    const plan = this.buildFormatActionPlan(rows[0], orderedActions);
+    const sampleRow = this.findSampleDataRow(rows);
+    if (!sampleRow) {
+      return rows;
+    }
+
+    const plan = this.buildFormatActionPlan(sampleRow, orderedActions);
     if (!plan.length) {
       return rows;
     }
 
-    const macroBatch = rows.length > 50000 ? batchSize : Math.min(batchSize, 200);
-    const microBatch = rows.length > 50000 ? 200 : 50;
+    const inlineLimit = options?.yieldFn ? 8000 : PREPROCESS_INLINE_THRESHOLD;
+    if (rows.length <= inlineLimit) {
+      this.applyFormatPlanToRows(rows, plan, 0, rows.length);
+      return rows;
+    }
+
+    const macroBatch = rows.length > 50000 ? batchSize : Math.min(batchSize, 2000);
     const progressMessage = 'Formatage du modèle...';
 
     for (let start = 0; start < rows.length; start += macroBatch) {
       const macroEnd = Math.min(start + macroBatch, rows.length);
-      for (let micro = start; micro < macroEnd; micro += microBatch) {
-        const microEnd = Math.min(micro + microBatch, macroEnd);
-        await options?.onProgress?.(progressMessage, micro, rows.length);
-        await options?.yieldFn?.();
-        this.applyFormatPlanToRows(rows, plan, micro, microEnd);
-        await options?.onProgress?.(progressMessage, microEnd, rows.length);
+      this.applyFormatPlanToRows(rows, plan, start, macroEnd);
+      if (macroEnd < rows.length) {
+        await options?.onProgress?.(progressMessage, macroEnd, rows.length);
         await options?.yieldFn?.();
       }
     }
@@ -211,7 +299,7 @@ export class ModelPreProcessingService {
 
     for (const action of orderedActions) {
       for (const column of action.columns) {
-        const keys = resolveCanonicalColumnKeysInRow(sampleRow, column);
+        const keys = this.resolveFormatActionColumnKeys(sampleRow, column);
         if (!keys.length) {
           continue;
         }
@@ -257,6 +345,9 @@ export class ModelPreProcessingService {
   ): void {
     for (let i = start; i < end; i++) {
       const row = rows[i];
+      if (!row) {
+        continue;
+      }
       for (const target of plan) {
         if (target.conditionColumnKey && target.expectedValues?.size) {
           const conditionValue = String(row[target.conditionColumnKey] ?? '').trim();
@@ -295,12 +386,12 @@ export class ModelPreProcessingService {
           continue;
         }
 
-        const key = resolveColumnKeyInRow(row, column);
-        if (!key) {
+        const columnKeys = this.resolveFormatActionColumnKeys(row, column);
+        if (!columnKeys.length) {
           continue;
         }
 
-        const rawValue = row[key];
+        const rawValue = row[columnKeys[0]];
         if (rawValue === undefined || rawValue === null) {
           continue;
         }
@@ -308,11 +399,11 @@ export class ModelPreProcessingService {
         const formattedValue = this.applyFormatActionToValue(
           this.coerceFormatCellValue(rawValue),
           merged,
-          key
+          columnKeys[0]
         );
-        const storedValue = this.finalizeFormatColumnValue(key, merged, formattedValue);
+        const storedValue = this.finalizeFormatColumnValue(columnKeys[0], merged, formattedValue);
 
-        for (const aliasKey of resolveCanonicalColumnKeysInRow(row, column)) {
+        for (const aliasKey of columnKeys) {
           row[aliasKey] = this.finalizeFormatColumnValue(aliasKey, merged, storedValue);
         }
       }
@@ -400,9 +491,13 @@ export class ModelPreProcessingService {
         continue;
       }
       const currentValue = String(row[key]);
-      if (currentValue === mapping.fromValue) {
-        row[key] = mapping.toValue;
+      if (currentValue !== mapping.fromValue) {
+        continue;
       }
+      if (!this.valueMappingConditionMatches(row, mapping)) {
+        continue;
+      }
+      row[key] = mapping.toValue;
     }
     return row;
   }
@@ -425,7 +520,7 @@ export class ModelPreProcessingService {
     rules: ModelColumnRenameRule[]
   ): ResolvedColumnRenameRule[] {
     const activeRules = this.getActiveColumnRenameRules(rules);
-    if (!activeRules.length) {
+    if (!activeRules.length || !sampleRow) {
       return [];
     }
 
@@ -568,6 +663,8 @@ export class ModelPreProcessingService {
       }
     }
 
+    result = this.applyEnvColumnToRows(result, config);
+
     return normalizeLeadingZeroCellsInRows(result);
   }
 
@@ -591,6 +688,9 @@ export class ModelPreProcessingService {
       }
 
       filtered = filtered.filter(row => {
+        if (!row) {
+          return false;
+        }
         const key = resolveColumnKeyInRow(row, filter.column);
         if (!key) {
           return false;
@@ -615,6 +715,11 @@ export class ModelPreProcessingService {
       return rows;
     }
 
+    const inlineLimit = options?.yieldFn ? 8000 : PREPROCESS_INLINE_THRESHOLD;
+    if (rows.length <= inlineLimit) {
+      return this.applyRowFilters(rows, filters);
+    }
+
     let filtered = rows;
     for (const filter of filters) {
       if (!filter.enabled || !filter.column || !filter.selectedValues?.length) {
@@ -629,6 +734,9 @@ export class ModelPreProcessingService {
         const end = Math.min(start + batchSize, filtered.length);
         for (let i = start; i < end; i++) {
           const row = filtered[i];
+          if (!row) {
+            continue;
+          }
           const key = resolveColumnKeyInRow(row, filter.column);
           if (key && filter.selectedValues.includes(String(row[key] ?? ''))) {
             next.push(row);
@@ -648,7 +756,7 @@ export class ModelPreProcessingService {
     actions: ModelFormatAction[]
   ): Record<string, string>[] {
     const enabledActions = actions.filter(action => action.enabled && action.columns?.length);
-    if (!enabledActions.length) {
+    if (!enabledActions.length || !rows.length) {
       return rows;
     }
 
@@ -656,7 +764,12 @@ export class ModelPreProcessingService {
       (a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER)
     );
 
-    const plan = this.buildFormatActionPlan(rows[0], orderedActions);
+    const sampleRow = this.findSampleDataRow(rows);
+    if (!sampleRow) {
+      return rows;
+    }
+
+    const plan = this.buildFormatActionPlan(sampleRow, orderedActions);
     if (!plan.length) {
       return rows;
     }
@@ -724,6 +837,237 @@ export class ModelPreProcessingService {
     }
 
     return rows.map(row => this.applyValueMappingsToRow(row, mappings));
+  }
+
+  private resolveFormatActionColumnKeys(
+    sampleRow: Record<string, string>,
+    column: string
+  ): string[] {
+    const keys = resolveCanonicalColumnKeysInRow(sampleRow, column);
+    if (keys.length) {
+      return keys;
+    }
+
+    const direct = resolveColumnKeyInRow(sampleRow, column);
+    if (direct) {
+      return [direct];
+    }
+
+    for (const alias of getOrangeMoneyAliasHeadersForColumn(column)) {
+      const aliasKey = resolveColumnKeyInRow(sampleRow, alias);
+      if (aliasKey) {
+        return [aliasKey];
+      }
+    }
+
+    const normalizedTarget = this.normalizeColumnKey(column);
+    for (const key of Object.keys(sampleRow)) {
+      if (this.normalizeColumnKey(key) === normalizedTarget) {
+        return [key];
+      }
+    }
+
+    return [];
+  }
+
+  /**
+   * Colonnes clé de réconciliation pour la déduplication du fichier final.
+   */
+  resolveReconciliationDedupColumnKeys(
+    model: AutoProcessingModel,
+    sampleRow: Record<string, string>
+  ): string[] {
+    if (!sampleRow || !Object.keys(sampleRow).length) {
+      return [];
+    }
+
+    const resolved: string[] = [];
+    const addCandidates = (candidates: string[]) => {
+      for (const candidate of candidates) {
+        const key = resolveColumnKeyInRow(sampleRow, candidate);
+        if (key && !resolved.includes(key)) {
+          resolved.push(key);
+        }
+      }
+    };
+
+    const rk = model.reconciliationKeys;
+    addCandidates(rk?.partnerKeys || []);
+    addCandidates(rk?.boKeys || []);
+
+    if (rk?.partnerConditionalKeys?.defaultKeyColumn?.trim()) {
+      addCandidates([rk.partnerConditionalKeys.defaultKeyColumn.trim()]);
+    }
+
+    if (rk?.boModelKeys) {
+      for (const cols of Object.values(rk.boModelKeys)) {
+        addCandidates((cols as string[]) || []);
+      }
+    }
+
+    const modelHint = `${model.name || ''} ${model.filePattern || ''} ${model.templateFile || ''}`.toLowerCase();
+    if (modelHint.includes('airtel')) {
+      addCandidates([
+        'Transaction ID',
+        'Transaction Id',
+        'transaction_id',
+        'External Transaction Id',
+        'external_transaction_id',
+        'Record No',
+        'S. No.',
+        'S.No',
+        'Sender MSISDN',
+        'Payer Mobile Number',
+        'Receiver MSISDN',
+        ...PARTNER_REFERENCE_KEY_ALIASES
+      ]);
+    }
+    if (modelHint.includes('trxbo') || modelHint.includes('orange') || modelHint.includes('oppart')) {
+      addCandidates([
+        'IDTransaction',
+        'Numéro Trans GU',
+        'Numero Trans GU',
+        'numeroTransGU',
+        'CLE',
+        ...BO_RECONCILIATION_KEY_ALIASES
+      ]);
+    }
+
+    if (!resolved.length) {
+      addCandidates([...PARTNER_REFERENCE_KEY_ALIASES, ...BO_RECONCILIATION_KEY_ALIASES]);
+    }
+
+    return resolved;
+  }
+
+  /**
+   * Résout les noms de colonnes configurés vers les clés réelles présentes dans les données.
+   */
+  resolveDedupColumnKeysInRows(
+    sampleRow: Record<string, string>,
+    configuredColumns: string[]
+  ): string[] {
+    const resolved: string[] = [];
+    for (const column of configuredColumns || []) {
+      const trimmed = column?.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const key = resolveColumnKeyInRow(sampleRow, trimmed);
+      if (key && !resolved.includes(key)) {
+        resolved.push(key);
+      }
+    }
+    return resolved;
+  }
+
+  /**
+   * Supprime les doublons selon les colonnes choisies par l'utilisateur (section Traitement).
+   */
+  deduplicateRowsByConfiguredColumns(
+    rows: Record<string, string>[],
+    configuredColumns: string[],
+    model?: AutoProcessingModel
+  ): {
+    uniqueRows: Record<string, string>[];
+    duplicatesRemoved: number;
+    dedupColumns: string[];
+  } {
+    if (!rows.length) {
+      return { uniqueRows: [], duplicatesRemoved: 0, dedupColumns: [] };
+    }
+
+    const sampleRow = rows.find(r => Object.keys(r).length > 0) || rows[0];
+    let dedupColumns = this.resolveDedupColumnKeysInRows(sampleRow, configuredColumns);
+
+    if (!dedupColumns.length && model) {
+      dedupColumns = this.resolveReconciliationDedupColumnKeys(model, sampleRow);
+    }
+
+    if (!dedupColumns.length) {
+      return this.deduplicateRowsByAllColumns(rows);
+    }
+
+    return this.deduplicateRowsByResolvedColumns(rows, dedupColumns);
+  }
+
+  /**
+   * Supprime les doublons du fichier final sur la clé de réconciliation du modèle.
+   */
+  deduplicateRowsByReconciliationKey(
+    model: AutoProcessingModel,
+    rows: Record<string, string>[]
+  ): {
+    uniqueRows: Record<string, string>[];
+    duplicatesRemoved: number;
+    dedupColumns: string[];
+  } {
+    if (!rows.length) {
+      return { uniqueRows: [], duplicatesRemoved: 0, dedupColumns: [] };
+    }
+
+    const sampleRow = rows.find(r => Object.keys(r).length > 0) || rows[0];
+    const dedupColumns = this.resolveReconciliationDedupColumnKeys(model, sampleRow);
+
+    if (!dedupColumns.length) {
+      return this.deduplicateRowsByAllColumns(rows);
+    }
+
+    return this.deduplicateRowsByResolvedColumns(rows, dedupColumns);
+  }
+
+  private deduplicateRowsByResolvedColumns(
+    rows: Record<string, string>[],
+    dedupColumns: string[]
+  ): {
+    uniqueRows: Record<string, string>[];
+    duplicatesRemoved: number;
+    dedupColumns: string[];
+  } {
+    const seen = new Set<string>();
+    const uniqueRows: Record<string, string>[] = [];
+    let duplicatesRemoved = 0;
+
+    for (const row of rows) {
+      const key = dedupColumns
+        .map(col => String(row[col] ?? '').trim().toLowerCase())
+        .join('\u0001');
+      if (seen.has(key)) {
+        duplicatesRemoved++;
+        continue;
+      }
+      seen.add(key);
+      uniqueRows.push(row);
+    }
+
+    return { uniqueRows, duplicatesRemoved, dedupColumns };
+  }
+
+  private deduplicateRowsByAllColumns(rows: Record<string, string>[]): {
+    uniqueRows: Record<string, string>[];
+    duplicatesRemoved: number;
+    dedupColumns: string[];
+  } {
+    const seen = new Set<string>();
+    const uniqueRows: Record<string, string>[] = [];
+    let duplicatesRemoved = 0;
+    const orderedKeys = Object.keys(rows[0] || {});
+
+    for (const row of rows) {
+      let key = '';
+      for (let i = 0; i < orderedKeys.length; i++) {
+        const k = orderedKeys[i];
+        key += `${row[k] ?? ''}\u0001`;
+      }
+      if (seen.has(key)) {
+        duplicatesRemoved++;
+        continue;
+      }
+      seen.add(key);
+      uniqueRows.push(row);
+    }
+
+    return { uniqueRows, duplicatesRemoved, dedupColumns: orderedKeys };
   }
 
   private mergeFormatActionForColumn(action: ModelFormatAction, column: string): ModelFormatAction {
@@ -866,13 +1210,11 @@ export class ModelPreProcessingService {
     }
 
     if (columnName && action.type === 'removeCharacters') {
-      if (action.removeCharMode === 'keep') {
-        const keepCount = Math.max(1, Number(action.removeCharCount) || 1);
-        return finalizeAfterKeepCharacters(columnName, result, keepCount);
-      }
-      return isMsisdnPreserveColumn(columnName)
-        ? finalizeTextPreserveColumnValue(columnName, result)
-        : result;
+      return finalizeRemoveCharactersCell(columnName, result, {
+        removeCharMode: action.removeCharMode ?? 'remove',
+        removeCharCount: action.removeCharCount,
+        leadingZeroMode: action.leadingZeroMode
+      });
     }
 
     return result;
@@ -883,13 +1225,14 @@ export class ModelPreProcessingService {
     action: ModelFormatAction,
     value: string
   ): string {
-    if (action.type === 'removeCharacters' && action.removeCharMode === 'keep') {
-      const keepCount = Math.max(1, Number(action.removeCharCount) || 1);
-      return finalizeAfterKeepCharacters(columnName, value, keepCount);
+    if (action.type === 'removeCharacters') {
+      return finalizeRemoveCharactersCell(columnName, value, {
+        removeCharMode: action.removeCharMode ?? 'remove',
+        removeCharCount: action.removeCharCount,
+        leadingZeroMode: action.leadingZeroMode
+      });
     }
-    return isMsisdnPreserveColumn(columnName)
-      ? finalizeTextPreserveColumnValue(columnName, value)
-      : value;
+    return value;
   }
 
   private applyRemoveSpecialString(value: string, action: ModelFormatAction): string {
@@ -1073,7 +1416,8 @@ export class ModelPreProcessingService {
       || this.getActiveColumnConcatRules(config?.columnConcatRules).length > 0
       || this.getActiveColumnMathRules(config?.columnMathRules).length > 0
       || this.getActiveValueMappings(config?.valueMappings).length > 0
-      || this.getActiveColumnRenameRules(config?.columnRenameRules).length > 0;
+      || this.getActiveColumnRenameRules(config?.columnRenameRules).length > 0
+      || this.isEnvColumnEnabled(config);
   }
 
   /** Colonnes référencées par la config pré-traitement (filtres, formatage, etc.). */
@@ -1116,6 +1460,9 @@ export class ModelPreProcessingService {
     for (const mapping of this.getActiveValueMappings(config?.valueMappings)) {
       if (mapping.column) {
         columns.add(mapping.column);
+      }
+      if (mapping.conditionColumn?.trim()) {
+        columns.add(mapping.conditionColumn.trim());
       }
     }
 
@@ -1168,6 +1515,9 @@ export class ModelPreProcessingService {
       if (mapping.column) {
         columns.add(mapping.column);
       }
+      if (mapping.conditionColumn?.trim()) {
+        columns.add(mapping.conditionColumn.trim());
+      }
     }
 
     for (const rule of this.getActiveColumnRenameRules(config?.columnRenameRules)) {
@@ -1199,6 +1549,22 @@ export class ModelPreProcessingService {
         && mapping.fromValue !== null
         && String(mapping.fromValue).length > 0
     );
+  }
+
+  private valueMappingConditionMatches(
+    row: Record<string, string>,
+    mapping: ModelColumnValueMapping
+  ): boolean {
+    const conditionColumn = (mapping.conditionColumn ?? '').trim();
+    const conditionValue = (mapping.conditionValue ?? '').trim();
+    if (!conditionColumn || !conditionValue) {
+      return true;
+    }
+    const conditionKey = resolveColumnKeyInRow(row, conditionColumn);
+    if (!conditionKey) {
+      return false;
+    }
+    return String(row[conditionKey] ?? '') === conditionValue;
   }
 
   getActiveColumnConcatRules(rules?: ModelColumnConcatRule[] | null): ModelColumnConcatRule[] {
@@ -1284,6 +1650,15 @@ export class ModelPreProcessingService {
     if (columnRenameRules.length) {
       parts.push(`${columnRenameRules.length} renommage(s) d'en-têtes`);
     }
+    if (this.isEnvColumnEnabled(config)) {
+      parts.push(`colonne ${ENV_COLUMN_NAME}`);
+    }
+    if (this.isExportColumnFilterEnabled(config)) {
+      const kept = config?.exportColumnFilter?.keptColumns?.length ?? 0;
+      parts.push(kept > 0
+        ? `export : ${kept} colonne(s) conservée(s)`
+        : 'filtrage colonnes export');
+    }
 
     const detailLines: string[] = [];
     filters.forEach(filter => {
@@ -1307,11 +1682,30 @@ export class ModelPreProcessingService {
       );
     });
     valueMappings.forEach(mapping => {
-      detailLines.push(`• Renommage : ${mapping.column} — « ${mapping.fromValue} » → « ${mapping.toValue} »`);
+      const conditionColumn = (mapping.conditionColumn ?? '').trim();
+      const conditionValue = (mapping.conditionValue ?? '').trim();
+      const conditionSuffix = conditionColumn && conditionValue
+        ? ` [si ${conditionColumn} = « ${conditionValue} »]`
+        : '';
+      detailLines.push(
+        `• Renommage : ${mapping.column} — « ${mapping.fromValue} » → « ${mapping.toValue} »${conditionSuffix}`
+      );
     });
     columnRenameRules.forEach(rule => {
       detailLines.push(`• En-tête : ${rule.sourceColumn} → ${rule.targetColumn}`);
     });
+    const envValue = this.getActiveEnvColumnValue(config);
+    if (envValue) {
+      detailLines.push(`• ${ENV_COLUMN_NAME} : ${envValue}`);
+    }
+    if (this.isExportColumnFilterEnabled(config)) {
+      const kept = config?.exportColumnFilter?.keptColumns || [];
+      detailLines.push(
+        kept.length
+          ? `• Export : ${kept.length} colonne(s) — ${kept.join(', ')}`
+          : `• Export : toutes les colonnes du catalogue`
+      );
+    }
 
     return {
       activeFilterCount: filters.length,
@@ -1357,7 +1751,12 @@ export class ModelPreProcessingService {
           : action.removeCharPosition === 'specific'
             ? `position ${action.removeCharSpecificPosition ?? 1}`
             : 'début';
-        return `${columns} — ${mode} ${action.removeCharCount ?? 1} caractère(s) depuis la ${position}${conditionSuffix}`;
+        const leadingZeroSuffix = action.leadingZeroMode === 'keep'
+          ? ', zéro initial conservé'
+          : action.leadingZeroMode === 'strip'
+            ? ', zéro initial supprimé'
+            : '';
+        return `${columns} — ${mode} ${action.removeCharCount ?? 1} caractère(s) depuis la ${position}${leadingZeroSuffix}${conditionSuffix}`;
       }
       case 'removeNumbers':
         return `${columns} — supprimer les chiffres${conditionSuffix}`;
@@ -1458,6 +1857,9 @@ export class ModelPreProcessingService {
       }
       for (const mapping of this.getActiveValueMappings(cfg.valueMappings)) {
         addInput(mapping.column);
+        if (mapping.conditionColumn?.trim()) {
+          addInput(mapping.conditionColumn.trim());
+        }
         addOutput(mapping.column);
       }
     }
@@ -1466,6 +1868,12 @@ export class ModelPreProcessingService {
       output,
       this.getActiveColumnRenameRules(cfg?.columnRenameRules)
     );
+
+    if (this.isEnvColumnEnabled(cfg)) {
+      if (!outputColumns.includes(ENV_COLUMN_NAME)) {
+        outputColumns.push(ENV_COLUMN_NAME);
+      }
+    }
 
     return {
       inputColumns: [...input],
@@ -1522,6 +1930,15 @@ export class ModelPreProcessingService {
         'Utilisateur', 'Montant', 'Date dernier traitement', 'Latitude',
         'Longitude', 'Partenaire dist ID', 'Agence SC', 'Groupe reseau SC',
         'Agent SC', 'PDA SC'
+      ];
+    }
+
+    if (key.includes('airtel')) {
+      return [
+        'Transaction ID', 'S. No.', 'Record No', 'Sender MSISDN', 'Payer Mobile Number',
+        'Receiver MSISDN', 'Transaction Amount', 'Transaction Date', 'Transaction Type',
+        'External Transaction Id', 'Service Charge', 'Previous Balance', 'Post Balance',
+        'Status', 'Reference Number'
       ];
     }
 
@@ -1607,7 +2024,11 @@ export class ModelPreProcessingService {
       add(col);
     }
 
-    return catalog;
+    if (this.isEnvColumnEnabled(cfg)) {
+      add(ENV_COLUMN_NAME);
+    }
+
+    return dedupeBilingualColumnNames(catalog, defaults);
   }
 
   private applyRenameRulesToOutputColumns(
@@ -1749,7 +2170,7 @@ export class ModelPreProcessingService {
       .map(col => col.trim())
       .filter(col => !this.isBlankColumnName(col));
 
-    return rows.map(row => {
+    const projectedRows = rows.map(row => {
       const projected: Record<string, string> = {};
       for (const col of orderedColumns) {
         projected[col] = this.resolveRowColumnValueWithAliases(
@@ -1760,6 +2181,8 @@ export class ModelPreProcessingService {
       }
       return projected;
     });
+
+    return this.filterRowsToColumns(projectedRows, orderedColumns);
   }
 
   private buildOutputColumnAliases(

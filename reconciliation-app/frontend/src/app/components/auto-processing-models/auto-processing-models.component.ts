@@ -1,10 +1,11 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { FormBuilder, FormGroup, Validators, FormArray } from '@angular/forms';
-import { AutoProcessingService, AutoProcessingModel, DEFAULT_PRE_PROCESSING_SECTION_ORDER, ModelColumnMathRule, ModelFormatAction, ModelFormatActionType, ModelFormatColumnSettings, ModelPreProcessingConfig, ModelPreProcessingSectionId, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule, PartnerConditionalKeyRule, PartnerConditionalKeysConfig, BoConditionalKeysConfig } from '../../services/auto-processing.service';
+import { AutoProcessingService, AutoProcessingModel, DEFAULT_PRE_PROCESSING_SECTION_ORDER, ENV_COLUMN_NAME, ENV_COLUMN_OPTIONS, EnvColumnOption, ModelColumnMathRule, ModelFormatAction, ModelFormatActionType, ModelFormatColumnSettings, ModelPreProcessingConfig, ModelPreProcessingSectionId, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule, ModelColumnRenameRule, ModelEnvColumnConfig, ModelExportColumnFilterConfig, PartnerConditionalKeyRule, PartnerConditionalKeysConfig, BoConditionalKeysConfig } from '../../services/auto-processing.service';
 import { FileWatcherService } from '../../services/file-watcher.service';
 import { ModelManagementService } from '../../services/model-management.service';
 import { PopupService } from '../../services/popup.service';
+import { ModelPreProcessingService } from '../../services/model-preprocessing.service';
 
 // Interface pour les règles de traitement des colonnes
 interface ColumnProcessingRule {
@@ -65,6 +66,15 @@ export class AutoProcessingModelsComponent implements OnInit {
   showColumnMathSection = false;
   showValueMappingsSection = false;
   showColumnRenameSection = false;
+  showEnvColumnSection = false;
+  showExportColumnFilterSection = false;
+  modelEnvColumnEnabled = false;
+  modelEnvColumnValue: EnvColumnOption | '' = '';
+  modelExportColumnFilterEnabled = false;
+  modelExportColumns: string[] = [];
+  modelExportColumnKeepMap: Record<string, boolean> = {};
+  readonly envColumnName = ENV_COLUMN_NAME;
+  readonly envColumnOptions = ENV_COLUMN_OPTIONS;
   modelRowFilters: ModelRowFilter[] = [];
   modelFormatActions: ModelFormatAction[] = [];
   modelColumnConcatRules: ModelColumnConcatRule[] = [];
@@ -124,6 +134,8 @@ export class AutoProcessingModelsComponent implements OnInit {
   partnerConditionalKeysEnabled = false;
   partnerConditionColumn = '';
   partnerConditionalDefaultKeyColumn = '';
+  partnerConditionalEnvEnabled = false;
+  partnerConditionalEnvValue: EnvColumnOption | '' = '';
   partnerConditionalKeyRules: PartnerConditionalKeyRule[] = [];
 
   /** Clés BO conditionnelles (optionnel). */
@@ -167,7 +179,8 @@ export class AutoProcessingModelsComponent implements OnInit {
     private fileWatcherService: FileWatcherService,
     private cdr: ChangeDetectorRef,
     private modelManagementService: ModelManagementService,
-    private popupService: PopupService
+    private popupService: PopupService,
+    private modelPreProcessingService: ModelPreProcessingService
   ) {
     this.modelForm = this.fb.group({
       name: ['', Validators.required],
@@ -760,9 +773,10 @@ export class AutoProcessingModelsComponent implements OnInit {
       return [
         'ID', 'IDTransaction', 'téléphone client', 'montant', 'Service',
         'Moyen de Paiement', 'Agence', 'Agent', 'Type agent', 'PIXI',
-        'Date', 'Numéro Trans GU', 'GRX', 'Statut', 'Latitude',
-        'Longitude', 'ID Partenaire DIST', 'Expéditeur', 'Pays provenance',
-        'Bénéficiaire', 'Canal de distribution'
+        'Date', 'Numéro Trans GU', 'Numero Trans GU', 'numeroTransGU', 'GRX', 'Statut',
+        'Latitude', 'Longitude', 'ID Partenaire DIST', 'Expéditeur', 'Pays provenance',
+        'Bénéficiaire', 'Canal de distribution', 'CLE', 'Cle', 'cle', 'Key', 'key',
+        'SOURCE', ENV_COLUMN_NAME
       ];
     }
     if (lower.includes('ussdpart')) {
@@ -802,7 +816,10 @@ export class AutoProcessingModelsComponent implements OnInit {
     }
     const columns = new Set<string>();
     (config.rowFilters || []).forEach(filter => filter.column?.trim() && columns.add(filter.column.trim()));
-    (config.valueMappings || []).forEach(mapping => mapping.column?.trim() && columns.add(mapping.column.trim()));
+    (config.valueMappings || []).forEach(mapping => {
+      mapping.column?.trim() && columns.add(mapping.column.trim());
+      mapping.conditionColumn?.trim() && columns.add(mapping.conditionColumn.trim());
+    });
     (config.columnRenameRules || []).forEach(rule => {
       if (rule.sourceColumn?.trim()) {
         columns.add(rule.sourceColumn.trim());
@@ -828,6 +845,9 @@ export class AutoProcessingModelsComponent implements OnInit {
       action.columns?.forEach(col => col?.trim() && columns.add(col.trim()));
       Object.keys(action.columnSettings || {}).forEach(col => col?.trim() && columns.add(col.trim()));
     });
+    if (config.envColumn?.enabled && config.envColumn.value?.trim()) {
+      columns.add(ENV_COLUMN_NAME);
+    }
     return [...columns];
   }
 
@@ -846,7 +866,13 @@ export class AutoProcessingModelsComponent implements OnInit {
       if (rule.keyColumn?.trim()) {
         columns.add(rule.keyColumn.trim());
       }
+      if (rule.boKeyColumn?.trim()) {
+        columns.add(rule.boKeyColumn.trim());
+      }
     });
+    if ((config as PartnerConditionalKeysConfig).envConditionValue?.trim()) {
+      columns.add(ENV_COLUMN_NAME);
+    }
     return [...columns];
   }
 
@@ -866,6 +892,9 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.availableTemplateColumns = [...normalized];
     this.availableColumnsForTemplate = [...normalized];
     this.availableColumns = [...normalized];
+    if (this.modelExportColumnFilterEnabled) {
+      this.refreshModelExportColumnCatalog();
+    }
   }
 
   private async resolveAndApplyTemplateColumns(
@@ -891,7 +920,8 @@ export class AutoProcessingModelsComponent implements OnInit {
         ...(extras?.partnerKeys || []),
         ...(extras?.boKeys || []),
         ...this.extractColumnsFromPreProcessingConfig(extras?.preProcessingConfig),
-        ...this.extractColumnsFromConditionalKeys(extras?.partnerConditionalKeys)
+        ...this.extractColumnsFromConditionalKeys(extras?.partnerConditionalKeys),
+        ...this.extractColumnsFromConditionalKeys(extras?.boConditionalKeys)
       ];
       const columns = this.mergeTemplateColumnLists(resolved, extraColumns);
       this.syncTemplateColumnLists(columns);
@@ -968,62 +998,96 @@ export class AutoProcessingModelsComponent implements OnInit {
     return this.models.filter(model => model.fileType === 'bo');
   }
 
-  private loadBOColumnsFromSelectedModels(selectedModelIds: string[]): void {
-    console.log('🔍 Chargement des colonnes pour les modèles BO sélectionnés:', selectedModelIds);
-    
-    const allColumns = new Set<string>();
-    
-    // Toujours charger les colonnes TRXBO par défaut
-    const trxboColumns = [
-      'ID', 'IDTransaction', 'téléphone client', 'montant', 'Service',
-      'Moyen de Paiement', 'Agence', 'Agent', 'Type agent', 'PIXI',
-      'Date', 'Numéro Trans GU', 'GRX', 'Statut', 'Latitude',
-      'Longitude', 'ID Partenaire DIST', 'Expéditeur', 'Pays provenance',
-      'Bénéficiaire', 'Canal de distribution'
-    ];
-    trxboColumns.forEach(col => allColumns.add(col));
-    console.log('✅ Colonnes TRXBO par défaut ajoutées:', trxboColumns);
-    
-    selectedModelIds.forEach(modelId => {
-      const model = this.models.find(m => m.id === modelId);
-      if (model && model.templateFile) {
-        // Les modèles BO ne devraient utiliser que les colonnes de TRXBO
-        if (model.templateFile.toLowerCase().includes('trxbo')) {
-          console.log(`🔍 Détection spécifique TRXBO pour le modèle BO ${model.name}`);
-          console.log(`✅ Colonnes TRXBO déjà appliquées pour le modèle BO ${model.name}`);
-        } else {
-          // Chercher le fichier dans les fichiers disponibles
-          const file = this.availableFiles.find(f => f.fileName === model.templateFile);
-          if (file && file.columns) {
-            file.columns.forEach((col: string) => {
-              allColumns.add(this.normalizeColumnName(col));
-            });
-            console.log(`✅ Colonnes chargées pour le modèle BO ${model.name}:`, file.columns);
-          } else {
-            console.warn(`⚠️ Fichier modèle non trouvé pour le modèle BO ${model.name}:`, model.templateFile);
-          }
-        }
+  private appendBoColumnsFromTemplate(columns: Set<string>, templateFile: string): void {
+    const hardcoded = this.getHardcodedColumnsForTemplate(templateFile);
+    hardcoded?.forEach(col => columns.add(this.normalizeColumnName(col)));
+
+    const file = this.findAvailableFile(templateFile);
+    if (file?.columns?.length) {
+      this.normalizeColumnNames(file.columns).forEach(col => columns.add(col));
+    }
+  }
+
+  private appendBoColumnsFromModel(columns: Set<string>, model: AutoProcessingModel, modelId: string): void {
+    if (model.templateFile) {
+      this.appendBoColumnsFromTemplate(columns, model.templateFile);
+    }
+
+    (model.reconciliationKeys?.boKeys || []).forEach(key => {
+      if (key?.trim()) {
+        columns.add(this.normalizeColumnName(key));
       }
     });
-    
-    this.availableBOColumns = Array.from(allColumns).sort();
-    console.log('📋 Toutes les colonnes BO disponibles:', this.availableBOColumns);
+
+    const modelSpecificKeys =
+      model.reconciliationKeys?.boModelKeys?.[modelId]
+      || Object.values(model.reconciliationKeys?.boModelKeys || {}).flat();
+    (modelSpecificKeys as string[]).forEach(key => {
+      if (key?.trim()) {
+        columns.add(this.normalizeColumnName(key));
+      }
+    });
+
+    this.extractColumnsFromPreProcessingConfig(model.preProcessingConfig).forEach(col => {
+      columns.add(this.normalizeColumnName(col));
+    });
+    this.extractColumnsFromConditionalKeys(model.reconciliationKeys?.boConditionalKeys).forEach(col => {
+      columns.add(this.normalizeColumnName(col));
+    });
+  }
+
+  private collectBoColumnsForSelectedModels(modelIds: string[]): string[] {
+    const columns = new Set<string>();
+
+    modelIds.forEach(modelId => {
+      const model = this.availableBOModels.find(m => m.id === modelId)
+        || this.models.find(m => m.id === modelId);
+      if (model) {
+        this.appendBoColumnsFromModel(columns, model, modelId);
+      }
+    });
 
     this.selectedBOKeys.forEach(key => {
-      if (key && !this.availableBOColumns.includes(key)) {
-        this.availableBOColumns.push(key);
+      if (key?.trim()) {
+        columns.add(this.normalizeColumnName(key));
       }
     });
-    
-    // S'assurer que les clés BO sélectionnées sont dans la liste
-    if (this.editingModel && this.editingModel.reconciliationKeys?.boKeys) {
+
+    if (this.editingModel?.reconciliationKeys?.boKeys) {
       this.editingModel.reconciliationKeys.boKeys.forEach(key => {
-        if (!this.availableBOColumns.includes(key)) {
-          this.availableBOColumns.push(key);
-          console.log(`✅ Clé BO "${key}" ajoutée à la liste`);
+        if (key?.trim()) {
+          columns.add(this.normalizeColumnName(key));
         }
       });
     }
+
+    return Array.from(columns)
+      .filter(col => !!col)
+      .sort((a, b) => a.localeCompare(b, 'fr'));
+  }
+
+  /** Colonnes affichées dans « Clés BO conditionnelles » (toutes sources BO fusionnées). */
+  getBoConditionalColumnOptions(): string[] {
+    const columns = new Set<string>(this.collectBoColumnsForSelectedModels(this.selectedBOModels));
+
+    this.extractColumnsFromConditionalKeys({
+      enabled: this.boConditionalKeysEnabled,
+      conditionColumn: this.boConditionColumn,
+      defaultKeyColumn: this.boConditionalDefaultKeyColumn,
+      rules: this.boConditionalKeyRules
+    }).forEach(col => columns.add(this.normalizeColumnName(col)));
+
+    this.availableBOColumns.forEach(col => columns.add(this.normalizeColumnName(col)));
+
+    return Array.from(columns)
+      .filter(col => !!col)
+      .sort((a, b) => a.localeCompare(b, 'fr'));
+  }
+
+  private loadBOColumnsFromSelectedModels(selectedModelIds: string[]): void {
+    console.log('🔍 Chargement des colonnes pour les modèles BO sélectionnés:', selectedModelIds);
+    this.availableBOColumns = this.collectBoColumnsForSelectedModels(selectedModelIds);
+    console.log('📋 Toutes les colonnes BO disponibles:', this.availableBOColumns);
   }
 
   /**
@@ -1974,9 +2038,13 @@ export class AutoProcessingModelsComponent implements OnInit {
         .filter(rule => rule.whenValue?.trim() && rule.keyColumn?.trim())
         .map(rule => ({
           whenValue: rule.whenValue.trim(),
-          keyColumn: rule.keyColumn.trim()
+          keyColumn: rule.keyColumn.trim(),
+          ...(rule.boKeyColumn?.trim() ? { boKeyColumn: rule.boKeyColumn.trim() } : {})
         })),
-      defaultKeyColumn: this.partnerConditionalDefaultKeyColumn?.trim() || undefined
+      defaultKeyColumn: this.partnerConditionalDefaultKeyColumn?.trim() || undefined,
+      ...(this.partnerConditionalEnvEnabled && this.partnerConditionalEnvValue
+        ? { envConditionValue: this.partnerConditionalEnvValue }
+        : {})
     };
   }
 
@@ -1985,29 +2053,37 @@ export class AutoProcessingModelsComponent implements OnInit {
     conditionColumn?: string;
     rules?: PartnerConditionalKeyRule[];
     defaultKeyColumn?: string;
+    envConditionValue?: string;
   }): void {
     this.partnerConditionalKeysEnabled = !!config?.enabled;
     this.partnerConditionColumn = config?.conditionColumn || '';
     this.partnerConditionalDefaultKeyColumn = config?.defaultKeyColumn || '';
+    this.partnerConditionalEnvEnabled = !!config?.envConditionValue?.trim();
+    this.partnerConditionalEnvValue = config?.envConditionValue
+      && ENV_COLUMN_OPTIONS.includes(config.envConditionValue as EnvColumnOption)
+      ? config.envConditionValue as EnvColumnOption
+      : '';
     this.partnerConditionalKeyRules = config?.rules?.length
       ? config.rules.map(rule => ({ ...rule }))
-      : [{ whenValue: '', keyColumn: '' }];
+      : [{ whenValue: '', keyColumn: '', boKeyColumn: '' }];
   }
 
   resetPartnerConditionalKeysConfig(): void {
     this.partnerConditionalKeysEnabled = false;
     this.partnerConditionColumn = '';
     this.partnerConditionalDefaultKeyColumn = '';
-    this.partnerConditionalKeyRules = [{ whenValue: '', keyColumn: '' }];
+    this.partnerConditionalEnvEnabled = false;
+    this.partnerConditionalEnvValue = '';
+    this.partnerConditionalKeyRules = [{ whenValue: '', keyColumn: '', boKeyColumn: '' }];
   }
 
   addPartnerConditionalKeyRule(): void {
-    this.partnerConditionalKeyRules.push({ whenValue: '', keyColumn: '' });
+    this.partnerConditionalKeyRules.push({ whenValue: '', keyColumn: '', boKeyColumn: '' });
   }
 
   removePartnerConditionalKeyRule(index: number): void {
     if (this.partnerConditionalKeyRules.length <= 1) {
-      this.partnerConditionalKeyRules[0] = { whenValue: '', keyColumn: '' };
+      this.partnerConditionalKeyRules[0] = { whenValue: '', keyColumn: '', boKeyColumn: '' };
       return;
     }
     this.partnerConditionalKeyRules.splice(index, 1);
@@ -2050,7 +2126,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.boConditionalDefaultKeyColumn = config?.defaultKeyColumn || '';
     this.boConditionalKeyRules = config?.rules?.length
       ? config.rules.map(rule => ({ ...rule }))
-      : [{ whenValue: '', keyColumn: '' }];
+      : [{ whenValue: '', keyColumn: '', boKeyColumn: '' }];
   }
 
   resetBoConditionalKeysConfig(): void {
@@ -2150,68 +2226,43 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.availableBOColumns = [];
 
     try {
-      // Récupérer les colonnes de tous les modèles BO sélectionnés
-      const allColumns = new Set<string>();
-      
+      const columns = new Set<string>();
+
       for (const modelId of this.selectedBOModels) {
         const model = this.availableBOModels.find(m => m.id === modelId);
-        if (model && model.templateFile) {
-          // Chercher le fichier dans les fichiers disponibles
-          const file = this.availableFiles.find(f => f.fileName === model.templateFile);
-          
-          if (file && file.columns && file.columns.length > 0) {
-            // Utiliser les colonnes hardcodées correctes au lieu des colonnes corrompues du fichier
-            console.log(`📋 Utilisation des colonnes hardcodées pour ${model.templateFile}`);
-            let correctColumns: string[] = [];
-            
-            // Colonnes correctes selon le type de fichier
-            if (model.templateFile.toLowerCase().includes('trxbo')) {
-              correctColumns = [
-                'ID', 'IDTransaction', 'téléphone client', 'montant', 'Service',
-                'Moyen de Paiement', 'Agence', 'Agent', 'Type agent', 'PIXI',
-                'Date', 'Numéro Trans GU', 'GRX', 'Statut', 'Latitude',
-                'Longitude', 'ID Partenaire DIST', 'Expéditeur', 'Pays provenance',
-                'Bénéficiaire', 'Canal de distribution'
-              ];
-            } else if (model.templateFile.toLowerCase().includes('oppart')) {
-              correctColumns = [
-                'ID Opération', 'Type Opération', 'Montant', 'Solde avant', 'Solde aprés',
-                'Code proprietaire', 'Téléphone', 'Statut', 'ID Transaction', 'Num bordereau',
-                'Date opération', 'Date de versement', 'Banque appro', 'Login demandeur Appro',
-                'Login valideur Appro', 'Motif rejet', 'Frais connexion', 'Numéro Trans GU',
-                'Agent', 'Motif régularisation', 'groupe de réseau'
-              ];
-            } else if (model.templateFile.toLowerCase().includes('ussdpart')) {
-              correctColumns = [
-                'ID', 'Groupe Réseaux', 'Code réseau', 'Agence', 'Code PIXI',
-                'Code de Proxy', 'Code service', 'Numéro Trans GU', 'Déstinataire',
-                'Login agent', 'Type agent', 'date de création', 'Date d\'envoi vers part',
-                'Etat', 'Type', 'Token', 'SMS', 'Action faite', 'Statut',
-                'Utilisateur', 'Montant', 'Date dernier traitement', 'Latitude',
-                'Longitude', 'Partenaire dist ID', 'Agence SC', 'Groupe reseau SC',
-                'Agent SC', 'PDA SC'
-              ];
-            } else {
-              // Fallback vers les colonnes du fichier avec normalisation
-              console.log(`📋 Colonnes brutes du fichier ${model.templateFile}:`, file.columns);
-              correctColumns = this.normalizeColumnNames(file.columns);
-            }
-            
-            correctColumns.forEach(col => allColumns.add(col));
-            console.log(`✅ Colonnes du modèle BO ${model.name} chargées (correctes):`, correctColumns);
-          } else {
-            // Fallback vers la simulation
-            console.warn(`⚠️ Fichier ${model.templateFile} non trouvé, utilisation de la simulation`);
-            const columns = await this.getFileColumns(model.templateFile);
-            console.log(`📋 Colonnes simulées pour ${model.templateFile}:`, columns);
-            const normalizedColumns = this.normalizeColumnNames(columns);
-            normalizedColumns.forEach(col => allColumns.add(col));
-            console.log(`✅ Colonnes du modèle BO ${model.name} chargées (simulation normalisée):`, normalizedColumns);
+        if (!model) {
+          continue;
+        }
+
+        this.appendBoColumnsFromModel(columns, model, modelId);
+
+        if (model.templateFile) {
+          const file = this.findAvailableFile(model.templateFile);
+          if (!file?.columns?.length) {
+            const simulated = await this.getFileColumns(model.templateFile);
+            this.normalizeColumnNames(simulated).forEach(col => columns.add(col));
           }
         }
       }
 
-      this.availableBOColumns = Array.from(allColumns);
+      this.selectedBOKeys.forEach(key => {
+        if (key?.trim()) {
+          columns.add(this.normalizeColumnName(key));
+        }
+      });
+
+      if (this.editingModel?.reconciliationKeys?.boKeys) {
+        this.editingModel.reconciliationKeys.boKeys.forEach(key => {
+          if (key?.trim()) {
+            columns.add(this.normalizeColumnName(key));
+          }
+        });
+      }
+
+      this.availableBOColumns = Array.from(columns)
+        .filter(col => !!col)
+        .sort((a, b) => a.localeCompare(b, 'fr'));
+
       console.log('✅ Colonnes des modèles BO chargées:', this.availableBOColumns);
       console.log('📊 Détails des modèles BO:', {
         selectedModels: this.selectedBOModels,
@@ -3322,6 +3373,20 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.showColumnRenameSection = !this.showColumnRenameSection;
   }
 
+  toggleEnvColumnSection(): void {
+    this.showEnvColumnSection = !this.showEnvColumnSection;
+  }
+
+  private buildModelEnvColumnConfig(): ModelEnvColumnConfig | undefined {
+    if (!this.modelEnvColumnEnabled || !this.modelEnvColumnValue) {
+      return undefined;
+    }
+    return {
+      enabled: true,
+      value: this.modelEnvColumnValue
+    };
+  }
+
   addModelColumnRenameRule(): void {
     const columns = this.getPreProcessingColumns();
     this.modelColumnRenameRules.push({
@@ -3435,6 +3500,8 @@ export class AutoProcessingModelsComponent implements OnInit {
       id: `mapping-${this.nextModelValueMappingId++}`,
       column: columns[0] || '',
       fromValue: '',
+      conditionColumn: '',
+      conditionValue: '',
       toValue: '',
       enabled: true
     });
@@ -3506,6 +3573,10 @@ export class AutoProcessingModelsComponent implements OnInit {
     return type !== 'removeNumbers' && type !== 'removeZeroDecimals';
   }
 
+  private normalizeLeadingZeroMode(mode?: string | null): 'none' | 'keep' | 'strip' {
+    return mode === 'keep' || mode === 'strip' ? mode : 'none';
+  }
+
   getFormatColumnSettings(action: ModelFormatAction, column: string): ModelFormatColumnSettings {
     if (!action.columnSettings) {
       action.columnSettings = {};
@@ -3513,7 +3584,13 @@ export class AutoProcessingModelsComponent implements OnInit {
     if (!action.columnSettings[column]) {
       action.columnSettings[column] = this.createColumnSettingsFromAction(action);
     }
-    return action.columnSettings[column];
+    const settings = action.columnSettings[column];
+    if (action.type === 'removeCharacters') {
+      settings.leadingZeroMode = this.normalizeLeadingZeroMode(
+        settings.leadingZeroMode ?? action.leadingZeroMode
+      );
+    }
+    return settings;
   }
 
   applyDefaultSettingsToAllFormatColumns(action: ModelFormatAction): void {
@@ -3551,6 +3628,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       removeCharPosition: action.removeCharPosition ?? 'start',
       removeCharCount: action.removeCharCount ?? 1,
       removeCharSpecificPosition: action.removeCharSpecificPosition ?? 1,
+      leadingZeroMode: this.normalizeLeadingZeroMode(action.leadingZeroMode),
       removeSpacesType: action.removeSpacesType ?? 'all',
       keepLastDigitsCount: action.keepLastDigitsCount ?? 3,
       indicatifType: action.indicatifType ?? 'international',
@@ -3728,6 +3806,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       removeCharPosition: 'start',
       removeCharCount: 1,
       removeCharSpecificPosition: 1,
+      leadingZeroMode: 'none',
       removeSpacesType: 'all',
       keepLastDigitsCount: 3,
       indicatifType: 'international',
@@ -3768,13 +3847,22 @@ export class AutoProcessingModelsComponent implements OnInit {
 
     const valueMappings = this.modelValueMappings
       .filter(mapping => mapping.column && mapping.fromValue?.trim())
-      .map(mapping => ({
-        id: mapping.id,
-        column: mapping.column,
-        fromValue: mapping.fromValue.trim(),
-        toValue: mapping.toValue ?? '',
-        enabled: mapping.enabled !== false
-      }));
+      .map(mapping => {
+        const conditionColumn = mapping.conditionColumn?.trim() || '';
+        const conditionValue = mapping.conditionValue?.trim() || '';
+        const entry: ModelColumnValueMapping = {
+          id: mapping.id,
+          column: mapping.column,
+          fromValue: mapping.fromValue.trim(),
+          toValue: mapping.toValue ?? '',
+          enabled: mapping.enabled !== false
+        };
+        if (conditionColumn && conditionValue) {
+          entry.conditionColumn = conditionColumn;
+          entry.conditionValue = conditionValue;
+        }
+        return entry;
+      });
 
     const columnConcatRules = this.modelColumnConcatRules
       .filter(rule => rule.targetColumn?.trim() && rule.sourceColumns?.length >= 2)
@@ -3811,7 +3899,10 @@ export class AutoProcessingModelsComponent implements OnInit {
         enabled: rule.enabled !== false
       }));
 
-    if (!rowFilters.length && !formatActions.length && !columnConcatRules.length && !columnMathRules.length && !valueMappings.length && !columnRenameRules.length) {
+    const envColumn = this.buildModelEnvColumnConfig();
+    const exportColumnFilter = this.buildModelExportColumnFilterConfig();
+
+    if (!rowFilters.length && !formatActions.length && !columnConcatRules.length && !columnMathRules.length && !valueMappings.length && !columnRenameRules.length && !envColumn && !exportColumnFilter) {
       return {
         rowFilters: [],
         formatActions: [],
@@ -3830,8 +3921,100 @@ export class AutoProcessingModelsComponent implements OnInit {
       columnMathRules,
       valueMappings,
       columnRenameRules,
+      ...(envColumn ? { envColumn } : {}),
+      ...(exportColumnFilter ? { exportColumnFilter } : {}),
       sectionOrder: [...this.preProcessingSectionOrder]
     };
+  }
+
+  private buildModelExportColumnFilterConfig(): ModelExportColumnFilterConfig | undefined {
+    if (!this.modelExportColumnFilterEnabled) {
+      return undefined;
+    }
+    const keptColumns = this.modelPreProcessingService.getKeptExportColumns(
+      this.modelExportColumns,
+      this.modelExportColumnKeepMap
+    );
+    return {
+      enabled: true,
+      keptColumns
+    };
+  }
+
+  onModelExportColumnFilterToggle(enabled: boolean): void {
+    this.modelExportColumnFilterEnabled = enabled;
+    if (enabled) {
+      this.refreshModelExportColumnCatalog();
+    }
+    this.cdr.detectChanges();
+  }
+
+  refreshModelExportColumnCatalog(): void {
+    const draft = this.buildDraftModelForExportCatalog();
+    if (!draft) {
+      this.modelExportColumns = [];
+      this.modelExportColumnKeepMap = {};
+      return;
+    }
+
+    const previous = { ...this.modelExportColumnKeepMap };
+    this.modelExportColumns = this.modelPreProcessingService.buildAssistedExportColumnCatalog(
+      draft,
+      this.columnProcessingRules,
+      this.availableTemplateColumns
+    );
+    const next: Record<string, boolean> = {};
+    for (const col of this.modelExportColumns) {
+      next[col] = previous[col] !== false;
+    }
+    this.modelExportColumnKeepMap = next;
+    this.cdr.detectChanges();
+  }
+
+  private buildDraftModelForExportCatalog(): AutoProcessingModel | null {
+    const name = (this.modelForm.get('name')?.value || this.editingModel?.name || '').trim();
+    const filePattern = (this.modelForm.get('filePattern')?.value || this.editingModel?.filePattern || '').trim();
+    if (!name && !filePattern) {
+      return null;
+    }
+    return {
+      name: name || 'modèle',
+      filePattern: filePattern || '*',
+      fileType: this.modelForm.get('fileType')?.value || this.editingModel?.fileType || 'bo',
+      autoApply: true,
+      templateFile: this.modelForm.get('templateFile')?.value || this.editingModel?.templateFile || '',
+      preProcessingConfig: this.buildPreProcessingConfig()
+    };
+  }
+
+  getModelExportColumnsKeptCount(): number {
+    return this.modelPreProcessingService.getKeptExportColumns(
+      this.modelExportColumns,
+      this.modelExportColumnKeepMap
+    ).length;
+  }
+
+  isModelExportColumnKept(column: string): boolean {
+    return this.modelExportColumnKeepMap[column] !== false;
+  }
+
+  toggleModelExportColumnKeep(column: string, keep: boolean): void {
+    this.modelExportColumnKeepMap[column] = keep;
+    this.cdr.detectChanges();
+  }
+
+  setAllModelExportColumnsKept(keep: boolean): void {
+    for (const col of this.modelExportColumns) {
+      this.modelExportColumnKeepMap[col] = keep;
+    }
+    this.cdr.detectChanges();
+  }
+
+  resetModelExportColumnKeepDefaults(): void {
+    for (const col of this.modelExportColumns) {
+      this.modelExportColumnKeepMap[col] = true;
+    }
+    this.cdr.detectChanges();
   }
 
   loadPreProcessingConfig(config?: ModelPreProcessingConfig | null): void {
@@ -3841,6 +4024,11 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.modelColumnMathRules = [];
     this.modelValueMappings = [];
     this.modelColumnRenameRules = [];
+    this.modelEnvColumnEnabled = false;
+    this.modelEnvColumnValue = '';
+    this.modelExportColumnFilterEnabled = false;
+    this.modelExportColumns = [];
+    this.modelExportColumnKeepMap = {};
     this.preProcessingSectionOrder = [...DEFAULT_PRE_PROCESSING_SECTION_ORDER];
     this.nextModelFilterId = 1;
     this.nextModelConcatRuleId = 1;
@@ -3883,6 +4071,8 @@ export class AutoProcessingModelsComponent implements OnInit {
       id: mapping.id || `mapping-${this.nextModelValueMappingId++}`,
       column: mapping.column || '',
       fromValue: mapping.fromValue || '',
+      conditionColumn: mapping.conditionColumn || '',
+      conditionValue: mapping.conditionValue || '',
       toValue: mapping.toValue || '',
       enabled: mapping.enabled !== false
     }));
@@ -3950,6 +4140,24 @@ export class AutoProcessingModelsComponent implements OnInit {
       this.showColumnRenameSection = true;
     }
 
+    if (config.envColumn?.enabled && config.envColumn.value) {
+      this.modelEnvColumnEnabled = true;
+      this.modelEnvColumnValue = ENV_COLUMN_OPTIONS.includes(config.envColumn.value as EnvColumnOption)
+        ? config.envColumn.value as EnvColumnOption
+        : '';
+      this.showEnvColumnSection = true;
+    }
+
+    if (config.exportColumnFilter?.enabled) {
+      this.modelExportColumnFilterEnabled = true;
+      this.showExportColumnFilterSection = true;
+      this.refreshModelExportColumnCatalog();
+      this.modelExportColumnKeepMap = this.modelPreProcessingService.buildExportColumnKeepMap(
+        this.modelExportColumns,
+        config.exportColumnFilter
+      );
+    }
+
     if (this.showFormatActionsSection && !this.modelFormatActions.length) {
       this.initDefaultFormatActions();
     }
@@ -3962,6 +4170,11 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.modelColumnMathRules = [];
     this.modelValueMappings = [];
     this.modelColumnRenameRules = [];
+    this.modelEnvColumnEnabled = false;
+    this.modelEnvColumnValue = '';
+    this.modelExportColumnFilterEnabled = false;
+    this.modelExportColumns = [];
+    this.modelExportColumnKeepMap = {};
     this.preProcessingSectionOrder = [...DEFAULT_PRE_PROCESSING_SECTION_ORDER];
     this.nextModelFilterId = 1;
     this.nextModelConcatRuleId = 1;
@@ -3975,5 +4188,12 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.showColumnMathSection = false;
     this.showValueMappingsSection = false;
     this.showColumnRenameSection = false;
+    this.showEnvColumnSection = false;
+    this.showExportColumnFilterSection = false;
+    this.modelEnvColumnEnabled = false;
+    this.modelEnvColumnValue = '';
+    this.modelExportColumnFilterEnabled = false;
+    this.modelExportColumns = [];
+    this.modelExportColumnKeepMap = {};
   }
 }

@@ -272,8 +272,11 @@ export interface ReconciliationReportData {
                     <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>Statut</mat-label>
                         <mat-select #statusSelect [(ngModel)]="selectedStatuses" multiple (ngModelChange)="onStatusNgModelChange($event)">
+                            <mat-select-trigger>
+                                {{ formatSelectedStatusesLabel() }}
+                            </mat-select-trigger>
                             <mat-option *ngFor="let status of uniqueStatuses" [value]="status">
-                                {{ status }}
+                                {{ getDisplayStatus(status) }}
                             </mat-option>
                         </mat-select>
                     </mat-form-field>
@@ -282,7 +285,7 @@ export interface ReconciliationReportData {
                     <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>Traitement</mat-label>
                         <mat-select #traitementSelect [(ngModel)]="selectedTraitements" multiple (ngModelChange)="onTraitementNgModelChange($event)">
-                            <mat-option *ngFor="let traitement of traitementOptions" [value]="traitement">
+                            <mat-option *ngFor="let traitement of filteredTraitementOptions" [value]="traitement">
                                 {{ getTraitementDisplayLabel(traitement) }}
                             </mat-option>
                         </mat-select>
@@ -295,7 +298,7 @@ export interface ReconciliationReportData {
                             [(ngModel)]="bulkStatusSelection" 
                             class="filter-select bulk-status-select">
                             <option value="">Sélectionner un statut</option>
-                            <option *ngFor="let status of statusOptions" [value]="status">{{status}}</option>
+                            <option *ngFor="let status of statusOptions" [value]="status">{{ getDisplayStatus(status) }}</option>
                         </select>
                         <button 
                             class="btn btn-bulk-status" 
@@ -679,7 +682,7 @@ export interface ReconciliationReportData {
                                     </ng-container>
                                     <ng-template #editStatus>
                                         <select [(ngModel)]="item.status" class="edit-select" (change)="onStatusChange(item)" (blur)="stopEditStatus()">
-                                            <option *ngFor="let s of statusOptions" [ngValue]="s">{{s}}</option>
+                                            <option *ngFor="let s of statusOptions" [ngValue]="s">{{ getDisplayStatus(s) }}</option>
                                         </select>
                                     </ng-template>
                                 </div>
@@ -763,7 +766,7 @@ export interface ReconciliationReportData {
                                                     <span [class]="auditSnapshotTraitementClass(row.traitementSnapshot)">{{ row.traitementSnapshot || '—' }}</span>
                                                 </td>
                                                 <td>
-                                                    <span [class]="auditSnapshotStatutClass(row.statusSnapshot)">{{ row.statusSnapshot || '—' }}</span>
+                                                    <span [class]="auditSnapshotStatutClass(row.statusSnapshot)">{{ getDisplayStatus(row.statusSnapshot) || '—' }}</span>
                                                 </td>
                                                 <td class="audit-td-detail">{{ row.detail || '—' }}</td>
                                             </tr>
@@ -915,7 +918,7 @@ export interface ReconciliationReportData {
                                         <td>{{ecart.montantTotal | number}}</td>
                                         <td>
                                             <span [class]="(ecart.statut === 'OK' || ecart.statut === 'ok') ? 'statut-ok' : 'statut-en-cours'">
-                                                {{(ecart.statut === 'OK' || ecart.statut === 'ok') ? 'OK' : 'En cours'}}
+                                                {{ getDisplayStatus(ecart.statut) || 'En cours' }}
                                             </span>
                                         </td>
                                     </tr>
@@ -957,7 +960,7 @@ export interface ReconciliationReportData {
                                         <td>{{ecart.montantTotal | number}}</td>
                                         <td>
                                             <span [class]="(ecart.statut === 'OK' || ecart.statut === 'ok') ? 'statut-ok' : 'statut-en-cours'">
-                                                {{(ecart.statut === 'OK' || ecart.statut === 'ok') ? 'OK' : 'En cours'}}
+                                                {{ getDisplayStatus(ecart.statut) || 'En cours' }}
                                             </span>
                                         </td>
                                     </tr>
@@ -3254,6 +3257,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     statusOptions: string[] = ['OK', 'NOK', 'REPORTING INCOMPLET', 'REPORTING INDISPONIBLE', 'EN COURS.....'];
     commentOptions: string[] = ['ECARTS TRANSMIS', "PAS D'ECARTS CONSTATES", 'NOK'];
     traitementOptions: string[] = ['Niveau Support', 'Responsable CDO', 'Niveau GROUP', 'Terminé'];
+    /** Valeurs de traitement proposées dans le filtre (cloisonnées selon les autres filtres actifs). */
+    filteredTraitementOptions: string[] = [];
     private readonly legacyTraitementGroup = 'Niveau Group';
     private readonly traitementNiveauGroup = 'Niveau GROUP';
     private readonly defaultOkTraitement = 'Responsable CDO';
@@ -3264,6 +3269,23 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return this.traitementNiveauGroup;
         }
         return value;
+    }
+
+    /** Traitement effectif affiché / filtrable (recalculé comme dans le tableau). */
+    private getEffectiveTraitementValue(item: ReconciliationReportData): string {
+        const normalized = this.normalizeTraitementValue(item.traitement);
+        if (item.status === 'OK') {
+            return this.isPreservedTraitementOnOk(item) ? normalized : this.defaultOkTraitement;
+        }
+
+        const totalEcarts =
+            (Number(item.boOnly) || 0) +
+            (Number(item.partnerOnly) || 0) +
+            (Number(item.mismatches) || 0);
+        const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : this.defaultOkTraitement;
+        const preserveAdvanced =
+            normalized === 'Terminé' || normalized === this.traitementNiveauGroup;
+        return preserveAdvanced ? normalized : traitementAttendu;
     }
 
     /**
@@ -4842,7 +4864,32 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.updateFilteredAgencies();
         this.updateFilteredCountries();
         this.updateFilteredServices();
+        this.updateFilteredTraitements();
         this.refreshDropdownLists();
+    }
+
+    /**
+     * Met à jour les valeurs de traitement proposées selon les filtres actifs
+     * (agence, pays, service, statut, ENV, dates, ticket…) — hors filtre traitement lui-même.
+     */
+    private updateFilteredTraitements(): void {
+        const traitements = new Set<string>();
+        this.reportData
+            .filter(item => this.matchesBaseReportFilters(item, { excludeTraitement: true }))
+            .forEach(item => {
+                const value = this.getEffectiveTraitementValue(item);
+                if (value) {
+                    traitements.add(value);
+                }
+            });
+
+        const ordered = this.traitementOptions.filter(t => traitements.has(t));
+        const extras = [...traitements].filter(t => !this.traitementOptions.includes(t)).sort();
+        this.filteredTraitementOptions = [...ordered, ...extras];
+
+        this.selectedTraitements = this.selectedTraitements.filter(t =>
+            this.filteredTraitementOptions.includes(t)
+        );
     }
 
     /**
@@ -5211,7 +5258,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return this.getDbReportFetchScope().key !== this.lastDbReportFetchKey;
     }
 
-    private matchesBaseReportFilters(item: ReconciliationReportData): boolean {
+    private matchesBaseReportFilters(
+        item: ReconciliationReportData,
+        options?: { excludeTraitement?: boolean }
+    ): boolean {
         if (this.currentSource !== 'live' && !this.showAllMonths && !this.hasExplicitDateFilter() && item.date) {
             if (!this.isItemInCurrentMonth(item.date)) {
                 return false;
@@ -5230,8 +5280,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 : this.selectedServices.length === 0 || this.selectedServices.includes(item.service);
         const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
         const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
-        const traitementMatch = this.selectedTraitements.length === 0
-            || this.selectedTraitements.includes(this.normalizeTraitementValue(item.traitement));
+        const traitementMatch = options?.excludeTraitement
+            || this.selectedTraitements.length === 0
+            || this.selectedTraitements.includes(this.getEffectiveTraitementValue(item));
         const envMatch = this.itemMatchesEnvFilter(item.env, this.selectedEnvs);
         const ticketFilter = (this.ticketIdFilter || '').trim().toLowerCase();
         const ticketMatch = !ticketFilter || (item.glpiId || '').toLowerCase().includes(ticketFilter);
@@ -5278,37 +5329,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
+        this.updateFilteredTraitements();
+
         this.kpiScopeData = this.reportData.filter((item) => this.matchesBaseReportFilters(item));
 
         this.filteredReportData = this.kpiScopeData.filter((item) => this.matchesCardAndEcartFilters(item));
         
         // FORCER les lignes OK sans niveau avancé à Responsable CDO
         this.filteredReportData.forEach(item => {
-            item.traitement = this.normalizeTraitementValue(item.traitement);
-            if (item.status === 'OK' && !this.isPreservedTraitementOnOk(item)) {
-                item.traitement = this.defaultOkTraitement;
-            }
-        });
-        
-        // Recalculer le traitement pour chaque ligne filtrée selon les écarts réels
-        this.filteredReportData.forEach(item => {
-            if (item.status === 'OK') {
-                if (!this.isPreservedTraitementOnOk(item)) {
-                    item.traitement = this.defaultOkTraitement;
-                }
-                return;
-            }
-            
-            const boOnly = Number(item.boOnly) || 0;
-            const partnerOnly = Number(item.partnerOnly) || 0;
-            const mismatches = Number(item.mismatches) || 0;
-            const totalEcarts = boOnly + partnerOnly + mismatches;
-            
-            const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : this.defaultOkTraitement;
-            const normalized = this.normalizeTraitementValue(item.traitement);
-            const preserveAdvanced =
-                normalized === 'Terminé' || normalized === this.traitementNiveauGroup;
-            item.traitement = preserveAdvanced ? normalized : traitementAttendu;
+            item.traitement = this.getEffectiveTraitementValue(item);
         });
         
         // Trier par date décroissante (les plus récentes en premier)
@@ -5609,6 +5638,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     getDisplayStatus(status?: string | null): string {
         return this.normalizeStatus(status);
+    }
+
+    formatSelectedStatusesLabel(): string {
+        if (!this.selectedStatuses?.length) {
+            return '';
+        }
+        return this.selectedStatuses.map(status => this.getDisplayStatus(status)).join(', ');
     }
 
     /**
@@ -5932,7 +5968,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     mismatches: Number(item.mismatches) || 0,
                     matchRate: `${matchRate.toFixed(2)}%`,
                     glpiId: item.glpiId || '',
-                    status: item.status,
+                    status: this.getDisplayStatus(item.status),
                     comment: item.comment,
                     traitement: this.getTraitementDisplayLabel(item.traitement)
                 });
@@ -7982,7 +8018,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             'Écarts Partenaire': item.partnerOnly,
             'Incohérences': item.mismatches,
             'Taux': `${item.matchRate.toFixed(2)}%`,
-            'Statut': item.status,
+            'Statut': this.getDisplayStatus(item.status),
             'Commentaire': item.comment,
             'Traitement': this.getTraitementDisplayLabel(item.traitement),
             'ID TICKET': item.glpiId

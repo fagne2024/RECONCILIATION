@@ -402,3 +402,156 @@ export function detectMerchantReportHeaderIndex(jsonData: any[][]): number | nul
 
   return bestScore >= 40 ? bestIndex : null;
 }
+
+function pickPreferredBilingualColumn(
+  candidates: string[],
+  preferredHeaders: string[] = []
+): string {
+  if (!candidates.length) {
+    return '';
+  }
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  const preferredSet = new Set(preferredHeaders);
+  const preferredNorm = new Set(preferredHeaders.map(h => normalizeHeaderForMatch(h)));
+
+  for (const col of candidates) {
+    if (preferredSet.has(col)) {
+      return col;
+    }
+  }
+  for (const col of candidates) {
+    if (preferredNorm.has(normalizeHeaderForMatch(col))) {
+      return col;
+    }
+  }
+
+  const canonicalId = resolveCanonicalColumnId(candidates[0]);
+  if (canonicalId) {
+    const fr = getCanonicalFrenchLabel(canonicalId);
+    if (fr) {
+      const frMatch = candidates.find(
+        col => normalizeHeaderForMatch(col) === normalizeHeaderForMatch(fr)
+      );
+      if (frMatch) {
+        return frMatch;
+      }
+      return fr;
+    }
+  }
+
+  return candidates[0];
+}
+
+function groupHeadersByCanonicalId(headers: string[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const key of headers) {
+    const id = resolveCanonicalColumnId(key) || `__raw__:${normalizeHeaderForMatch(key)}`;
+    const group = groups.get(id) || [];
+    group.push(key);
+    groups.set(id, group);
+  }
+  return groups;
+}
+
+/**
+ * Retire les doublons FR/EN dans une liste de colonnes (une seule colonne par concept).
+ */
+export function dedupeBilingualColumnNames(
+  columns: string[],
+  preferredHeaders: string[] = []
+): string[] {
+  if (!columns.length) {
+    return [];
+  }
+
+  const groups = groupHeadersByCanonicalId(columns);
+  const orderSource = preferredHeaders.length
+    ? [...preferredHeaders, ...columns.filter(col => !preferredHeaders.includes(col))]
+    : columns;
+
+  const orderedIds: string[] = [];
+  const seenIds = new Set<string>();
+  for (const col of orderSource) {
+    const id = resolveCanonicalColumnId(col) || `__raw__:${normalizeHeaderForMatch(col)}`;
+    if (!seenIds.has(id)) {
+      seenIds.add(id);
+      orderedIds.push(id);
+    }
+  }
+  for (const id of groups.keys()) {
+    if (!seenIds.has(id)) {
+      seenIds.add(id);
+      orderedIds.push(id);
+    }
+  }
+
+  const result: string[] = [];
+  const seenNames = new Set<string>();
+  for (const id of orderedIds) {
+    const picked = pickPreferredBilingualColumn(groups.get(id) || [], preferredHeaders);
+    if (picked && !seenNames.has(picked)) {
+      seenNames.add(picked);
+      result.push(picked);
+    }
+  }
+  return result;
+}
+
+/**
+ * Fusionne les colonnes FR/EN jumelées : une valeur et un libellé par concept canonique.
+ */
+export function mergeBilingualColumnsInRows(
+  rows: Record<string, string>[],
+  preferredHeaders: string[] = []
+): { rows: Record<string, string>[]; columns: string[] } {
+  if (!rows.length) {
+    return { rows: [], columns: [] };
+  }
+
+  const allHeaders = new Set<string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      allHeaders.add(key);
+    }
+  }
+
+  const groups = groupHeadersByCanonicalId([...allHeaders]);
+  const columns = dedupeBilingualColumnNames([...allHeaders], preferredHeaders);
+
+  const mergedRows = rows.map(row => {
+    const merged: Record<string, string> = {};
+    for (const [id, keys] of groups) {
+      const outputKey = pickPreferredBilingualColumn(keys, preferredHeaders);
+      if (!outputKey) {
+        continue;
+      }
+      let value = '';
+      for (const key of keys) {
+        const cell = row[key];
+        if (cell != null && String(cell).trim() !== '') {
+          value = String(cell).trim();
+          break;
+        }
+      }
+      merged[outputKey] = value;
+    }
+    return merged;
+  });
+
+  const orderedColumns = columns.length
+    ? columns
+    : Object.keys(mergedRows[0] || {});
+
+  const orderedRows = mergedRows.map(row => {
+    const ordered: Record<string, string> = {};
+    for (const col of orderedColumns) {
+      ordered[col] = row[col] ?? '';
+    }
+    return ordered;
+  });
+
+  return { rows: orderedRows, columns: orderedColumns };
+}

@@ -4,7 +4,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 
-import { Subscription, forkJoin, of } from 'rxjs';
+import { Subscription, firstValueFrom, forkJoin, of } from 'rxjs';
 
 import { catchError } from 'rxjs/operators';
 
@@ -113,6 +113,8 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   validatingKey: string | null = null;
 
+  validatingEnvBulk = false;
+
   error: string | null = null;
 
   dataFromRapportCache = false;
@@ -179,6 +181,16 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
 
   monthlyRows: ControleInterneDisplayRow[] = [];
+
+  /** Lignes affichées sur la page courante du tableau agrégé. */
+  paginatedMonthlyRows: ControleInterneDisplayRow[] = [];
+
+  currentPage = 1;
+  itemsPerPage = 15;
+  totalPages = 0;
+
+  /** Toutes les lignes du périmètre (sans filtre service) — base de la validation par ENV. */
+  monthlyRowsAll: ControleInterneDisplayRow[] = [];
 
   validesClotures: RapportDateServiceLine[] = [];
 
@@ -356,7 +368,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
         } else if (this.rawReport.length) {
 
-          this.rebuildDisplay();
+          this.rebuildDisplay({ resetPage: false });
 
         }
 
@@ -430,7 +442,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     this.syncQueryParams(false);
 
-    this.rebuildDisplay();
+    this.rebuildDisplay({ resetPage: true });
 
   }
 
@@ -516,6 +528,64 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   get monthlySectionTotals(): ControleInterneSectionTotals {
     return this.sumMonthlyRows(this.monthlyRows);
+  }
+
+  updateMonthlyPagination(resetPage = false): void {
+    if (resetPage) {
+      this.currentPage = 1;
+    }
+    const total = this.monthlyRows.length;
+    this.totalPages = total ? Math.ceil(total / this.itemsPerPage) : 0;
+    if (this.totalPages > 0 && this.currentPage > this.totalPages) {
+      this.currentPage = this.totalPages;
+    }
+    if (this.currentPage < 1) {
+      this.currentPage = 1;
+    }
+    const start = (this.currentPage - 1) * this.itemsPerPage;
+    this.paginatedMonthlyRows = this.monthlyRows.slice(start, start + this.itemsPerPage);
+  }
+
+  goToMonthlyPage(page: number): void {
+    if (page < 1 || page > this.totalPages || page === this.currentPage) {
+      return;
+    }
+    this.currentPage = page;
+    this.updateMonthlyPagination();
+    this.cdr.markForCheck();
+  }
+
+  nextMonthlyPage(): void {
+    this.goToMonthlyPage(this.currentPage + 1);
+  }
+
+  previousMonthlyPage(): void {
+    this.goToMonthlyPage(this.currentPage - 1);
+  }
+
+  getMonthlyPageNumbers(): number[] {
+    const pages: number[] = [];
+    const maxVisible = 5;
+    let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
+    let end = Math.min(this.totalPages, start + maxVisible - 1);
+    if (end - start + 1 < maxVisible) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    return pages;
+  }
+
+  getMonthlyPaginationStartIndex(): number {
+    if (!this.monthlyRows.length) {
+      return 0;
+    }
+    return (this.currentPage - 1) * this.itemsPerPage + 1;
+  }
+
+  getMonthlyPaginationEndIndex(): number {
+    return Math.min(this.currentPage * this.itemsPerPage, this.monthlyRows.length);
   }
 
   get nonValidesSectionTotals(): ControleInterneSectionTotals {
@@ -821,13 +891,269 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   canValidateRow(row: ControleInterneDisplayRow): boolean {
 
-    return this.canValidateControleInterne && !row.isControleValide && !this.loading;
+    return this.canValidateControleInterne
+      && !row.isControleValide
+      && !this.loading
+      && !this.validatingEnvBulk;
 
   }
 
   canRevokeRow(row: ControleInterneDisplayRow): boolean {
 
-    return this.canRevokeControleInterne && row.isControleValide && !this.loading;
+    return this.canRevokeControleInterne
+      && row.isControleValide
+      && !this.loading
+      && !this.validatingEnvBulk;
+
+  }
+
+  get envValidationLabel(): string {
+
+    return this.selectedEnv === 'ALL' ? 'tous ENV' : this.selectedEnv;
+
+  }
+
+  get envValidationValidatedCount(): number {
+
+    return this.monthlyRowsAll.filter((row) => row.isControleValide).length;
+
+  }
+
+  get envValidationPendingCount(): number {
+
+    return this.monthlyRowsAll.filter((row) => !row.isControleValide).length;
+
+  }
+
+  get envValidationTotalCount(): number {
+
+    return this.monthlyRowsAll.length;
+
+  }
+
+  get isEnvScopeFullyValidated(): boolean {
+
+    return this.envValidationTotalCount > 0 && this.envValidationPendingCount === 0;
+
+  }
+
+  get canValidateEnvScope(): boolean {
+
+    return this.canValidateControleInterne
+      && this.envValidationPendingCount > 0
+      && !this.loading
+      && !this.validatingEnvBulk
+      && !this.validatingKey
+      && !!this.selectedCountry;
+
+  }
+
+  get canRevokeEnvScope(): boolean {
+
+    return this.canRevokeControleInterne
+      && this.envValidationValidatedCount > 0
+      && !this.loading
+      && !this.validatingEnvBulk
+      && !this.validatingKey
+      && !!this.selectedCountry;
+
+  }
+
+  private getValidationEnvParam(): string {
+
+    return this.selectedEnv === 'ALL' ? 'ALL' : this.selectedEnv;
+
+  }
+
+  async validerParEnv(): Promise<void> {
+
+    if (!this.canValidateEnvScope || !this.selectedCountry) {
+
+      return;
+
+    }
+
+    const pending = this.monthlyRowsAll.filter((row) => !row.isControleValide);
+
+    const period = this.selectedMonthLabel
+      ? `${this.selectedMonthLabel} ${this.selectedYear}`
+      : String(this.selectedYear);
+
+    const confirmed = await this.popupService.showConfirm(
+
+      `Valider le contrôle interne pour ${pending.length} service(s) `
+
+        + `(${this.selectedCountry} · ${period} · ENV ${this.envValidationLabel}) ?`,
+
+      'Validation par ENV'
+
+    );
+
+    if (!confirmed) {
+
+      return;
+
+    }
+
+    this.validatingEnvBulk = true;
+
+    this.cdr.markForCheck();
+
+    let successCount = 0;
+
+    let failCount = 0;
+
+    for (const row of pending) {
+
+      try {
+
+        const saved = await firstValueFrom(
+
+          this.controleInterneService.validate({
+
+            monthYyyyMm: row.monthYyyyMm,
+
+            country: this.selectedCountry,
+
+            env: this.getValidationEnvParam(),
+
+            service: row.service
+
+          })
+
+        );
+
+        this.validations.set(this.validationMapKey(saved), saved);
+
+        successCount++;
+
+      } catch {
+
+        failCount++;
+
+      }
+
+    }
+
+    this.rebuildDisplay({ resetPage: false });
+
+    this.validatingEnvBulk = false;
+
+    if (failCount === 0) {
+
+      await this.popupService.showSuccess(
+
+        `ENV ${this.envValidationLabel} validé : ${successCount} service(s).`
+
+      );
+
+    } else {
+
+      await this.popupService.showWarning(
+
+        `${successCount} service(s) validé(s), ${failCount} échec(s) sur ENV ${this.envValidationLabel}.`
+
+      );
+
+    }
+
+    this.cdr.markForCheck();
+
+  }
+
+  async annulerValidationParEnv(): Promise<void> {
+
+    if (!this.canRevokeEnvScope || !this.selectedCountry) {
+
+      return;
+
+    }
+
+    const validated = this.monthlyRowsAll.filter((row) => row.isControleValide);
+
+    const period = this.selectedMonthLabel
+      ? `${this.selectedMonthLabel} ${this.selectedYear}`
+      : String(this.selectedYear);
+
+    const confirmed = await this.popupService.showConfirm(
+
+      `Annuler la validation pour ${validated.length} service(s) `
+
+        + `(${this.selectedCountry} · ${period} · ENV ${this.envValidationLabel}) ?`,
+
+      'Annuler validation ENV'
+
+    );
+
+    if (!confirmed) {
+
+      return;
+
+    }
+
+    this.validatingEnvBulk = true;
+
+    this.cdr.markForCheck();
+
+    let successCount = 0;
+
+    let failCount = 0;
+
+    for (const row of validated) {
+
+      try {
+
+        const saved = await firstValueFrom(
+
+          this.controleInterneService.revoke({
+
+            monthYyyyMm: row.monthYyyyMm,
+
+            country: this.selectedCountry,
+
+            env: this.getValidationEnvParam(),
+
+            service: row.service
+
+          })
+
+        );
+
+        this.validations.set(this.validationMapKey(saved), saved);
+
+        successCount++;
+
+      } catch {
+
+        failCount++;
+
+      }
+
+    }
+
+    this.rebuildDisplay({ resetPage: false });
+
+    this.validatingEnvBulk = false;
+
+    if (failCount === 0) {
+
+      await this.popupService.showSuccess(
+
+        `Validation ENV ${this.envValidationLabel} annulée pour ${successCount} service(s).`
+
+      );
+
+    } else {
+
+      await this.popupService.showWarning(
+
+        `${successCount} annulation(s), ${failCount} échec(s) sur ENV ${this.envValidationLabel}.`
+
+      );
+
+    }
+
+    this.cdr.markForCheck();
 
   }
 
@@ -863,7 +1189,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
           this.validations.set(this.validationMapKey(saved), saved);
 
-          this.rebuildDisplay();
+          this.rebuildDisplay({ resetPage: false });
 
           this.validatingKey = null;
 
@@ -919,7 +1245,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
           this.validations.set(this.validationMapKey(saved), saved);
 
-          this.rebuildDisplay();
+          this.rebuildDisplay({ resetPage: false });
 
           this.validatingKey = null;
 
@@ -993,7 +1319,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
         this.loading = false;
 
-        this.rebuildDisplay();
+        this.rebuildDisplay({ resetPage: true });
 
         this.fetchValidations(bounds.startMonth, bounds.endMonth, seq);
 
@@ -1008,6 +1334,8 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
     this.loading = true;
 
     this.monthlyRows = [];
+
+    this.monthlyRowsAll = [];
 
     this.validesClotures = [];
 
@@ -1197,7 +1525,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
         this.applyValidations(validations);
 
-        this.rebuildDisplay();
+        this.rebuildDisplay({ resetPage: true });
 
         this.loading = false;
 
@@ -1215,7 +1543,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
         this.manualRows = [];
 
-        this.rebuildDisplay();
+        this.rebuildDisplay({ resetPage: true });
 
         this.loading = false;
 
@@ -1267,7 +1595,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
           this.applyValidations(validations);
 
-          this.rebuildDisplay();
+          this.rebuildDisplay({ resetPage: false });
 
           this.loadingValidations = false;
 
@@ -1309,15 +1637,23 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
 
 
-  private rebuildDisplay(): void {
+  private rebuildDisplay(options?: { resetPage?: boolean }): void {
 
     if (!this.selectedCountry) {
 
       this.monthlyRows = [];
 
+      this.monthlyRowsAll = [];
+
       this.validesClotures = [];
 
       this.nonValidesClotures = [];
+
+      this.paginatedMonthlyRows = [];
+
+      this.totalPages = 0;
+
+      this.currentPage = 1;
 
       return;
 
@@ -1355,11 +1691,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
 
 
-    this.monthlyRows = aggregates
-
-      .filter((row) => !this.selectedService || this.strEqual(row.service, this.selectedService))
-
-      .map((row) => {
+    const mapAggregateRow = (row: BoPartenaireMonthlyAggregateRow): ControleInterneDisplayRow => {
 
       const v = this.validations.get(
 
@@ -1385,7 +1717,13 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
       };
 
-    });
+    };
+
+    this.monthlyRowsAll = aggregates.map(mapAggregateRow);
+
+    this.monthlyRows = this.monthlyRowsAll
+
+      .filter((row) => !this.selectedService || this.strEqual(row.service, this.selectedService));
 
 
 
@@ -1418,6 +1756,11 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
     this.refreshAvailableServices(bounds.startDate, bounds.endDate, envNorm);
 
     this.loadCommentForScope();
+
+    this.updateMonthlyPagination(options?.resetPage ?? false);
+
+    this.cdr.markForCheck();
+
   }
 
   private getCommentMonthKey(): string {

@@ -1,7 +1,7 @@
 import { Component, EventEmitter, Input, Output, ChangeDetectorRef, NgZone, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
-import { AutoProcessingService, AutoProcessingModel, ProcessingResult, ColumnProcessingRule } from '../../services/auto-processing.service';
-import { PartnerConditionalKeysService, PARTNER_CONDITIONAL_KEY_COLUMN } from '../../services/partner-conditional-keys.service';
+import { AutoProcessingService, AutoProcessingModel, ENV_COLUMN_NAME, ENV_COLUMN_OPTIONS, EnvColumnOption, ProcessingResult, ColumnProcessingRule } from '../../services/auto-processing.service';
+import { PartnerConditionalKeysService } from '../../services/partner-conditional-keys.service';
 import { ModelPreProcessingService } from '../../services/model-preprocessing.service';
 import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
@@ -12,6 +12,7 @@ import {
   enrichRowWithCanonicalFrenchColumns,
   buildFrenchAliasEntries,
   applyFrenchAliasesToRow,
+  mergeBilingualColumnsInRows,
   FrenchAliasEntry,
   getCanonicalFrenchLabel,
   resolveCanonicalColumnId
@@ -37,6 +38,9 @@ import { FileWatcherService } from '../../services/file-watcher.service';
 import { ProgressIndicatorService } from '../../services/progress-indicator.service';
 import { applyColumnProcessingRulesAsync } from '../../utils/column-processing.util';
 import { readCsvFileUltraFast, readCsvContentUltraFast } from '../../utils/fast-csv-reader.util';
+import { findHeaderLineIndexInCsvLines, findHeaderRowIndexInGrid } from '../../utils/model-header-detection.util';
+import { discoverReconciliationKeyColumns } from '../../utils/reconciliation-key.util';
+import { formatGridCellAsString, isTransactionIdPreserveColumn, isMsisdnPreserveColumn } from '../../utils/text-cell.util';
 
 @Component({
     selector: 'app-file-upload',
@@ -103,9 +107,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     traitementOutputColumns: string[] = [];
     traitementColumnKeepMap: Record<string, boolean> = {};
     traitementColumnFilterEnabled = false;
+    traitementEnvColumnEnabled = false;
+    traitementEnvColumnValue: EnvColumnOption | '' = '';
+    readonly envColumnName = ENV_COLUMN_NAME;
+    readonly envColumnOptions = ENV_COLUMN_OPTIONS;
     traitementOutputColumnsLoading = false;
+    /** Suppression de doublons avant export (section Traitement). */
+    traitementDedupEnabled = false;
+    traitementDedupColumns: string[] = [];
     private availableTemplateFiles: Array<{ fileName: string; columns?: string[] }> | null = null;
     private treatmentProgressLastUi = 0;
+    private traitementColumnRulesCache = new Map<string, ColumnProcessingRule[]>();
 
     /** Modèle partenaire mémorisé après traitement assisté (évite la re-détection par nom de fichier). */
     assistedPartnerReconciliationModelId: string | null = null;
@@ -346,6 +358,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.traitementProgressMessage = '';
         this.traitementAutoSelectedModelHint = '';
         this.resetTraitementColumnSelectionState();
+        this.traitementDedupEnabled = false;
+        this.traitementDedupColumns = [];
+        this.traitementEnvColumnEnabled = false;
+        this.traitementEnvColumnValue = '';
         this.resetFileInput(this.traitementFileInputRef);
         this.cd.detectChanges();
     }
@@ -416,6 +432,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         this.selectedTraitementModelId = bestId;
+        this.syncTraitementEnvColumnFromModel();
         const preSummary = this.modelPreProcessingService.getPreProcessingSummary(best.preProcessingConfig);
         let hint = `Modèle sélectionné : ${best.name} (pattern ${best.filePattern})`;
         if (preSummary.summaryText) {
@@ -487,6 +504,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return this.selectedTraitementModelIds.size === 1 && !!this.selectedTraitementModelId;
     }
 
+    get showTraitementEnvSection(): boolean {
+        return this.showTraitementColumnSection;
+    }
+
+    get showTraitementDedupSection(): boolean {
+        if (this.isTraitementMultiModelMode) {
+            return this.selectedTraitementModelIds.size >= 1;
+        }
+        return !!this.selectedTraitementModelId;
+    }
+
+    private getTraitementCatalogModelId(): string {
+        if (this.selectedTraitementModelId) {
+            return this.selectedTraitementModelId;
+        }
+        return [...this.selectedTraitementModelIds][0] || '';
+    }
+
     isTraitementModelSelected(model: AutoProcessingModel): boolean {
         const id = this.getTraitementModelId(model);
         if (!id) {
@@ -522,6 +557,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.selectedTraitementModelId = '';
         if (ids.length !== 1) {
             this.traitementColumnFilterEnabled = false;
+            this.traitementDedupEnabled = false;
+            this.traitementDedupColumns = [];
             this.clearTraitementColumnCatalog();
         }
     }
@@ -766,8 +803,137 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     onTraitementModelSelectionChange(): void {
-        this.traitementColumnFilterEnabled = false;
+        this.traitementDedupEnabled = false;
+        this.traitementDedupColumns = [];
         this.clearTraitementColumnCatalog();
+        this.syncTraitementEnvColumnFromModel();
+
+        const modelId = this.getTraitementCatalogModelId();
+        const model = this.traitementModels.find(m => m.id === modelId);
+        this.traitementColumnFilterEnabled = this.modelPreProcessingService.isExportColumnFilterEnabled(
+            model?.preProcessingConfig
+        );
+
+        if (this.showTraitementColumnSection || this.showTraitementDedupSection) {
+            void this.loadTraitementOutputColumns().then(() => {
+                this.applyTraitementExportColumnFilterFromModel(model);
+                this.applyDefaultTraitementDedupColumns();
+            });
+        }
+    }
+
+    private applyTraitementExportColumnFilterFromModel(model?: AutoProcessingModel | null): void {
+        const filter = model?.preProcessingConfig?.exportColumnFilter;
+        if (!filter?.enabled || !this.traitementOutputColumns.length) {
+            return;
+        }
+        this.traitementColumnKeepMap = {
+            ...this.traitementColumnKeepMap,
+            ...this.modelPreProcessingService.buildExportColumnKeepMap(
+                this.traitementOutputColumns,
+                filter
+            )
+        };
+        this.cd.detectChanges();
+    }
+
+    onTraitementDedupToggle(enabled: boolean): void {
+        this.traitementDedupEnabled = enabled;
+        if (enabled && !this.traitementOutputColumns.length && this.showTraitementDedupSection) {
+            void this.loadTraitementOutputColumns().then(() => this.applyDefaultTraitementDedupColumns());
+        } else if (enabled && !this.traitementDedupColumns.length) {
+            this.applyDefaultTraitementDedupColumns();
+        }
+        this.cd.detectChanges();
+    }
+
+    isTraitementDedupColumnSelected(column: string): boolean {
+        return this.traitementDedupColumns.includes(column);
+    }
+
+    toggleTraitementDedupColumn(column: string, selected: boolean): void {
+        if (selected) {
+            if (!this.traitementDedupColumns.includes(column)) {
+                this.traitementDedupColumns = [...this.traitementDedupColumns, column];
+            }
+        } else {
+            this.traitementDedupColumns = this.traitementDedupColumns.filter(col => col !== column);
+        }
+        this.cd.detectChanges();
+    }
+
+    resetTraitementDedupToModelKeys(): void {
+        this.applyDefaultTraitementDedupColumns();
+    }
+
+    private applyDefaultTraitementDedupColumns(): void {
+        const modelId = this.getTraitementCatalogModelId();
+        const model = this.traitementModels.find(m => m.id === modelId);
+        if (!model || !this.traitementOutputColumns.length) {
+            this.traitementDedupColumns = [];
+            return;
+        }
+
+        const sampleRow = Object.fromEntries(
+            this.traitementOutputColumns.map(col => [col, ''])
+        ) as Record<string, string>;
+        const fromModel = this.modelPreProcessingService.resolveReconciliationDedupColumnKeys(
+            model,
+            sampleRow
+        );
+        const selected: string[] = [];
+
+        for (const col of fromModel) {
+            if (this.traitementOutputColumns.includes(col) && !selected.includes(col)) {
+                selected.push(col);
+            }
+        }
+
+        for (const partnerKey of model.reconciliationKeys?.partnerKeys || []) {
+            const match = this.traitementOutputColumns.find(col =>
+                col === partnerKey
+                || this.normalizeColumnName(col) === this.normalizeColumnName(partnerKey)
+            );
+            if (match && !selected.includes(match)) {
+                selected.push(match);
+            }
+        }
+
+        this.traitementDedupColumns = selected;
+        this.cd.detectChanges();
+    }
+
+    private syncTraitementEnvColumnFromModel(): void {
+        const model = this.traitementModels.find(m => m.id === this.selectedTraitementModelId);
+        const env = model?.preProcessingConfig?.envColumn;
+        if (env?.enabled && env.value && ENV_COLUMN_OPTIONS.includes(env.value as EnvColumnOption)) {
+            this.traitementEnvColumnEnabled = true;
+            this.traitementEnvColumnValue = env.value as EnvColumnOption;
+            return;
+        }
+        this.traitementEnvColumnEnabled = false;
+        this.traitementEnvColumnValue = '';
+    }
+
+    private buildEffectivePreProcessingConfig(model: AutoProcessingModel) {
+        const base = model.preProcessingConfig;
+
+        if (!this.showTraitementEnvSection) {
+            return base;
+        }
+
+        const envColumn = this.traitementEnvColumnEnabled && this.traitementEnvColumnValue
+            ? { enabled: true, value: this.traitementEnvColumnValue }
+            : undefined;
+
+        if (!base) {
+            return envColumn ? { envColumn } : undefined;
+        }
+
+        return {
+            ...base,
+            envColumn
+        };
     }
 
     private resetTraitementColumnSelectionState(): void {
@@ -779,6 +945,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.traitementOutputColumns = [];
         this.traitementColumnKeepMap = {};
         this.traitementOutputColumnsLoading = false;
+        this.traitementDedupColumns = [];
     }
 
     onTraitementColumnFilterToggle(enabled: boolean): void {
@@ -825,10 +992,32 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return [];
     }
 
+    /** Colonnes attendues du fichier modèle (watch-folder) pour localiser l'en-tête à la lecture. */
+    private async resolveModelExpectedHeaderColumns(
+        model: AutoProcessingModel,
+        columnRules: ColumnProcessingRule[] = []
+    ): Promise<string[]> {
+        const templateColumns = await this.resolveModelTemplateColumns(model);
+        if (templateColumns.length >= 2) {
+            return templateColumns;
+        }
+
+        const inputColumns = this.collectAssistedTreatmentInputColumns(model, columnRules);
+        if (inputColumns.length >= 2) {
+            return inputColumns;
+        }
+
+        return this.modelPreProcessingService.getDefaultTemplateColumns(
+            model.templateFile,
+            model.filePattern
+        );
+    }
+
     async loadTraitementOutputColumns(): Promise<void> {
         this.clearTraitementColumnCatalog();
 
-        const model = this.traitementModels.find(m => m.id === this.selectedTraitementModelId);
+        const catalogModelId = this.getTraitementCatalogModelId();
+        const model = this.traitementModels.find(m => m.id === catalogModelId);
         if (!model?.id) {
             this.cd.detectChanges();
             return;
@@ -850,6 +1039,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
             for (const col of this.traitementOutputColumns) {
                 this.traitementColumnKeepMap[col] = true;
+            }
+            if (this.traitementColumnFilterEnabled) {
+                this.applyTraitementExportColumnFilterFromModel(model);
             }
         } catch (error) {
         } finally {
@@ -907,6 +1099,22 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
+        if (this.traitementEnvColumnEnabled && !this.traitementEnvColumnValue) {
+            await this.popupService.showWarning(
+                `Veuillez choisir une valeur pour la colonne ${ENV_COLUMN_NAME}.`,
+                'Colonne ENV'
+            );
+            return;
+        }
+
+        if (this.traitementDedupEnabled && !this.traitementDedupColumns.length) {
+            await this.popupService.showWarning(
+                'Activez la suppression de doublons uniquement après avoir coché au moins une colonne clé.',
+                'Suppression de doublons'
+            );
+            return;
+        }
+
         if (this.isTraitementMultiModelMode && this.selectedTraitementModelIds.size > 1) {
             await this.applyEmbedMultiModelTraitement();
             return;
@@ -936,6 +1144,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         this.traitementProcessing = true;
         this.treatmentProgressLastUi = 0;
+        this.traitementColumnRulesCache.clear();
 
         const successes: string[] = [];
         const skipped: string[] = [];
@@ -988,6 +1197,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     private async applySingleModelTraitement(model: AutoProcessingModel, files: File[]): Promise<void> {
         this.traitementProcessing = true;
         this.treatmentProgressLastUi = 0;
+        this.traitementColumnRulesCache.clear();
         const perf = this.startTreatmentPerf(
             this.embedTraitementSection ? 'Traitement automatique (/traitement)' : 'Traitement assisté',
             {
@@ -1091,10 +1301,13 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         exportRows?: Record<string, string>[];
         warningMessage?: string;
     }> {
+        const columnRules = await this.getTraitementColumnRules(model.id!);
+        const expectedHeaderColumns = await this.resolveModelExpectedHeaderColumns(model, columnRules);
+
         const needsCompilation = await this.needsAssistedCompilation(files);
         const compiled = needsCompilation
-            ? await this.compileAssistedTreatmentFileRows(files)
-            : await this.loadSingleAssistedTreatmentFile(files[0]);
+            ? await this.compileAssistedTreatmentFileRows(files, expectedHeaderColumns)
+            : await this.loadSingleAssistedTreatmentFile(files[0], expectedHeaderColumns);
 
         await this.updateTraitementProgress(
             `Lecture terminée (${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)) — ${model.name}...`
@@ -1106,11 +1319,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 warningMessage: 'Aucune donnée lisible dans les fichiers sélectionnés.'
             };
         }
-
-        const columnRules = await this.autoProcessingService.getColumnProcessingRules(
-            model.id!,
-            AutoProcessingService.RECONCILIATION_MODULE
-        );
         const inputColumns = this.collectAssistedTreatmentInputColumns(model, columnRules);
         let workingRows = compiled.rows;
         const needsEnrichment = this.needsAssistedColumnEnrichment(compiled.rows[0], inputColumns);
@@ -1126,26 +1334,34 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         let preProcessingResultMessage = '';
-        if (this.modelPreProcessingService.hasPreProcessing(model.preProcessingConfig)) {
+        const effectivePreProcessingConfig = this.buildEffectivePreProcessingConfig(model);
+        if (this.modelPreProcessingService.hasPreProcessing(effectivePreProcessingConfig)) {
             const rowsBeforePreProcessing = workingRows.length;
             workingRows = await this.modelPreProcessingService.applyPreProcessingAsync(
                 workingRows,
-                model.preProcessingConfig,
+                effectivePreProcessingConfig,
                 {
-                    batchSize: workingRows.length > 100000 ? 10000 : 500,
+                    batchSize: workingRows.length > 100000
+                        ? 10000
+                        : workingRows.length > 20000
+                            ? 5000
+                            : workingRows.length,
                     onProgress: async (message, done, total) => {
                         await this.updateTraitementProgress(
-                            `${model.name} — ${message} ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`
+                            `${model.name} — ${message} ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`,
+                            { skipYield: workingRows.length <= 20000 }
                         );
                     },
-                    yieldFn: () => this.yieldToMainThread(true)
+                    yieldFn: workingRows.length <= 20000
+                        ? undefined
+                        : () => this.yieldToMainThread(true)
                 }
             );
             workingRows = await this.stripKeyColumnWhitespaceAsync(workingRows);
             preProcessingResultMessage = this.modelPreProcessingService.buildApplicationResult(
                 rowsBeforePreProcessing,
                 workingRows.length,
-                model.preProcessingConfig
+                effectivePreProcessingConfig
             );
 
             if (!workingRows.length) {
@@ -1157,20 +1373,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         await this.updateTraitementProgress(
-            `${model.name} — règles sur ${workingRows.length.toLocaleString('fr-FR')} ligne(s)...`
+            `${model.name} — règles sur ${workingRows.length.toLocaleString('fr-FR')} ligne(s)...`,
+            { skipYield: workingRows.length <= 20000 }
         );
 
         const processed = columnRules.length
             ? await applyColumnProcessingRulesAsync(
                 workingRows,
                 columnRules,
-                workingRows.length > 100000 ? 10000 : 500,
-                async (done, total) => {
-                    await this.updateTraitementProgress(
-                        `${model.name} — règles : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`
-                    );
-                },
-                () => this.yieldToMainThread(true)
+                workingRows.length > 100000 ? 10000 : 5000,
+                workingRows.length <= 20000
+                    ? undefined
+                    : async (done, total) => {
+                        await this.updateTraitementProgress(
+                            `${model.name} — règles : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`,
+                            { skipYield: true }
+                        );
+                    },
+                workingRows.length <= 20000 ? undefined : () => this.yieldToMainThread(true)
             )
             : workingRows;
 
@@ -1178,12 +1398,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return { success: false, warningMessage: 'Aucun résultat après application des règles.' };
         }
 
-        const dedupResult = await this.removeDuplicateTreatmentRowsAsync(processed);
-        const uniqueProcessed = dedupResult.uniqueRows;
-
-        if (!uniqueProcessed.length) {
-            return { success: false, warningMessage: 'Aucune ligne unique après déduplication.' };
-        }
+        const { rows: mergedRows } = mergeBilingualColumnsInRows(processed, expectedHeaderColumns);
 
         const useColumnFilter = !this.isTraitementMultiModelMode || this.selectedTraitementModelIds.size === 1;
         const exportColumns = useColumnFilter ? this.getSelectedTraitementExportColumns() : [];
@@ -1194,10 +1409,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             };
         }
 
-        let exportRows = uniqueProcessed;
+        let exportRows = mergedRows;
         if (exportColumns.length) {
             exportRows = this.modelPreProcessingService.projectRowsToExportColumns(
-                uniqueProcessed,
+                mergedRows,
                 exportColumns,
                 columnRules,
                 model
@@ -1205,19 +1420,51 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         const outputName = this.buildProcessedOutputFileName(model, compiled.referenceFile);
+        let { rows: finalExportRows, columns: finalExportColumns } =
+            this.modelPreProcessingService.dropEmptyColumnsFromRows(
+                exportRows,
+                exportColumns.length ? exportColumns : undefined
+            );
+
+        const dedupResult = this.traitementDedupEnabled && this.traitementDedupColumns.length
+            ? this.modelPreProcessingService.deduplicateRowsByConfiguredColumns(
+                finalExportRows,
+                this.traitementDedupColumns,
+                model
+            )
+            : this.modelPreProcessingService.deduplicateRowsByReconciliationKey(
+                model,
+                finalExportRows
+            );
+        finalExportRows = dedupResult.uniqueRows;
+
+        if (!finalExportRows.length) {
+            return { success: false, warningMessage: 'Aucune ligne unique après déduplication.' };
+        }
+
+        if (dedupResult.duplicatesRemoved > 0) {
+            await this.updateTraitementProgress(
+                `${model.name} — ${dedupResult.duplicatesRemoved.toLocaleString('fr-FR')} doublon(s) retiré(s)` +
+                (dedupResult.dedupColumns.length
+                    ? ` (clé : ${dedupResult.dedupColumns.join(', ')})`
+                    : ''),
+                { skipYield: true }
+            );
+        }
+
         await this.updateTraitementProgress(`Téléchargement : ${outputName}`);
-        await this.downloadProcessedTreatmentFile(exportRows, outputName, {
+        await this.downloadProcessedTreatmentFile(finalExportRows, outputName, {
             skipNormalize: true,
-            columns: exportColumns.length ? exportColumns : undefined
+            columns: finalExportColumns.length ? finalExportColumns : undefined
         });
 
         return {
             success: true,
             outputName,
-            lineCount: uniqueProcessed.length,
+            lineCount: finalExportRows.length,
             duplicatesRemoved: dedupResult.duplicatesRemoved,
             preProcessingResultMessage,
-            exportRows
+            exportRows: finalExportRows
         };
     }
 
@@ -1300,7 +1547,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     /** Lecture directe d'un seul fichier (CSV ou Excel mono-feuille) — sans étape de compilation. */
-    private async loadSingleAssistedTreatmentFile(file: File): Promise<{
+    private async loadSingleAssistedTreatmentFile(
+        file: File,
+        expectedHeaderColumns: string[] = []
+    ): Promise<{
         rows: Record<string, string>[];
         sourceSummary: string;
         referenceFile: File;
@@ -1309,7 +1559,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.traitementProgressMessage = `Lecture ultra-rapide : ${file.name} (${fileSizeMB} Mo)`;
         this.cd.detectChanges();
 
-        const parsed = await this.readAssistedTreatmentFileRows(file);
+        const parsed = await this.readAssistedTreatmentFileRows(file, expectedHeaderColumns);
         const headerInfo = parsed.headerLine >= 0
             ? `, en-tête ligne ${parsed.headerLine + 1}`
             : '';
@@ -1325,7 +1575,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     /** Fusionne plusieurs fichiers ou feuilles Excel en un seul jeu de lignes. */
-    private async compileAssistedTreatmentFileRows(files: File[]): Promise<{
+    private async compileAssistedTreatmentFileRows(
+        files: File[],
+        expectedHeaderColumns: string[] = []
+    ): Promise<{
         rows: Record<string, string>[];
         sourceSummary: string;
         referenceFile: File;
@@ -1340,7 +1593,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 `Fusion ultra-rapide ${i + 1}/${files.length} : ${file.name} (${fileSizeMB} Mo)`;
             this.cd.detectChanges();
 
-            const parsed = await this.readAssistedTreatmentFileRows(file);
+            const parsed = await this.readAssistedTreatmentFileRows(file, expectedHeaderColumns);
             if (parsed.rows.length) {
                 this.appendRowsSafely(compiled, parsed.rows);
                 const headerInfo = parsed.headerLine >= 0
@@ -1455,7 +1708,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     private resolveAssistedCsvHeader(
         lines: string[],
-        delimiter: string
+        delimiter: string,
+        expectedHeaderColumns: string[] = []
     ): {
         headerLine: number;
         headers: string[];
@@ -1463,6 +1717,28 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         skippedBeforeHeader: number;
         source: string;
     } {
+        if (expectedHeaderColumns.length >= 2) {
+            const modelLineIndex = findHeaderLineIndexInCsvLines(
+                lines,
+                delimiter,
+                expectedHeaderColumns,
+                80
+            );
+            if (modelLineIndex !== null) {
+                const headerCells = this.splitCsvLineFast(lines[modelLineIndex], delimiter);
+                const headers = headerCells.map((header, index) =>
+                    this.normalizeColumnName(fixGarbledCharacters(header.trim()) || `Col${index + 1}`)
+                );
+                return {
+                    headerLine: modelLineIndex,
+                    headers,
+                    dataStartLine: modelLineIndex + 1,
+                    skippedBeforeHeader: modelLineIndex,
+                    source: 'modèle watch-folder'
+                };
+            }
+        }
+
         for (let i = 0; i < Math.min(15, lines.length); i++) {
             const line = lines[i];
             if (!line.trim()) {
@@ -1515,7 +1791,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             };
         }
 
-        const assistedHeader = this.detectAssistedTreatmentHeader(headerGrid);
+        const assistedHeader = this.detectAssistedTreatmentHeader(headerGrid, expectedHeaderColumns);
         const headerLine = assistedHeader.headerRowIndex;
         const headerRow = assistedHeader.headerRow;
         const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
@@ -1628,13 +1904,25 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return rows;
         }
 
-        const batchSize = rows.length > 50000 ? 2000 : 500;
+        if (rows.length <= 8000) {
+            for (let i = 0; i < rows.length; i++) {
+                applyFrenchAliasesToRow(rows[i], aliases);
+            }
+            if (onProgress) {
+                await onProgress(rows.length, rows.length);
+            }
+            return rows;
+        }
+
+        const batchSize = rows.length > 50000 ? 2000 : 5000;
         for (let start = 0; start < rows.length; start += batchSize) {
-            await onProgress?.(start, rows.length);
-            await this.yieldToMainThread(true);
             const end = Math.min(start + batchSize, rows.length);
             for (let i = start; i < end; i++) {
                 applyFrenchAliasesToRow(rows[i], aliases);
+            }
+            await onProgress?.(end, rows.length);
+            if (end < rows.length) {
+                await this.yieldToMainThread(true);
             }
         }
 
@@ -1657,7 +1945,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     /**
      * Détecte la ligne d'en-tête et ignore les lignes avant l'en-tête et les lignes inutiles.
      */
-    private parseAssistedTreatmentGrid(jsonData: any[][]): {
+    private parseAssistedTreatmentGrid(
+        jsonData: any[][],
+        expectedHeaderColumns: string[] = []
+    ): {
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
@@ -1667,7 +1958,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         const normalizedGrid = this.normalizeAssistedTreatmentGrid(jsonData);
-        const assistedHeader = this.detectAssistedTreatmentHeader(normalizedGrid);
+        const assistedHeader = this.detectAssistedTreatmentHeader(normalizedGrid, expectedHeaderColumns);
         const headerLine = assistedHeader.headerRowIndex;
         const headerRow = assistedHeader.headerRow;
         const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
@@ -1711,7 +2002,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     private async parseAssistedTreatmentGridAsync(
         jsonData: any[][],
-        progressLabel = 'Lecture Excel'
+        progressLabel = 'Lecture Excel',
+        expectedHeaderColumns: string[] = []
     ): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
@@ -1722,7 +2014,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
 
         const headerGrid = this.buildAssistedHeaderDetectionGrid(jsonData);
-        const assistedHeader = this.detectAssistedTreatmentHeader(headerGrid);
+        const assistedHeader = this.detectAssistedTreatmentHeader(headerGrid, expectedHeaderColumns);
         const headerLine = assistedHeader.headerRowIndex;
         const headerRow = assistedHeader.headerRow;
         const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
@@ -1782,7 +2074,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     /** Lit toutes les feuilles Excel et fusionne les lignes utiles (rapports multi-feuilles Orange Money, etc.). */
-    private async parseAssistedTreatmentWorkbook(workbook: XLSX.WorkBook): Promise<{
+    private async parseAssistedTreatmentWorkbook(
+        workbook: XLSX.WorkBook,
+        expectedHeaderColumns: string[] = []
+    ): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
@@ -1804,14 +2099,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         const firstParse = await this.parseAssistedTreatmentGridAsync(
             firstGrid,
-            multiSheet ? 'Fusion feuille 1' : 'Lecture Excel'
+            multiSheet ? 'Fusion feuille 1' : 'Lecture Excel',
+            expectedHeaderColumns
         );
         if (!multiSheet) {
             return firstParse;
         }
 
         const assistedHeader = this.detectAssistedTreatmentHeader(
-            this.buildAssistedHeaderDetectionGrid(firstGrid)
+            this.buildAssistedHeaderDetectionGrid(firstGrid),
+            expectedHeaderColumns
         );
         const headerRow = assistedHeader.headerRow.map(h => this.normalizeColumnName(h || ''));
         const headers = firstParse.rows.length
@@ -1993,11 +2290,26 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     /**
      * Détecte la ligne d'en-tête (Airtel User Transaction Report, puis heuristique générale).
      */
-    private detectAssistedTreatmentHeader(jsonData: any[][]): {
+    private detectAssistedTreatmentHeader(
+        jsonData: any[][],
+        expectedHeaderColumns: string[] = []
+    ): {
         headerRowIndex: number;
         headerRow: string[];
         source: string;
     } {
+        if (expectedHeaderColumns.length >= 2) {
+            const modelHeaderIndex = findHeaderRowIndexInGrid(jsonData, expectedHeaderColumns, 80);
+            if (modelHeaderIndex !== null) {
+                const headerRow = this.extractAssistedGridRowStrings(jsonData[modelHeaderIndex]);
+                return {
+                    headerRowIndex: modelHeaderIndex,
+                    headerRow,
+                    source: 'modèle watch-folder'
+                };
+            }
+        }
+
         const airtelHeaderIndex = this.detectAirtelUserTransactionReportHeaderIndex(jsonData);
         if (airtelHeaderIndex !== null) {
             const headerRow = this.extractAssistedGridRowStrings(jsonData[airtelHeaderIndex]);
@@ -2348,7 +2660,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const uniqueRows: Record<string, string>[] = [];
         let duplicatesRemoved = 0;
         const orderedKeys = Object.keys(rows[0]);
-        const batchSize = rows.length > 100000 ? 20000 : 2000;
+        const batchSize = rows.length > 100000 ? 20000 : rows.length <= 8000 ? rows.length : 5000;
 
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
@@ -2360,7 +2672,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 uniqueRows.push(row);
             }
 
-            if (i > 0 && i % batchSize === 0) {
+            if (batchSize < rows.length && i > 0 && i % batchSize === 0) {
                 await this.yieldToMainThread(true);
             }
         }
@@ -2613,35 +2925,78 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
     }
 
+    private async getTraitementColumnRules(modelId: string): Promise<ColumnProcessingRule[]> {
+        const cached = this.traitementColumnRulesCache.get(modelId);
+        if (cached) {
+            return cached;
+        }
+        const rules = await this.autoProcessingService.getColumnProcessingRules(
+            modelId,
+            AutoProcessingService.RECONCILIATION_MODULE
+        );
+        this.traitementColumnRulesCache.set(modelId, rules);
+        return rules;
+    }
+
     private async stripKeyColumnWhitespaceAsync(rows: Record<string, string>[]): Promise<Record<string, string>[]> {
-        if (rows.length <= 5000) {
+        if (rows.length <= 20000) {
             return this.stripKeyColumnWhitespace(rows);
+        }
+
+        const keyColumns = this.resolveKeyColumnsForWhitespace(rows[0]);
+        if (!keyColumns.length) {
+            return rows;
         }
 
         const batchSize = rows.length > 100000 ? 10000 : 5000;
         for (let start = 0; start < rows.length; start += batchSize) {
             const end = Math.min(start + batchSize, rows.length);
-            this.stripKeyColumnWhitespace(rows.slice(start, end));
+            this.stripKeyColumnWhitespaceInRange(rows, keyColumns, start, end);
             await this.yieldToMainThread(true);
         }
         return rows;
     }
 
-    private stripKeyColumnWhitespace(rows: Record<string, string>[]): Record<string, string>[] {
+    private resolveKeyColumnsForWhitespace(sampleRow: Record<string, string> | undefined): string[] {
+        if (!sampleRow) {
+            return [];
+        }
         const keyPatterns = ['cle', 'key', 'reference', 'referenceid', 'idtransaction', 'reconciliation'];
-        const isKeyColumn = (col: string): boolean => {
+        const columns: string[] = [];
+        for (const col of Object.keys(sampleRow)) {
             const lower = col.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
-            return keyPatterns.some(k => lower === k || lower.includes(k));
-        };
+            if (keyPatterns.some(k => lower === k || lower.includes(k)) && !isTransactionIdPreserveColumn(col)) {
+                columns.push(col);
+            }
+        }
+        return columns;
+    }
 
-        for (let i = 0; i < rows.length; i++) {
+    private stripKeyColumnWhitespaceInRange(
+        rows: Record<string, string>[],
+        keyColumns: string[],
+        start: number,
+        end: number
+    ): void {
+        for (let i = start; i < end; i++) {
             const row = rows[i];
-            for (const col of Object.keys(row)) {
-                if (isKeyColumn(col)) {
+            for (const col of keyColumns) {
+                if (Object.prototype.hasOwnProperty.call(row, col)) {
                     row[col] = stripAllWhitespace(row[col]);
                 }
             }
         }
+    }
+
+    private stripKeyColumnWhitespace(rows: Record<string, string>[]): Record<string, string>[] {
+        if (!rows.length) {
+            return rows;
+        }
+        const keyColumns = this.resolveKeyColumnsForWhitespace(rows[0]);
+        if (!keyColumns.length) {
+            return rows;
+        }
+        this.stripKeyColumnWhitespaceInRange(rows, keyColumns, 0, rows.length);
         return rows;
     }
 
@@ -2895,7 +3250,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return 'services';
     }
 
-    private readAssistedTreatmentFileRows(file: File): Promise<{
+    private readAssistedTreatmentFileRows(
+        file: File,
+        expectedHeaderColumns: string[] = []
+    ): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
@@ -2903,11 +3261,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const fileName = file.name.toLowerCase();
 
         if (fileName.endsWith('.csv')) {
-            return this.readAssistedTreatmentCsvFileFast(file);
+            return this.readAssistedTreatmentCsvFileFast(file, expectedHeaderColumns);
         }
 
         if (this.isExcelFile(fileName)) {
-            return this.readAssistedTreatmentExcelFile(file);
+            return this.readAssistedTreatmentExcelFile(file, expectedHeaderColumns);
         }
 
         return Promise.reject(new Error('Format non supporté. Utilisez CSV ou Excel.'));
@@ -2916,13 +3274,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     /**
      * Lecture CSV ultra-rapide — PapaParse + Web Worker pour les gros fichiers.
      */
-    private async readAssistedTreatmentCsvFileFast(file: File): Promise<{
+    private async readAssistedTreatmentCsvFileFast(
+        file: File,
+        expectedHeaderColumns: string[] = []
+    ): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
     }> {
         return readCsvFileUltraFast(file, {
             stripAirtelPreamble: true,
+            expectedHeaderColumns,
             normalizeHeader: (header, index) =>
                 this.normalizeColumnName(header || `Col${index + 1}`),
             onProgress: (processed, total) => {
@@ -2936,7 +3298,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         });
     }
 
-    private async readAssistedTreatmentExcelFile(file: File): Promise<{
+    private async readAssistedTreatmentExcelFile(
+        file: File,
+        expectedHeaderColumns: string[] = []
+    ): Promise<{
         rows: Record<string, string>[];
         headerLine: number;
         removedLines: number;
@@ -2966,7 +3331,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
             await this.yieldToMainThread();
             const workbookStart = performance.now();
-            const parsed = await this.parseAssistedTreatmentWorkbook(workbook);
+            const parsed = await this.parseAssistedTreatmentWorkbook(workbook, expectedHeaderColumns);
             return parsed;
         } catch (error) {
             throw error instanceof Error ? error : new Error(String(error));
@@ -4088,6 +4453,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         const formatted = formatSpreadsheetCellValue(header, value);
         if (formatted === undefined || formatted === null || formatted === '') {
             row[header] = '';
+            return;
+        }
+        if (isTransactionIdPreserveColumn(header) || isMsisdnPreserveColumn(header)) {
+            row[header] = fixCellEncoding(formatGridCellAsString(header, formatted));
             return;
         }
         row[header] = typeof formatted === 'string' ? fixCellEncoding(formatted) : formatted;
@@ -6976,62 +7345,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         confidence: number;
         modelId?: string;
     } | null {
-        const conditional = this.partnerConditionalKeysService.tryResolveConditionalPartnerKey(
+        const resolved = this.partnerConditionalKeysService.resolveKeysFromPartnerModel(
             model,
             boData,
             partnerData
         );
-        if (conditional) {
-            return {
-                ...conditional,
-                source: 'model',
-                confidence: 1.0,
-                modelId: model.modelId || model.id
-            };
-        }
-
-        if (!model.reconciliationKeys?.partnerKeys?.length) {
+        if (!resolved) {
             return null;
         }
-
-        let boKeyColumn = '';
-        let partnerKeyColumn = '';
-
-        const boKeys = model.reconciliationKeys.boKeys || [];
-        const partnerKeys = model.reconciliationKeys.partnerKeys || [];
-
-        if (boKeys.length > 0 && partnerKeys.length > 0) {
-            const foundBoKey = this.findExistingColumn(boData, boKeys);
-            const foundPartnerKey = this.findExistingColumn(partnerData, partnerKeys);
-            if (foundBoKey && foundPartnerKey) {
-                boKeyColumn = foundBoKey;
-                partnerKeyColumn = foundPartnerKey;
-            }
-        }
-
-        if (!boKeyColumn || !partnerKeyColumn) {
-            const boModels = model.reconciliationKeys.boModels || [];
-            for (const boModelId of boModels) {
-                const boModelKeys = model.reconciliationKeys.boModelKeys?.[boModelId];
-                if (boModelKeys?.length && partnerKeys.length) {
-                    const foundBoKey = this.findExistingColumn(boData, boModelKeys);
-                    const foundPartnerKey = this.findExistingColumn(partnerData, partnerKeys);
-                    if (foundBoKey && foundPartnerKey) {
-                        boKeyColumn = foundBoKey;
-                        partnerKeyColumn = foundPartnerKey;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!boKeyColumn || !partnerKeyColumn) {
-            return null;
-        }
-
         return {
-            boKeyColumn,
-            partnerKeyColumn,
+            ...resolved,
             source: 'model',
             confidence: 1.0,
             modelId: model.modelId || model.id
@@ -7103,6 +7426,22 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 }
             }
 
+            const discovered = discoverReconciliationKeyColumns(boData, partnerData);
+            if (discovered) {
+                const patternMatch = partnerModels[0]
+                    ?? models.find(m =>
+                        (m.fileType === 'partner' || m.fileType === 'both') &&
+                        partnerFileName &&
+                        this.matchesFilePattern(partnerFileName, m.filePattern)
+                    );
+                return {
+                    ...discovered,
+                    source: 'model',
+                    confidence: 0.85,
+                    modelId: patternMatch?.modelId || patternMatch?.id
+                };
+            }
+
         } catch (error) {
         }
 
@@ -7113,9 +7452,19 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     private modelHasPartnerKeyConfig(model: AutoProcessingModel): boolean {
+        const rk = model.reconciliationKeys;
+        if (!rk) {
+            return false;
+        }
+        const hasBoModelKeys = (rk.boModels || []).some(
+            id => (rk.boModelKeys?.[id] || []).length > 0
+        );
         return !!(
-            model.reconciliationKeys?.partnerKeys?.length ||
-            this.partnerConditionalKeysService.isEnabled(model.reconciliationKeys?.partnerConditionalKeys)
+            rk.partnerKeys?.length ||
+            rk.boKeys?.length ||
+            hasBoModelKeys ||
+            this.partnerConditionalKeysService.isEnabled(rk.partnerConditionalKeys) ||
+            this.partnerConditionalKeysService.isBoConditionalEnabled(rk.boConditionalKeys)
         );
     }
 
@@ -7662,6 +8011,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 let processedBoData = this.autoBoData;
                 let processedPartnerData = this.autoPartnerData;
                 let partnerKeyColumn = keyDetectionResult.partnerKeyColumn;
+                let boKeyColumn = keyDetectionResult.boKeyColumn;
 
                 // Appliquer les traitements du modèle (boTreatments + clés conditionnelles partenaire)
                 if (keyDetectionResult.modelId) {
@@ -7679,12 +8029,18 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         }
 
                         const conditionalConfig = usedModel?.reconciliationKeys?.partnerConditionalKeys;
-                        if (this.partnerConditionalKeysService.isEnabled(conditionalConfig)) {
-                            processedPartnerData = this.partnerConditionalKeysService.applyPartnerConditionalKeys(
-                                processedPartnerData,
-                                conditionalConfig!
-                            );
-                            partnerKeyColumn = PARTNER_CONDITIONAL_KEY_COLUMN;
+                        const preparedKeys = this.partnerConditionalKeysService.applyModelConditionalKeys(
+                            processedBoData,
+                            processedPartnerData,
+                            usedModel!
+                        );
+                        if (preparedKeys) {
+                            processedBoData = preparedKeys.boData;
+                            processedPartnerData = preparedKeys.partnerData;
+                            boKeyColumn = preparedKeys.boKeyColumn;
+                            partnerKeyColumn = preparedKeys.partnerKeyColumn;
+                        } else if (this.partnerConditionalKeysService.isEnabled(conditionalConfig)) {
+                            // Config activée mais invalide sur ces données : conserver les clés classiques du modèle
                         }
                     } catch (error) {
                     }
@@ -7692,7 +8048,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
                 // Configurer les colonnes de comparaison
                 const comparisonColumns = [{
-                    boColumn: keyDetectionResult.boKeyColumn,
+                    boColumn: boKeyColumn,
                     partnerColumn: partnerKeyColumn
             }];
 
@@ -7700,16 +8056,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 // 🔍 VÉRIFICATION CRITIQUE: Vérifier que les colonnes existent dans les données
                 if (processedBoData.length > 0) {
                     const boColumns = Object.keys(processedBoData[0]);
-                    const boKeyExists = boColumns.includes(keyDetectionResult.boKeyColumn);
+                    const boKeyExists = boColumns.includes(boKeyColumn);
                     if (!boKeyExists) {
                         // Chercher des colonnes similaires
                         const similarColumns = boColumns.filter(col => 
-                            col.toLowerCase().includes(keyDetectionResult.boKeyColumn.toLowerCase()) ||
-                            keyDetectionResult.boKeyColumn.toLowerCase().includes(col.toLowerCase())
+                            col.toLowerCase().includes(boKeyColumn.toLowerCase()) ||
+                            boKeyColumn.toLowerCase().includes(col.toLowerCase())
                         );
                         if (similarColumns.length > 0) {
                         }
-                        throw new Error(`Colonne clé BO "${keyDetectionResult.boKeyColumn}" introuvable dans les données. Colonnes disponibles: ${boColumns.join(', ')}`);
+                        throw new Error(`Colonne clé BO "${boKeyColumn}" introuvable dans les données. Colonnes disponibles: ${boColumns.join(', ')}`);
                     }
                 }
                 
@@ -7744,7 +8100,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     const reconciliationRequest = {
                         boFileContent: normalizedBoData,
                         partnerFileContent: normalizedPartnerData,
-                    boKeyColumn: keyDetectionResult.boKeyColumn,
+                    boKeyColumn: boKeyColumn,
                     partnerKeyColumn: partnerKeyColumn,
                         comparisonColumns: comparisonColumns,
                 boColumnFilters: []

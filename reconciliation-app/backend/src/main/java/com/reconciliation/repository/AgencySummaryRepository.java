@@ -190,7 +190,7 @@ public interface AgencySummaryRepository extends JpaRepository<AgencySummaryEnti
     @Query("""
         SELECT UPPER(a.country) as country, LOWER(a.service) as service, SUM(a.totalVolume) as totalVolume, SUM(a.recordCount) as totalTransactions
         FROM AgencySummaryEntity a
-        WHERE (:countries IS NULL OR UPPER(a.country) IN :countries)
+        WHERE UPPER(a.country) IN :countries
           AND (:startDate IS NULL OR :startDate = '' OR a.date >= :startDate)
           AND (:endDate IS NULL OR :endDate = '' OR a.date <= :endDate)
         GROUP BY UPPER(a.country), LOWER(a.service)
@@ -204,13 +204,37 @@ public interface AgencySummaryRepository extends JpaRepository<AgencySummaryEnti
     @Query("""
         SELECT UPPER(a.country) as country, SUM(a.totalVolume) as totalVolume, SUM(a.recordCount) as totalTransactions
         FROM AgencySummaryEntity a
-        WHERE (:countries IS NULL OR UPPER(a.country) IN :countries)
+        WHERE UPPER(a.country) IN :countries
           AND (:startDate IS NULL OR :startDate = '' OR a.date >= :startDate)
           AND (:endDate IS NULL OR :endDate = '' OR a.date <= :endDate)
         GROUP BY UPPER(a.country)
         """)
     List<Object[]> aggregateByCountry(
         @Param("countries") List<String> countries,
+        @Param("startDate") String startDate,
+        @Param("endDate") String endDate
+    );
+
+    @Query("""
+        SELECT UPPER(a.country) as country, SUM(a.totalVolume) as totalVolume, SUM(a.recordCount) as totalTransactions
+        FROM AgencySummaryEntity a
+        WHERE (:startDate IS NULL OR :startDate = '' OR a.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR a.date <= :endDate)
+        GROUP BY UPPER(a.country)
+        """)
+    List<Object[]> aggregateByCountryAll(
+        @Param("startDate") String startDate,
+        @Param("endDate") String endDate
+    );
+
+    @Query("""
+        SELECT UPPER(a.country) as country, LOWER(a.service) as service, SUM(a.totalVolume) as totalVolume, SUM(a.recordCount) as totalTransactions
+        FROM AgencySummaryEntity a
+        WHERE (:startDate IS NULL OR :startDate = '' OR a.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR a.date <= :endDate)
+        GROUP BY UPPER(a.country), LOWER(a.service)
+        """)
+    List<Object[]> aggregateByCountryAndServiceAll(
         @Param("startDate") String startDate,
         @Param("endDate") String endDate
     );

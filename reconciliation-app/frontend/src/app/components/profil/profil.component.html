@@ -37,30 +37,30 @@
 
   <div class="main">
   <div class="profil-container">
-  <div class="header">
-    <div class="header-title">
-      <h2><i class="fas fa-user-shield"></i> Gestion des profils</h2>
+  <div class="toolbar-card">
+    <div class="toolbar-card-left">
+      <h2 class="toolbar-title"><i class="fas fa-user-shield"></i> Profils</h2>
       <span class="profils-count">{{ filteredProfils.length }} profil(s)</span>
     </div>
-    <div class="actions">
-      <button (click)="showAddForm = !showAddForm" class="btn add-btn">
-        <i class="fas fa-plus"></i> Nouveau Profil
+    <div class="toolbar-card-actions">
+      <button type="button" (click)="showAddForm = !showAddForm" class="btn add-btn">
+        <i class="fas fa-plus"></i> Nouveau profil
       </button>
     </div>
   </div>
 
-  <!-- Barre de recherche et filtres -->
+  <!-- Barre de recherche -->
   <div class="search-filters-bar">
     <div class="search-box">
       <i class="fas fa-search"></i>
       <input 
         type="text" 
         [(ngModel)]="searchTerm" 
-        placeholder="Rechercher un profil..." 
+        placeholder="Rechercher un profil par nom ou description…" 
         class="search-input"
         (input)="applyFilters()">
     </div>
-    <button *ngIf="searchTerm" class="btn-clear-filters" (click)="clearFilters()">
+    <button *ngIf="searchTerm" type="button" class="btn-clear-filters" (click)="clearFilters()">
       <i class="fas fa-times"></i> Effacer
     </button>
   </div>
@@ -157,7 +157,10 @@
     </div>
   </div>
 
-  <!-- Tableau des profils -->
+  <!-- Tableau des profils + panneau droits -->
+  <div class="profil-workspace" [class.has-selection]="!!selectedProfil">
+
+  <div class="profil-list-panel">
   <div class="table-container">
     <div *ngIf="isLoading" class="loading">
       <i class="fas fa-spinner fa-spin"></i>
@@ -237,16 +240,21 @@
                 </button>
               </div>
             </td>
-            <td class="actions" (click)="$event.stopPropagation()">
-              <button (click)="editProfil(profil)" [disabled]="isDeleting" class="btn icon-btn edit" title="Modifier">
-                <i class="fas fa-edit" [style.color]="isDeleting ? '#ccc' : 'green'"></i>
+            <td class="actions-cell" (click)="$event.stopPropagation()">
+              <div class="row-actions">
+              <button type="button" (click)="editProfil(profil)" [disabled]="isDeleting" class="btn icon-btn edit" title="Modifier">
+                <i class="fas fa-edit"></i>
               </button>
-              <button (click)="selectProfil(profil)" [disabled]="isDeleting" class="btn icon-btn view" title="Voir les droits">
-                <i class="fas fa-eye" [style.color]="isDeleting ? '#ccc' : 'blue'"></i>
+              <button type="button" (click)="selectProfil(profil)" [disabled]="isDeleting" class="btn icon-btn view" title="Gérer les droits">
+                <i class="fas fa-shield-alt"></i>
               </button>
-              <button (click)="deleteProfil(profil)" [disabled]="isDeleting" class="btn icon-btn delete" title="Supprimer">
-                <i class="fas fa-trash" [style.color]="isDeleting ? '#ccc' : 'red'"></i>
+              <button type="button" (click)="openPaysModal(profil)" [disabled]="isDeleting" class="btn icon-btn pays-action" title="Gérer les pays">
+                <i class="fas fa-globe"></i>
               </button>
+              <button type="button" (click)="deleteProfil(profil)" [disabled]="isDeleting" class="btn icon-btn delete" title="Supprimer">
+                <i class="fas fa-trash"></i>
+              </button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -297,26 +305,212 @@
       (Page {{ currentPage }} / {{ totalPages }})
     </div>
   </div>
+  </div><!-- .profil-list-panel -->
 
-  <div *ngIf="selectedProfil" class="profil-droits">
+  <div class="profil-droits-placeholder" *ngIf="!selectedProfil && filteredProfils.length > 0 && !isLoading">
+    <div class="placeholder-inner">
+      <i class="fas fa-hand-pointer"></i>
+      <h3>Sélectionnez un profil</h3>
+      <p>Cliquez sur une ligne du tableau ou sur l'icône bouclier pour configurer les menus, sous-menus et actions.</p>
+    </div>
+  </div>
+
+  <div class="profil-droits-panel" *ngIf="selectedProfil">
+  <div class="profil-droits">
     <div class="droits-header">
-      <h3><i class="fas fa-shield-alt"></i> Droits du profil : {{ selectedProfil.nom }}</h3>
-      <div class="droits-summary">
-        <span class="summary-item">
-          <i class="fas fa-cube"></i> {{ getAssociatedModules().length }} module(s)
-        </span>
-        <span class="summary-item">
-          <i class="fas fa-key"></i> {{ profilPermissions.length }} permission(s)
-        </span>
+      <div class="droits-header-main">
+        <div class="droits-header-top">
+          <h3><i class="fas fa-shield-alt"></i> {{ selectedProfil.nom }}</h3>
+          <button type="button" class="droits-close-btn" (click)="closeDroitsPanel()" title="Fermer le panneau">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <p class="droits-subtitle" *ngIf="selectedProfil.description">{{ selectedProfil.description }}</p>
+        <div class="droits-summary">
+          <span class="summary-chip">
+            <i class="fas fa-cube"></i> {{ getAssociatedModules().length }} module(s)
+          </span>
+          <span class="summary-chip">
+            <i class="fas fa-key"></i> {{ profilPermissions.length }} permission(s)
+          </span>
+          <span class="summary-chip summary-chip--progress">
+            <i class="fas fa-sitemap"></i>
+            {{ totalNavAccessStats.granted }} / {{ totalNavAccessStats.total }} sous-menus
+          </span>
+        </div>
+        <div class="droits-progress-wrap" *ngIf="totalNavAccessStats.total > 0">
+          <div class="droits-progress-bar">
+            <div class="droits-progress-fill" [style.width.%]="totalNavAccessPercent"></div>
+          </div>
+          <span class="droits-progress-label">{{ totalNavAccessPercent }}% des accès menus configurés</span>
+        </div>
       </div>
     </div>
 
-    <div *ngIf="getAssociatedModules().length === 0" class="no-modules-message">
+    <div *ngIf="getAssociatedModules().length === 0" class="no-modules-message nav-only-hint">
       <i class="fas fa-info-circle"></i>
-      <p>Aucun module associé à ce profil. Ajoutez des modules pour gérer les permissions.</p>
+      <p>Aucun module associé pour l'instant. Utilisez l'arbre ci-dessous pour activer des sous-menus — les modules seront créés automatiquement si nécessaire.</p>
     </div>
 
-    <div *ngIf="getAssociatedModules().length > 0" class="droits-content">
+    <div class="droits-content">
+      <div class="nav-permissions-section">
+        <div class="nav-permissions-header">
+          <div>
+            <h4><i class="fas fa-sitemap"></i> Menus &amp; sous-menus</h4>
+            <p class="nav-permissions-hint">
+              Cochez l'accès, puis ouvrez <strong>Actions</strong> pour les droits détaillés.
+            </p>
+          </div>
+          <div class="nav-permissions-toolbar">
+            <button type="button" class="btn-link-toggle" (click)="showLegacyModuleGrid = !showLegacyModuleGrid">
+              <i class="fas" [ngClass]="showLegacyModuleGrid ? 'fa-compress-alt' : 'fa-th-large'"></i>
+              {{ showLegacyModuleGrid ? 'Masquer modules' : 'Vue modules' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-search-bar">
+          <div class="search-box nav-search-box">
+            <i class="fas fa-search"></i>
+            <input
+              type="text"
+              class="search-input"
+              [(ngModel)]="navMenuSearch"
+              (input)="onNavMenuSearchChange()"
+              placeholder="Filtrer un menu ou sous-menu…">
+          </div>
+          <button type="button" class="btn-link-toggle" *ngIf="navMenuSearch" (click)="clearNavMenuSearch()">
+            <i class="fas fa-times"></i> Effacer
+          </button>
+          <button type="button" class="btn-link-toggle" (click)="expandAllNavGroups()" title="Tout déplier">
+            <i class="fas fa-expand-alt"></i>
+          </button>
+          <button type="button" class="btn-link-toggle" (click)="collapseAllNavGroups()" title="Tout replier">
+            <i class="fas fa-compress-alt"></i>
+          </button>
+        </div>
+
+        <div class="nav-empty-filter" *ngIf="filteredNavigationCatalog.length === 0">
+          <i class="fas fa-search"></i>
+          Aucun menu ne correspond à « {{ navMenuSearch }} ».
+        </div>
+
+        <div class="nav-permissions-tree">
+          <div
+            class="nav-group-card"
+            *ngFor="let group of filteredNavigationCatalog; trackBy: trackNavGroup"
+            [ngClass]="getNavGroupStatusClass(group)">
+            <button type="button" class="nav-group-header" (click)="toggleNavGroup(group.key)">
+              <span class="nav-group-title">
+                <span class="nav-status-dot"></span>
+                <i class="fas" [ngClass]="group.icon || 'fa-folder'"></i>
+                {{ group.label }}
+                <span class="nav-admin-badge" *ngIf="group.adminOnly">Admin</span>
+              </span>
+              <span class="nav-group-meta">
+                <span class="nav-group-progress-mini">
+                  <span class="nav-group-progress-track">
+                    <span class="nav-group-progress-fill" [style.width.%]="getNavGroupProgressPercent(group)"></span>
+                  </span>
+                  <span class="nav-group-count">
+                    {{ getNavGroupGrantedCount(group).granted }}/{{ getNavGroupGrantedCount(group).total }}
+                  </span>
+                </span>
+                <i class="fas" [ngClass]="isNavGroupExpanded(group.key) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+              </span>
+            </button>
+
+            <div class="nav-group-body" *ngIf="isNavGroupExpanded(group.key)">
+              <!-- Menu simple sans sous-menu -->
+              <div class="nav-submenu-card" *ngIf="!group.children?.length && group.moduleName"
+                [class.nav-submenu-card--granted]="hasSubmenuModuleAccess(group.moduleName)">
+                <div class="nav-submenu-head">
+                  <label class="nav-submenu-access">
+                    <input
+                      type="checkbox"
+                      [checked]="hasSubmenuModuleAccess(group.moduleName)"
+                      (change)="onSingleMenuAccessChange(group, $event)">
+                    <span class="nav-submenu-label">{{ group.label }}</span>
+                    <span class="nav-submenu-route">{{ group.route }}</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="nav-actions-toggle"
+                    (click)="toggleSubmenuActions(group.key, group.moduleName)">
+                    <i class="fas" [ngClass]="isSubmenuActionsExpanded(group.key) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                    Actions
+                  </button>
+                </div>
+                <div class="nav-submenu-actions" *ngIf="isSubmenuActionsExpanded(group.key)">
+                  <ng-container *ngTemplateOutlet="submenuActionsTpl; context: { moduleName: group.moduleName, submenuKey: group.key }"></ng-container>
+                </div>
+              </div>
+
+              <!-- Sous-menus -->
+              <div
+                class="nav-submenu-card"
+                *ngFor="let submenu of group.children; trackBy: trackNavSubmenu"
+                [class.nav-submenu-card--granted]="hasSubmenuModuleAccess(submenu.moduleName)">
+                <div class="nav-submenu-head">
+                  <label class="nav-submenu-access">
+                    <input
+                      type="checkbox"
+                      [checked]="hasSubmenuModuleAccess(submenu.moduleName)"
+                      (change)="onSubmenuAccessChange(submenu.moduleName, $event)">
+                    <span class="nav-submenu-label">
+                      <i class="fas" [ngClass]="submenu.icon || 'fa-angle-right'"></i>
+                      {{ submenu.label }}
+                    </span>
+                    <span class="nav-submenu-route">{{ submenu.route }}</span>
+                    <span class="nav-submenu-module">Module : {{ submenu.moduleName }}</span>
+                    <span class="nav-shared-hint" *ngIf="getSharedModuleHint(group, submenu.moduleName) as sharedHint">{{ sharedHint }}</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="nav-actions-toggle"
+                    (click)="toggleSubmenuActions(submenu.key, submenu.moduleName)">
+                    <i class="fas" [ngClass]="isSubmenuActionsExpanded(submenu.key) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                    Actions
+                  </button>
+                </div>
+                <div class="nav-submenu-actions" *ngIf="isSubmenuActionsExpanded(submenu.key)">
+                  <ng-container *ngTemplateOutlet="submenuActionsTpl; context: { moduleName: submenu.moduleName, submenuKey: submenu.key }"></ng-container>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <ng-template #submenuActionsTpl let-moduleName="moduleName" let-submenuKey="submenuKey">
+        <div class="nav-actions-loading" *ngIf="isSubmenuPermissionsLoading(moduleName)">
+          <i class="fas fa-spinner fa-spin"></i> Chargement des actions…
+        </div>
+        <div class="nav-actions-empty" *ngIf="!isSubmenuPermissionsLoading(moduleName) && getSubmenuActionPermissions(moduleName).length === 0">
+          <i class="fas fa-info-circle"></i>
+          Aucune action enregistrée pour ce module. Générez les permissions depuis la page Permission.
+        </div>
+        <div class="nav-actions-toolbar" *ngIf="!isSubmenuPermissionsLoading(moduleName) && getSubmenuActionPermissions(moduleName).length > 0">
+          <button type="button" class="btn-action" (click)="selectAllSubmenuActions(moduleName)">
+            <i class="fas fa-check-double"></i> Tout cocher
+          </button>
+          <button type="button" class="btn-action" (click)="deselectAllSubmenuActions(moduleName)">
+            <i class="fas fa-times"></i> Tout décocher
+          </button>
+        </div>
+        <div class="nav-actions-list" *ngIf="!isSubmenuPermissionsLoading(moduleName) && getSubmenuActionPermissions(moduleName).length > 0">
+          <label class="permission-checkbox nav-action-item" *ngFor="let permission of getSubmenuActionPermissions(moduleName)">
+            <input
+              type="checkbox"
+              [checked]="hasPermissionForModuleName(moduleName, permission)"
+              (change)="togglePermissionForModuleName(moduleName, permission, $event)"
+              [id]="'nav-perm-' + submenuKey + '-' + permission.id">
+            <span class="checkmark"></span>
+            <span class="permission-label">{{ permission.nom }}</span>
+          </label>
+        </div>
+      </ng-template>
+
       <div class="permissions-overview">
         <div class="overview-header">
           <h4><i class="fas fa-list"></i> Vue d'ensemble des permissions</h4>
@@ -336,7 +530,7 @@
         </div>
       </div>
 
-      <div class="modules-permissions">
+      <div class="modules-permissions" *ngIf="showLegacyModuleGrid">
         <h4><i class="fas fa-table"></i> Permissions par module</h4>
         <div class="modules-grid">
           <div *ngFor="let module of getAssociatedModules()" class="module-card">
@@ -385,9 +579,18 @@
     </div>
   </div>
 
-  <div *ngIf="selectedProfil" class="module-selection-section">
+  <div class="module-selection-section module-selection-section--collapsible" *ngIf="selectedProfil">
+    <button type="button" class="module-selection-toggle" (click)="showModuleSelection = !showModuleSelection">
+      <span>
+        <i class="fas fa-plus-circle"></i>
+        Ajouter des modules au profil
+        <span class="module-selection-badge">{{ getAssociatedModules().length }} / {{ modules.length }}</span>
+      </span>
+      <i class="fas" [ngClass]="showModuleSelection ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+    </button>
+
+    <div class="module-selection-content" *ngIf="showModuleSelection">
     <div class="module-selection-header">
-      <h3><i class="fas fa-plus-circle"></i> Ajouter des modules au profil</h3>
       <div class="module-selection-summary">
         <span class="summary-item">
           <i class="fas fa-cube"></i> {{ modules.length }} module(s) disponible(s)
@@ -398,7 +601,7 @@
       </div>
     </div>
 
-    <div class="module-selection-content">
+    <div class="module-selection-body">
       <!-- Vue d'ensemble des modules -->
       <div class="modules-overview">
         <h4><i class="fas fa-th-large"></i> Vue d'ensemble des modules</h4>
@@ -452,7 +655,11 @@
         </div>
       </div>
     </div>
+    </div>
   </div>
+
+  </div><!-- .profil-droits-panel -->
+  </div><!-- .profil-workspace -->
 
   <!-- Modal de gestion des pays -->
   <div *ngIf="showPaysModal" class="modal-overlay" (click)="closePaysModal()">

@@ -26,6 +26,20 @@ export function isMsisdnPreserveColumn(columnName: string): boolean {
   return patterns.some(pattern => lower === pattern || lower.includes(pattern));
 }
 
+/** Colonne identifiant de transaction (ex. IDTransaction CO260628.2356.D41732 — conserver les points). */
+export function isTransactionIdPreserveColumn(columnName: string): boolean {
+  const lower = normalizeColumnLabelForMatch(columnName).replace(/\s+/g, '');
+  if (!lower) {
+    return false;
+  }
+  const patterns = [
+    'idtransaction', 'transactionid', 'idoperation',
+    'reference', 'referenceid', 'externalid', 'externaltransactionid',
+    'numtransactiongu', 'numerotransgu', 'cleci'
+  ];
+  return patterns.some(pattern => lower === pattern || lower.includes(pattern));
+}
+
 /**
  * @deprecated Préférer isMsisdnPreserveColumn — conservé pour compatibilité interne.
  * Ne couvre plus les colonnes clé (reference, transaction, etc.).
@@ -113,56 +127,87 @@ export function keepCharactersFromString(
   }
 }
 
+/** Mode de gestion du zéro initial pour nombres / téléphones après « supprimer / conserver des caractères ». */
+export type LeadingZeroMode = 'none' | 'keep' | 'strip';
+
+export function isNumericLikeString(value: unknown): boolean {
+  const text = preserveLeadingZeroString(value).replace(/\s/g, '');
+  return /^\d+$/.test(text);
+}
+
+/** Retire un seul zéro en tête pour les chaînes numériques (ex. 0501415273 → 501415273). */
+export function stripSingleLeadingZero(value: unknown): string {
+  const text = preserveLeadingZeroString(value).replace(/\s/g, '');
+  if (/^0\d+$/.test(text)) {
+    return text.substring(1);
+  }
+  return text;
+}
+
+function applyLeadingZeroKeep(value: string, keepCount: number): string {
+  const digits = preserveLeadingZeroString(value).replace(/\s/g, '');
+  if (/^\d+$/.test(digits)) {
+    return padDigitsToLength(digits, Math.max(1, keepCount || 1));
+  }
+  return preserveLeadingZeroString(value);
+}
+
 /**
- * Après extraction « conserver N caractères » : garantit N chiffres affichés
- * (ex. 501415273 + N=10 → 0501415273).
+ * Finalise une cellule après l'action « supprimer / conserver des caractères ».
+ * Le zéro initial n'est modifié que si leadingZeroMode est explicitement configuré.
+ */
+export function finalizeRemoveCharactersCell(
+  _columnName: string,
+  value: unknown,
+  options: {
+    removeCharMode: 'remove' | 'keep';
+    removeCharCount?: number;
+    leadingZeroMode?: LeadingZeroMode | 'auto';
+  }
+): string {
+  const rawMode = options.leadingZeroMode;
+  const leadingZeroMode: LeadingZeroMode =
+    rawMode === 'keep' || rawMode === 'strip' ? rawMode : 'none';
+  const keepCount = Math.max(1, Number(options.removeCharCount) || 1);
+  const text = preserveLeadingZeroString(value);
+
+  if (leadingZeroMode === 'keep') {
+    return applyLeadingZeroKeep(text, keepCount);
+  }
+  if (leadingZeroMode === 'strip' && isNumericLikeString(text)) {
+    return stripSingleLeadingZero(text);
+  }
+  return text;
+}
+
+/**
+ * @deprecated Utiliser finalizeRemoveCharactersCell avec leadingZeroMode explicite.
  */
 export function finalizeAfterKeepCharacters(
   columnName: string,
   value: unknown,
   keepCount: number
 ): string {
-  const text = preserveLeadingZeroString(value).replace(/\s/g, '');
-  if (!text) {
-    return '';
-  }
-  const length = Math.max(1, keepCount || 1);
-  if (/^\d+$/.test(text)) {
-    return padDigitsToLength(text, length);
-  }
-  if (isMsisdnPreserveColumn(columnName)) {
-    return preserveLeadingZeroString(value);
-  }
-  return text;
+  return applyLeadingZeroKeep(preserveLeadingZeroString(value), keepCount);
 }
 
 /**
  * Finalise une valeur de colonne téléphone / MSISDN :
- * conserve le 0 initial et complète à 10 chiffres si besoin (ex. 501415273 → 0501415273).
+ * conserve le 0 initial s'il est déjà présent, sans en ajouter automatiquement.
  */
 export function finalizeTextPreserveColumnValue(
   columnName: string,
   value: unknown,
-  padLength = DEFAULT_MSISDN_DIGIT_LENGTH
+  _padLength = DEFAULT_MSISDN_DIGIT_LENGTH
 ): string {
   const text = preserveLeadingZeroString(value).replace(/\s/g, '');
   if (!text) {
     return '';
   }
-  if (isMsisdnPreserveColumn(columnName) && /^\d+$/.test(text)) {
-    if (text.length >= padLength) {
-      return text;
-    }
-    if (text.length === padLength - 1) {
-      return padDigitsToLength(text, padLength);
-    }
+  if (isLeadingZeroNumericString(text)) {
     return text;
   }
-  // MSISDN local sans 0 initial (ex. 501415273 après conversion numérique Excel)
-  if (isMsisdnPreserveColumn(columnName) && /^\d+$/.test(text) && text.length === padLength - 1 && text.startsWith('5')) {
-    return padDigitsToLength(text, padLength);
-  }
-  if (isLeadingZeroNumericString(text)) {
+  if (isMsisdnPreserveColumn(columnName) && /^\d+$/.test(text)) {
     return text;
   }
   return preserveLeadingZeroString(value);
@@ -180,6 +225,9 @@ export function formatGridCellAsString(columnName: string, value: unknown): stri
   if (value === undefined || value === null) {
     return '';
   }
+  if (isTransactionIdPreserveColumn(columnName)) {
+    return preserveLeadingZeroString(value);
+  }
   if (isMsisdnPreserveColumn(columnName) || isLeadingZeroNumericString(value)) {
     return finalizeTextPreserveColumnValue(columnName, value);
   }
@@ -189,15 +237,15 @@ export function formatGridCellAsString(columnName: string, value: unknown): stri
   return String(value).trim();
 }
 
-/** Normalise une ligne : colonnes texte + toute valeur commençant par 0 restent en chaîne. */
+/** Normalise une ligne : seules les valeurs déjà commençant par 0 sont préservées en texte. */
 export function normalizeLeadingZeroCellsInRow<T extends Record<string, unknown>>(row: T): T {
   for (const key of Object.keys(row)) {
     const val = row[key];
     if (val === null || val === undefined || val === '') {
       continue;
     }
-    if (isMsisdnPreserveColumn(key) || isLeadingZeroNumericString(val)) {
-      (row as Record<string, unknown>)[key] = finalizeTextPreserveColumnValue(key, val);
+    if (isLeadingZeroNumericString(val)) {
+      (row as Record<string, unknown>)[key] = preserveLeadingZeroString(val);
     }
   }
   return row;
@@ -205,7 +253,9 @@ export function normalizeLeadingZeroCellsInRow<T extends Record<string, unknown>
 
 export function normalizeLeadingZeroCellsInRows(rows: Record<string, string>[]): Record<string, string>[] {
   for (let i = 0; i < rows.length; i++) {
-    normalizeLeadingZeroCellsInRow(rows[i]);
+    if (rows[i]) {
+      normalizeLeadingZeroCellsInRow(rows[i]);
+    }
   }
   return rows;
 }
@@ -256,6 +306,10 @@ export function formatCellForCsvExport(columnName: string | undefined, raw: unkn
       return escapeCsvCellValue(text, true);
     }
     return escapeCsvCellValue(text);
+  }
+
+  if (columnName && isTransactionIdPreserveColumn(columnName)) {
+    return escapeCsvCellValue(preserveLeadingZeroString(raw), true);
   }
 
   let val: string;

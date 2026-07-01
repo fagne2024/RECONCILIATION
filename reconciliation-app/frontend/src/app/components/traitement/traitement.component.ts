@@ -13,7 +13,8 @@ import {
   finalizeTextPreserveColumnValue,
   formatCellForCsvExport,
   keepCharactersFromString,
-  finalizeAfterKeepCharacters,
+  finalizeRemoveCharactersCell,
+  LeadingZeroMode,
   isMsisdnPreserveColumn,
   isLeadingZeroNumericString
 } from '../../utils/text-cell.util';
@@ -118,6 +119,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   removeCharMode: 'remove' | 'keep' = 'remove';
   removeCharPosition: 'start' | 'end' | 'specific' = 'start';
   removeCharCount: number = 1;
+  removeCharLeadingZeroMode: LeadingZeroMode = 'none';
   removeCharSpecificPosition: number = 1;
 
   // --- SUPPRESSION DE CARACTÈRES SPÉCIAUX ---
@@ -3974,13 +3976,11 @@ End Sub`;
   }
 
   private finalizeRemovedCharactersCell(columnName: string, value: string): string {
-    if (this.removeCharMode === 'keep') {
-      const keepCount = Math.max(1, Number(this.removeCharCount) || 1);
-      return finalizeAfterKeepCharacters(columnName, value, keepCount);
-    }
-    return isMsisdnPreserveColumn(columnName)
-      ? finalizeTextPreserveColumnValue(columnName, value)
-      : value;
+    return finalizeRemoveCharactersCell(columnName, value, {
+      removeCharMode: this.removeCharMode,
+      removeCharCount: this.removeCharCount,
+      leadingZeroMode: this.removeCharLeadingZeroMode
+    });
   }
 
   onRemoveCharModeChange(): void {
@@ -4895,6 +4895,7 @@ End Sub`;
           removeCharPosition: this.removeCharPosition,
           removeCharCount: this.removeCharCount,
           removeCharSpecificPosition: this.removeCharSpecificPosition,
+          removeCharLeadingZeroMode: this.removeCharLeadingZeroMode,
           specialStringToRemove: this.specialStringToRemove,
           specialStringRemovalMode: this.specialStringRemovalMode,
           specificCharactersToRemove: this.specificCharactersToRemove,
@@ -4996,6 +4997,7 @@ End Sub`;
     this.removeCharPosition = 'start';
     this.removeCharCount = 1;
     this.removeCharSpecificPosition = 1;
+    this.removeCharLeadingZeroMode = 'none';
     this.specialStringToRemove = '';
     this.specialStringRemovalMode = 'all';
     this.specificCharactersToRemove = '';

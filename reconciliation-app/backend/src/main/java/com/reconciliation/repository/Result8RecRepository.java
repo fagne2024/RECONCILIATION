@@ -181,12 +181,24 @@ public interface Result8RecRepository extends JpaRepository<Result8RecEntity, Lo
     @Query("""
         SELECT DISTINCT UPPER(TRIM(r.country)), LOWER(TRIM(r.service))
         FROM Result8RecEntity r
-        WHERE (:countries IS NULL OR UPPER(TRIM(r.country)) IN :countries)
+        WHERE UPPER(TRIM(r.country)) IN :countries
           AND (:startDate IS NULL OR :startDate = '' OR r.date >= :startDate)
           AND (:endDate IS NULL OR :endDate = '' OR r.date <= :endDate)
         """)
     List<Object[]> findDistinctCountryService(
             @Param("countries") List<String> countries,
+            @Param("startDate") String startDate,
+            @Param("endDate") String endDate
+    );
+
+    /** Tous pays (admin / GNL) — évite IN :countries avec collection null (Hibernate). */
+    @Query("""
+        SELECT DISTINCT UPPER(TRIM(r.country)), LOWER(TRIM(r.service))
+        FROM Result8RecEntity r
+        WHERE (:startDate IS NULL OR :startDate = '' OR r.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR r.date <= :endDate)
+        """)
+    List<Object[]> findDistinctCountryServiceAll(
             @Param("startDate") String startDate,
             @Param("endDate") String endDate
     );

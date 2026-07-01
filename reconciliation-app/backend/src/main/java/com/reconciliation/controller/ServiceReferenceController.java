@@ -28,9 +28,14 @@ public class ServiceReferenceController {
     private ServiceReferenceService serviceReferenceService;
 
     @GetMapping
-    public ResponseEntity<List<ServiceReferenceEntity>> listAll() {
+    public ResponseEntity<?> listAll() {
         String username = RequestContextUtil.getUsernameFromRequest();
-        return ResponseEntity.ok(serviceReferenceService.getAll(username));
+        try {
+            return ResponseEntity.ok(serviceReferenceService.getAll(username));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Impossible de charger les références service: " + e.getMessage());
+        }
     }
 
     /**
@@ -50,13 +55,18 @@ public class ServiceReferenceController {
 
     /** Paires pays|service présentes dans result8rec / rapport de réconciliation (statut ACTIF). */
     @GetMapping("/active-in-agency")
-    public ResponseEntity<Set<String>> listActiveInAgency(
+    public ResponseEntity<?> listActiveInAgency(
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
             @RequestParam(required = false, defaultValue = "3") Integer periodMonths) {
         String username = RequestContextUtil.getUsernameFromRequest();
-        return ResponseEntity.ok(serviceReferenceService.getActiveCountryServiceKeys(
-                username, startDate, endDate, periodMonths));
+        try {
+            return ResponseEntity.ok(serviceReferenceService.getActiveCountryServiceKeys(
+                    username, startDate, endDate, periodMonths));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Impossible de charger les services actifs: " + e.getMessage());
+        }
     }
 
     @GetMapping("/{id}")

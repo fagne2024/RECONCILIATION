@@ -11,6 +11,8 @@ import com.reconciliation.repository.AgencySummaryRepository;
 import com.reconciliation.repository.Result8RecRepository;
 import com.reconciliation.repository.ServiceReferenceRepository;
 import jakarta.persistence.EntityNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -30,7 +32,9 @@ import java.util.stream.Collectors;
 @Service
 public class ServiceReferenceService {
 
+    private static final Logger log = LoggerFactory.getLogger(ServiceReferenceService.class);
     private static final int DEFAULT_DASHBOARD_PERIOD_MONTHS = 3;
+    private static final int SERVICE_ALIAS_QUERY_BATCH_SIZE = 400;
     private static final DateTimeFormatter AGENCY_DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private static final class DashboardDateRange {
@@ -122,8 +126,7 @@ public class ServiceReferenceService {
             return Collections.emptySet();
         }
         DashboardDateRange range = resolveStatusDateRange(startDate, endDate, periodMonths);
-        List<Object[]> rows = result8RecRepository.findDistinctCountryService(
-                allowedPays, range.startDate, range.endDate);
+        List<Object[]> rows = queryDistinctCountryServices(allowedPays, range.startDate, range.endDate);
         Set<String> keys = new HashSet<>();
         for (Object[] row : rows) {
             if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
@@ -354,10 +357,10 @@ public class ServiceReferenceService {
 
         DashboardDateRange range = resolveDashboardDateRange(startDate, endDate, periodMonths);
 
-        List<Object[]> agencySummaryByCountry = agencySummaryRepository.aggregateByCountry(
+        List<Object[]> agencySummaryByCountry = queryAggregateByCountry(
                 allowedPays, range.startDate, range.endDate);
 
-        List<Object[]> agencySummaryByCountryAndService = agencySummaryRepository.aggregateByCountryAndService(
+        List<Object[]> agencySummaryByCountryAndService = queryAggregateByCountryAndService(
                 allowedPays, range.startDate, range.endDate);
         // Construire la map des services actifs et réconciliables
         Map<String, Boolean> activeReconcilableServices = buildActiveReconcilableServiceMap(allowedPays);
@@ -464,7 +467,7 @@ public class ServiceReferenceService {
         }
 
         DashboardDateRange range = resolveDashboardDateRange(startDate, endDate, periodMonths);
-        List<Object[]> rows = agencySummaryRepository.aggregateByCountryAndService(
+        List<Object[]> rows = queryAggregateByCountryAndService(
                 allowedPays, range.startDate, range.endDate);
         List<ServiceCountryVolumeDto> response = new ArrayList<>();
         for (Object[] row : rows) {
@@ -535,37 +538,34 @@ public class ServiceReferenceService {
         if (entities == null || entities.isEmpty()) {
             return;
         }
-        java.util.Set<String> normalizedServices = new java.util.HashSet<>();
-        for (ServiceReferenceEntity entity : entities) {
-            collectServiceAliases(entity, normalizedServices);
-        }
-        if (normalizedServices.isEmpty()) {
-            return;
-        }
-        DashboardDateRange range = defaultStatusDateRange();
-        java.util.List<Object[]> countryServices = result8RecRepository.findDistinctCountryServiceByServices(
-                new java.util.ArrayList<>(normalizedServices), range.startDate, range.endDate);
-        java.util.Set<String> activeKeys = new java.util.HashSet<>();
-        for (Object[] row : countryServices) {
-            if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
-                continue;
+        try {
+            java.util.Set<String> normalizedServices = new java.util.HashSet<>();
+            for (ServiceReferenceEntity entity : entities) {
+                collectServiceAliases(entity, normalizedServices);
             }
-            activeKeys.add(statusKey(String.valueOf(row[0]), String.valueOf(row[1])));
-        }
+            if (normalizedServices.isEmpty()) {
+                return;
+            }
+            DashboardDateRange range = defaultStatusDateRange();
+            java.util.Set<String> activeKeys = loadActiveCountryServiceKeys(
+                    new java.util.ArrayList<>(normalizedServices), range.startDate, range.endDate);
 
-        List<ServiceReferenceEntity> toUpdate = new java.util.ArrayList<>();
-        for (ServiceReferenceEntity entity : entities) {
-            if (entity == null) {
-                continue;
+            List<ServiceReferenceEntity> toUpdate = new java.util.ArrayList<>();
+            for (ServiceReferenceEntity entity : entities) {
+                if (entity == null) {
+                    continue;
+                }
+                String computedStatus = isActiveInReconciliationReport(entity, activeKeys) ? "ACTIF" : "INACTIF";
+                if (!computedStatus.equals(entity.getStatus())) {
+                    entity.setStatus(computedStatus);
+                    toUpdate.add(entity);
+                }
             }
-            String computedStatus = isActiveInReconciliationReport(entity, activeKeys) ? "ACTIF" : "INACTIF";
-            if (!computedStatus.equals(entity.getStatus())) {
-                entity.setStatus(computedStatus);
-                toUpdate.add(entity);
+            if (!toUpdate.isEmpty()) {
+                repository.saveAll(toUpdate);
             }
-        }
-        if (!toUpdate.isEmpty()) {
-            repository.saveAll(toUpdate);
+        } catch (Exception e) {
+            log.warn("Impossible de rafraîchir les statuts service_reference depuis result8rec: {}", e.getMessage());
         }
     }
 
@@ -677,7 +677,62 @@ public class ServiceReferenceService {
         if (value == null || value.isBlank()) {
             return null;
         }
-        return LocalDate.parse(normalizeDateParam(value), AGENCY_DATE_FORMAT);
+        String normalized = normalizeDateParam(value);
+        try {
+            return LocalDate.parse(normalized, AGENCY_DATE_FORMAT);
+        } catch (Exception e) {
+            log.warn("Date agency/result8rec non ISO ignorée: {}", value);
+            return null;
+        }
+    }
+
+    private List<Object[]> queryDistinctCountryServices(List<String> allowedPays, String startDate, String endDate) {
+        if (allowedPays == null) {
+            return result8RecRepository.findDistinctCountryServiceAll(startDate, endDate);
+        }
+        if (allowedPays.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return result8RecRepository.findDistinctCountryService(allowedPays, startDate, endDate);
+    }
+
+    private Set<String> loadActiveCountryServiceKeys(List<String> services, String startDate, String endDate) {
+        Set<String> activeKeys = new HashSet<>();
+        if (services == null || services.isEmpty()) {
+            return activeKeys;
+        }
+        for (int i = 0; i < services.size(); i += SERVICE_ALIAS_QUERY_BATCH_SIZE) {
+            List<String> batch = services.subList(i, Math.min(i + SERVICE_ALIAS_QUERY_BATCH_SIZE, services.size()));
+            List<Object[]> countryServices = result8RecRepository.findDistinctCountryServiceByServices(
+                    batch, startDate, endDate);
+            for (Object[] row : countryServices) {
+                if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
+                    continue;
+                }
+                activeKeys.add(statusKey(String.valueOf(row[0]), String.valueOf(row[1])));
+            }
+        }
+        return activeKeys;
+    }
+
+    private List<Object[]> queryAggregateByCountry(List<String> allowedPays, String startDate, String endDate) {
+        if (allowedPays == null) {
+            return agencySummaryRepository.aggregateByCountryAll(startDate, endDate);
+        }
+        if (allowedPays.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return agencySummaryRepository.aggregateByCountry(allowedPays, startDate, endDate);
+    }
+
+    private List<Object[]> queryAggregateByCountryAndService(List<String> allowedPays, String startDate, String endDate) {
+        if (allowedPays == null) {
+            return agencySummaryRepository.aggregateByCountryAndServiceAll(startDate, endDate);
+        }
+        if (allowedPays.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return agencySummaryRepository.aggregateByCountryAndService(allowedPays, startDate, endDate);
     }
 
     private String statusKey(String pays, String codeService) {

@@ -42,7 +42,8 @@ export class SidebarComponent implements OnInit {
     '/ecart-partner',
     '/ecart-bo-summary',
     '/reconciliation-report',
-    '/rapport-reconciliation-bo-partenaire'
+    '/rapport-reconciliation-bo-partenaire',
+    '/controle-interne-bo-partenaire'
   ];
   readonly statistiquesRoutes = ['/stats', '/stats-report', '/stats-report-graph', '/agency-summary'];
   readonly comptesRoutes = ['/comptes', '/redevance-loterie', '/service-balance', '/predictions', '/predictions-old'];

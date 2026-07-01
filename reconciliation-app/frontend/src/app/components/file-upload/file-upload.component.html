@@ -1475,8 +1475,33 @@
             </ng-container>
         </div>
 
+        <div class="traitement-section" *ngIf="showTraitementEnvSection">
+            <label class="traitement-section-title">3. Colonne {{ envColumnName }} <span class="traitement-optional-badge">(optionnel)</span></label>
+            <label class="traitement-column-filter-toggle">
+                <input
+                    type="checkbox"
+                    [(ngModel)]="traitementEnvColumnEnabled"
+                    [disabled]="traitementProcessing">
+                <span>Ajouter la colonne {{ envColumnName }} au fichier final</span>
+            </label>
+            <div class="traitement-env-value-row" *ngIf="traitementEnvColumnEnabled">
+                <label for="traitementEnvColumnValue">Valeur {{ envColumnName }}</label>
+                <select
+                    id="traitementEnvColumnValue"
+                    class="traitement-env-select"
+                    [(ngModel)]="traitementEnvColumnValue"
+                    [disabled]="traitementProcessing">
+                    <option value="">-- Choisir --</option>
+                    <option *ngFor="let option of envColumnOptions" [value]="option">{{ option }}</option>
+                </select>
+            </div>
+            <p class="traitement-columns-intro" *ngIf="!traitementEnvColumnEnabled">
+                Cochez l'option ci-dessus pour ajouter une colonne <strong>{{ envColumnName }}</strong> (BET, HT, TOTAL, GU3, GU2, HUBAO, TOP20) sur chaque ligne exportée.
+            </p>
+        </div>
+
         <div class="traitement-section" *ngIf="showTraitementColumnSection">
-            <label class="traitement-section-title">3. Colonnes à garder ou supprimer <span class="traitement-optional-badge">(optionnel)</span></label>
+            <label class="traitement-section-title">4. Colonnes à garder ou supprimer <span class="traitement-optional-badge">(optionnel)</span></label>
             <label class="traitement-column-filter-toggle">
                 <input
                     type="checkbox"
@@ -1535,8 +1560,68 @@
             </ng-container>
         </div>
 
+        <div class="traitement-section" *ngIf="showTraitementDedupSection">
+            <label class="traitement-section-title">
+                Suppression de doublons <span class="traitement-optional-badge">(optionnel)</span>
+            </label>
+            <label class="traitement-column-filter-toggle">
+                <input
+                    type="checkbox"
+                    [checked]="traitementDedupEnabled"
+                    [disabled]="traitementProcessing"
+                    (change)="onTraitementDedupToggle($any($event.target).checked)">
+                <span>Supprimer les doublons sur le fichier final</span>
+            </label>
+            <p class="traitement-columns-intro" *ngIf="!traitementDedupEnabled">
+                Par défaut, les doublons sont retirés automatiquement via la clé de réconciliation du modèle.
+                Activez l'option ci-dessus pour choisir vous-même la ou les colonnes clés.
+            </p>
+            <ng-container *ngIf="traitementDedupEnabled">
+                <p class="traitement-columns-intro">
+                    Cochez une ou plusieurs colonnes : deux lignes identiques sur ces colonnes ne seront gardées qu'une fois.
+                </p>
+                <div class="traitement-columns-loading" *ngIf="traitementOutputColumnsLoading">
+                    <i class="fas fa-spinner fa-spin"></i> Chargement des colonnes du modèle...
+                </div>
+                <div class="traitement-columns-empty" *ngIf="!traitementOutputColumnsLoading && traitementOutputColumns.length === 0">
+                    Aucune colonne détectée — sélectionnez un modèle ou chargez un fichier.
+                </div>
+                <ng-container *ngIf="!traitementOutputColumnsLoading && traitementOutputColumns.length > 0">
+                    <div class="traitement-columns-toolbar">
+                        <span class="traitement-columns-count">
+                            {{ traitementDedupColumns.length }} colonne(s) sélectionnée(s) pour la déduplication
+                        </span>
+                        <div class="traitement-columns-actions">
+                            <button type="button" class="traitement-columns-action-btn" [disabled]="traitementProcessing" (click)="resetTraitementDedupToModelKeys()">
+                                Clés du modèle
+                            </button>
+                            <button type="button" class="traitement-columns-action-btn" [disabled]="traitementProcessing" (click)="traitementDedupColumns = []">
+                                Tout décocher
+                            </button>
+                        </div>
+                    </div>
+                    <div class="traitement-columns-list traitement-dedup-columns-list">
+                        <label
+                            class="traitement-column-item"
+                            *ngFor="let col of traitementOutputColumns"
+                            [class.traitement-column-item-excluded]="!isTraitementDedupColumnSelected(col)">
+                            <input
+                                type="checkbox"
+                                [checked]="isTraitementDedupColumnSelected(col)"
+                                [disabled]="traitementProcessing"
+                                (change)="toggleTraitementDedupColumn(col, $any($event.target).checked)">
+                            <span class="traitement-column-name">{{ col }}</span>
+                            <span class="traitement-column-badge" [class.badge-keep]="isTraitementDedupColumnSelected(col)" [class.badge-drop]="!isTraitementDedupColumnSelected(col)">
+                                {{ isTraitementDedupColumnSelected(col) ? 'Clé doublon' : 'Ignorée' }}
+                            </span>
+                        </label>
+                    </div>
+                </ng-container>
+            </ng-container>
+        </div>
+
         <div class="traitement-section">
-            <label class="traitement-section-title" for="traitementOutputDate">4. Nom du fichier produit</label>
+            <label class="traitement-section-title" for="traitementOutputDate">Nom du fichier produit</label>
             <div class="traitement-date-row">
                 <input
                     id="traitementOutputDate"

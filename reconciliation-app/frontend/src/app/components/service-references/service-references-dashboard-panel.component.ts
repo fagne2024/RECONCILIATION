@@ -179,6 +179,15 @@ export class ServiceReferencesDashboardPanelComponent implements OnInit, OnChang
         this.periodMonthsChange.emit(this.periodMonths);
     }
 
+    /** Recharge les données du panneau (bouton Actualiser du dashboard). */
+    reloadData(): void {
+        this.loadDashboardStats();
+        this.loadActiveInReportKeys();
+        if (this.loadOwnData) {
+            this.fetchReferences();
+        }
+    }
+
     private loadActiveInReportKeys(): void {
         this.serviceReferenceService.getActiveInAgencyKeys(this.periodMonths).subscribe({
             next: (keys) => {

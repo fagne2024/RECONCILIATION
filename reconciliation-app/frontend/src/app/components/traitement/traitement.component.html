@@ -1689,6 +1689,14 @@
             <label>{{ removeCharMode === 'keep' ? 'Nombre de caractères à garder :' : 'Nombre de caractères :' }}</label>
             <input type="number" [(ngModel)]="removeCharCount" min="1" style="width: 80px;">
           </div>
+          <div class="option-group">
+            <label>Zéro initial (nombres / téléphones) :</label>
+            <select [(ngModel)]="removeCharLeadingZeroMode">
+              <option value="none">Aucun traitement</option>
+              <option value="keep">Conserver / compléter le 0 initial</option>
+              <option value="strip">Ne pas conserver le 0 initial</option>
+            </select>
+          </div>
         </div>
         <button type="button" (click)="applyRemoveCharactersFormatting()" [disabled]="!formatSelections['removeCharacters'].length">Appliquer</button>
       </div>

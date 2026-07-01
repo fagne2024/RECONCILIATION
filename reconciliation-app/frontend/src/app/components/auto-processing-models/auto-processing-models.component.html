@@ -181,9 +181,9 @@
               Clés partenaire conditionnelles (optionnel)
             </label>
             <small class="form-text text-muted d-block">
-              Choisir une colonne clé selon la valeur d'une autre colonne.
-              Ex. si « Type de transaction » = <code>api_checkout</code> → « Identifiant de session API »,
-              si = <code>api_payout</code> → « Référence client ».
+              Choisir une colonne clé selon la valeur d'une autre colonne (service, type, etc.).
+              Les <strong>clés partenaire par défaut</strong> ci-dessus restent prioritaires : les règles optionnelles
+              (et la condition {{ envColumnName }} si activée) ne s'appliquent que lorsque leurs conditions sont remplies.
             </small>
 
             <div class="conditional-keys-panel" *ngIf="partnerConditionalKeysEnabled">
@@ -208,6 +208,29 @@
                 </div>
               </div>
 
+              <div class="form-row conditional-env-filter">
+                <div class="form-group col-md-12">
+                  <label class="conditional-keys-toggle">
+                    <input type="checkbox"
+                           [(ngModel)]="partnerConditionalEnvEnabled"
+                           [ngModelOptions]="{standalone: true}">
+                    Condition {{ envColumnName }} (optionnel)
+                  </label>
+                  <small class="form-text text-muted d-block">
+                    Les règles ci-dessous ne s'appliquent que si la colonne <strong>{{ envColumnName }}</strong> a la valeur choisie.
+                  </small>
+                </div>
+                <div class="form-group col-md-4" *ngIf="partnerConditionalEnvEnabled">
+                  <label>{{ envColumnName }} =</label>
+                  <select class="form-control"
+                          [(ngModel)]="partnerConditionalEnvValue"
+                          [ngModelOptions]="{standalone: true}">
+                    <option value="">— Choisir —</option>
+                    <option *ngFor="let option of envColumnOptions" [value]="option">{{ option }}</option>
+                  </select>
+                </div>
+              </div>
+
               <div class="conditional-rules-list">
                 <div class="conditional-rule-row"
                      *ngFor="let rule of partnerConditionalKeyRules; let i = index">
@@ -224,6 +247,15 @@
                     <option value="">— Colonne —</option>
                     <option *ngFor="let column of availableTemplateColumns" [value]="column">{{ column }}</option>
                   </select>
+                  <ng-container *ngIf="getBoConditionalColumnOptions().length > 0">
+                    <span>→ clé BO =</span>
+                    <select class="form-control"
+                            [(ngModel)]="rule.boKeyColumn"
+                            [ngModelOptions]="{standalone: true}">
+                      <option value="">— Auto —</option>
+                      <option *ngFor="let column of getBoConditionalColumnOptions()" [value]="column">{{ column }}</option>
+                    </select>
+                  </ng-container>
                   <button type="button"
                           class="btn btn-sm btn-outline-danger"
                           (click)="removePartnerConditionalKeyRule(i)"
@@ -277,8 +309,8 @@
         <div class="form-row" *ngIf="selectedBOModels.length > 0 && !isLoadingBOColumns">
           <div class="form-group">
             <label>Colonnes des modèles BO sélectionnés</label>
-            <div class="key-selection" *ngIf="availableBOColumns.length > 0">
-              <div *ngFor="let column of availableBOColumns" 
+            <div class="key-selection" *ngIf="getBoConditionalColumnOptions().length > 0">
+              <div *ngFor="let column of getBoConditionalColumnOptions()" 
                    class="key-option"
                    [class.selected]="selectedBOKeys.includes(column)">
                 <label class="key-label">
@@ -314,14 +346,14 @@
           </small>
 
           <div class="conditional-keys-panel" *ngIf="boConditionalKeysEnabled">
-            <div class="form-row" *ngIf="availableBOColumns.length > 0; else noBoColumnsForConditional">
+            <div class="form-row" *ngIf="getBoConditionalColumnOptions().length > 0; else noBoColumnsForConditional">
               <div class="form-group col-md-6">
                 <label>Colonne condition (BO)</label>
                 <select class="form-control"
                         [(ngModel)]="boConditionColumn"
                         [ngModelOptions]="{standalone: true}">
                   <option value="">— Sélectionner —</option>
-                  <option *ngFor="let column of availableBOColumns" [value]="column">{{ column }}</option>
+                  <option *ngFor="let column of getBoConditionalColumnOptions()" [value]="column">{{ column }}</option>
                 </select>
               </div>
               <div class="form-group col-md-6">
@@ -330,7 +362,7 @@
                         [(ngModel)]="boConditionalDefaultKeyColumn"
                         [ngModelOptions]="{standalone: true}">
                   <option value="">— Aucune —</option>
-                  <option *ngFor="let column of availableBOColumns" [value]="column">{{ column }}</option>
+                  <option *ngFor="let column of getBoConditionalColumnOptions()" [value]="column">{{ column }}</option>
                 </select>
               </div>
             </div>
@@ -338,7 +370,7 @@
               <small class="text-muted d-block mb-2">Chargement des colonnes BO…</small>
             </ng-template>
 
-            <div class="conditional-rules-list" *ngIf="availableBOColumns.length > 0">
+            <div class="conditional-rules-list" *ngIf="getBoConditionalColumnOptions().length > 0">
               <div class="conditional-rule-row"
                    *ngFor="let rule of boConditionalKeyRules; let i = index">
                 <span>Si valeur =</span>
@@ -352,7 +384,7 @@
                         [(ngModel)]="rule.keyColumn"
                         [ngModelOptions]="{standalone: true}">
                   <option value="">— Colonne —</option>
-                  <option *ngFor="let column of availableBOColumns" [value]="column">{{ column }}</option>
+                  <option *ngFor="let column of getBoConditionalColumnOptions()" [value]="column">{{ column }}</option>
                 </select>
                 <button type="button"
                         class="btn btn-sm btn-outline-danger"
@@ -365,7 +397,7 @@
 
             <button type="button"
                     class="btn btn-sm btn-outline-primary mt-2"
-                    *ngIf="availableBOColumns.length > 0"
+                    *ngIf="getBoConditionalColumnOptions().length > 0"
                     (click)="addBoConditionalKeyRule()">
               <i class="fas fa-plus"></i> Ajouter une règle
             </button>
@@ -389,6 +421,9 @@
             </div>
             <div class="summary-item" *ngIf="isPartnerConditionalKeysConfigValid()">
               <strong>Clés partenaire conditionnelles :</strong>
+              <span *ngIf="partnerConditionalEnvEnabled && partnerConditionalEnvValue">
+                [{{ envColumnName }} = {{ partnerConditionalEnvValue }}]
+              </span>
               {{ partnerConditionColumn }} →
               <span *ngFor="let rule of partnerConditionalKeyRules; let last = last">
                 <ng-container *ngIf="rule.whenValue && rule.keyColumn">
@@ -930,6 +965,16 @@
                                    [(ngModel)]="getFormatColumnSettings(action, col).removeCharSpecificPosition"
                                    [ngModelOptions]="{standalone: true}">
                           </div>
+                          <div class="form-group col-md-6">
+                            <label>Zéro initial <span class="text-muted">(nombres / téléphones)</span></label>
+                            <select class="form-control"
+                                    [(ngModel)]="getFormatColumnSettings(action, col).leadingZeroMode"
+                                    [ngModelOptions]="{standalone: true}">
+                              <option value="none">Aucun traitement</option>
+                              <option value="keep">Conserver / compléter le 0 initial</option>
+                              <option value="strip">Ne pas conserver le 0 initial</option>
+                            </select>
+                          </div>
                         </div>
 
                         <div class="format-action-condition format-action-condition-column">
@@ -1067,6 +1112,14 @@
                         <div class="form-group col-md-3" *ngIf="action.removeCharPosition === 'specific'">
                           <label>Position (1-based)</label>
                           <input type="number" min="1" class="form-control" [(ngModel)]="action.removeCharSpecificPosition" [ngModelOptions]="{standalone: true}">
+                        </div>
+                        <div class="form-group col-md-6">
+                          <label>Zéro initial <span class="text-muted">(nombres / téléphones)</span></label>
+                          <select class="form-control" [(ngModel)]="action.leadingZeroMode" [ngModelOptions]="{standalone: true}">
+                            <option value="none">Aucun traitement</option>
+                            <option value="keep">Conserver / compléter le 0 initial</option>
+                            <option value="strip">Ne pas conserver le 0 initial</option>
+                          </select>
                         </div>
                       </div>
                       <div *ngIf="action.type === 'removeIndicatif'" class="form-row">
@@ -1294,6 +1347,7 @@
             </h5>
             <p class="section-description">
               Remplace un libellé par un autre dans une colonne (ex. sur « Transaction Type », afficher « Cashin » au lieu de « MP »).
+              Vous pouvez ajouter une 2e valeur actuelle optionnelle dans une autre colonne : le renommage ne s'applique que si les deux conditions sont remplies.
               Appliqué après les filtres et le formatage.
             </p>
 
@@ -1311,12 +1365,17 @@
                       <option *ngFor="let col of getPreProcessingColumns()" [value]="col">{{ col }}</option>
                     </select>
                   </div>
-                  <div class="form-group col-md-3">
-                    <label>Valeur actuelle</label>
+                  <div class="form-group col-md-2">
+                    <label>1re valeur actuelle</label>
                     <input type="text" class="form-control" [(ngModel)]="mapping.fromValue" [ngModelOptions]="{standalone: true}"
                            placeholder="Ex: MP">
                   </div>
-                  <div class="form-group col-md-3">
+                  <div class="form-group col-md-2">
+                    <label>2e valeur actuelle <span class="text-muted">(optionnel)</span></label>
+                    <input type="text" class="form-control" [(ngModel)]="mapping.conditionValue" [ngModelOptions]="{standalone: true}"
+                           placeholder="Ex: SN">
+                  </div>
+                  <div class="form-group col-md-2">
                     <label>Nouveau libellé</label>
                     <input type="text" class="form-control" [(ngModel)]="mapping.toValue" [ngModelOptions]="{standalone: true}"
                            placeholder="Ex: Cashin">
@@ -1332,6 +1391,20 @@
                     <button type="button" class="btn btn-sm btn-outline-danger btn-block" (click)="removeModelValueMapping(i)">
                       <i class="fas fa-trash"></i>
                     </button>
+                  </div>
+                </div>
+                <div class="form-row" *ngIf="mapping.conditionValue?.trim()">
+                  <div class="form-group col-md-4">
+                    <label>Colonne de la 2e valeur <span class="text-muted">(requis si 2e valeur renseignée)</span></label>
+                    <select class="form-control" [(ngModel)]="mapping.conditionColumn" [ngModelOptions]="{standalone: true}">
+                      <option value="">-- Choisir --</option>
+                      <option *ngFor="let col of getPreProcessingColumns()" [value]="col">{{ col }}</option>
+                    </select>
+                  </div>
+                  <div class="form-group col-md-8">
+                    <small class="text-muted">
+                      Le renommage s'applique seulement si la 1re valeur actuelle <strong>et</strong> la 2e valeur actuelle (dans la colonne choisie) correspondent.
+                    </small>
                   </div>
                 </div>
               </div>
@@ -1394,6 +1467,98 @@
                 <i class="fas fa-plus"></i> Ajouter un renommage d'en-tête
               </button>
             </div>
+          </div>
+
+          <!-- Colonne ENV -->
+          <div class="preprocessing-subsection">
+            <h5>
+              <i class="fas fa-globe"></i> Colonne {{ envColumnName }}
+            </h5>
+            <p class="section-description">
+              Ajoute une colonne <strong>{{ envColumnName }}</strong> sur chaque ligne du fichier final avec la valeur choisie.
+            </p>
+
+            <div class="form-row">
+              <div class="form-group col-md-3">
+                <label>
+                  <input type="checkbox" [(ngModel)]="modelEnvColumnEnabled" [ngModelOptions]="{standalone: true}">
+                  Activer la colonne {{ envColumnName }}
+                </label>
+              </div>
+              <div class="form-group col-md-4" *ngIf="modelEnvColumnEnabled">
+                <label>Valeur {{ envColumnName }}</label>
+                <select class="form-control" [(ngModel)]="modelEnvColumnValue" [ngModelOptions]="{standalone: true}">
+                  <option value="">-- Choisir --</option>
+                  <option *ngFor="let option of envColumnOptions" [value]="option">{{ option }}</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filtrer les colonnes à l'export -->
+          <div class="preprocessing-subsection">
+            <h5>
+              <i class="fas fa-columns"></i> Colonnes à l'export
+            </h5>
+            <p class="section-description">
+              Comme sur le traitement automatique : limitez les colonnes présentes dans le fichier final.
+            </p>
+            <div class="form-row">
+              <div class="form-group col-md-12">
+                <label>
+                  <input
+                    type="checkbox"
+                    [checked]="modelExportColumnFilterEnabled"
+                    (change)="onModelExportColumnFilterToggle($any($event.target).checked)"
+                    [ngModelOptions]="{standalone: true}">
+                  Filtrer les colonnes à l'export
+                </label>
+              </div>
+            </div>
+            <p class="section-description" *ngIf="!modelExportColumnFilterEnabled">
+              Par défaut, toutes les colonnes traitées sont exportées. Activez l'option pour choisir celles à conserver.
+            </p>
+            <ng-container *ngIf="modelExportColumnFilterEnabled">
+              <p class="section-description">
+                Décochez les colonnes à exclure du fichier exporté lors du traitement automatique.
+              </p>
+              <div class="model-export-columns-empty" *ngIf="!modelExportColumns.length">
+                Aucune colonne détectée — renseignez le fichier modèle et les règles de traitement, puis actualisez.
+                <button type="button" class="btn btn-sm btn-outline-secondary ml-2" (click)="refreshModelExportColumnCatalog()">
+                  <i class="fas fa-sync-alt"></i> Actualiser la liste
+                </button>
+              </div>
+              <ng-container *ngIf="modelExportColumns.length">
+                <div class="model-export-columns-toolbar">
+                  <span class="model-export-columns-count">
+                    {{ getModelExportColumnsKeptCount() }} / {{ modelExportColumns.length }} colonne(s) conservée(s)
+                  </span>
+                  <div class="model-export-columns-actions">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" (click)="setAllModelExportColumnsKept(true)">Tout garder</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" (click)="setAllModelExportColumnsKept(false)">Tout supprimer</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" (click)="resetModelExportColumnKeepDefaults()">Réinitialiser</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" (click)="refreshModelExportColumnCatalog()">
+                      <i class="fas fa-sync-alt"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="model-export-columns-list">
+                  <label
+                    class="model-export-column-item"
+                    *ngFor="let col of modelExportColumns"
+                    [class.model-export-column-item-excluded]="!isModelExportColumnKept(col)">
+                    <input
+                      type="checkbox"
+                      [checked]="isModelExportColumnKept(col)"
+                      (change)="toggleModelExportColumnKeep(col, $any($event.target).checked)">
+                    <span class="model-export-column-name">{{ col }}</span>
+                    <span class="model-export-column-badge" [class.badge-keep]="isModelExportColumnKept(col)" [class.badge-drop]="!isModelExportColumnKept(col)">
+                      {{ isModelExportColumnKept(col) ? 'Garder' : 'Supprimer' }}
+                    </span>
+                  </label>
+                </div>
+              </ng-container>
+            </ng-container>
           </div>
                  
           <!-- Formulaire d'ajout/édition de règle de traitement -->

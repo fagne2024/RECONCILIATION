@@ -49,6 +49,8 @@ export interface ModelFormatColumnSettings {
   removeCharPosition?: 'start' | 'end' | 'specific';
   removeCharCount?: number;
   removeCharSpecificPosition?: number;
+  /** Gestion du zéro initial pour nombres / téléphones (removeCharacters). */
+  leadingZeroMode?: 'none' | 'keep' | 'strip' | 'auto';
   removeSpacesType?: 'all' | 'leading' | 'trailing' | 'multiple';
   keepLastDigitsCount?: number;
   indicatifType?: 'international' | 'national' | 'custom';
@@ -76,6 +78,8 @@ export interface ModelFormatAction {
   removeCharPosition?: 'start' | 'end' | 'specific';
   removeCharCount?: number;
   removeCharSpecificPosition?: number;
+  /** Gestion du zéro initial pour nombres / téléphones (removeCharacters). */
+  leadingZeroMode?: 'none' | 'keep' | 'strip' | 'auto';
   removeSpacesType?: 'all' | 'leading' | 'trailing' | 'multiple';
   keepLastDigitsCount?: number;
   indicatifType?: 'international' | 'national' | 'custom';
@@ -126,6 +130,21 @@ export const DEFAULT_PRE_PROCESSING_SECTION_ORDER: ModelPreProcessingSectionId[]
   'columnRenameRules'
 ];
 
+export const ENV_COLUMN_NAME = 'ENV';
+export const ENV_COLUMN_OPTIONS = ['BET', 'HT', 'TOTAL', 'GU3', 'GU2', 'HUBAO', 'TOP20'] as const;
+export type EnvColumnOption = typeof ENV_COLUMN_OPTIONS[number];
+
+export interface ModelEnvColumnConfig {
+  enabled: boolean;
+  value?: EnvColumnOption | string;
+}
+
+/** Colonnes conservées à l'export (section traitement automatique). */
+export interface ModelExportColumnFilterConfig {
+  enabled: boolean;
+  keptColumns?: string[];
+}
+
 export interface ModelPreProcessingConfig {
   rowFilters?: ModelRowFilter[];
   formatActions?: ModelFormatAction[];
@@ -133,6 +152,10 @@ export interface ModelPreProcessingConfig {
   columnMathRules?: ModelColumnMathRule[];
   valueMappings?: ModelColumnValueMapping[];
   columnRenameRules?: ModelColumnRenameRule[];
+  /** Colonne ENV constante ajoutée sur chaque ligne du fichier final. */
+  envColumn?: ModelEnvColumnConfig;
+  /** Filtrer les colonnes exportées (liste des colonnes à conserver). */
+  exportColumnFilter?: ModelExportColumnFilterConfig;
   /** Ordre d'exécution des sections de pré-traitement. */
   sectionOrder?: ModelPreProcessingSectionId[];
 }
@@ -165,6 +188,10 @@ export interface ModelColumnValueMapping {
   id: string;
   column: string;
   fromValue: string;
+  /** Colonne optionnelle : le renommage ne s'applique que si cette colonne a aussi la valeur attendue. */
+  conditionColumn?: string;
+  /** 2e valeur actuelle optionnelle (associée à conditionColumn). */
+  conditionValue?: string;
   toValue: string;
   enabled: boolean;
 }
@@ -173,6 +200,8 @@ export interface ModelColumnValueMapping {
 export interface PartnerConditionalKeyRule {
   whenValue: string;
   keyColumn: string;
+  /** Colonne BO associée (optionnel) — ex. CLECI partenaire → CLE BO. */
+  boKeyColumn?: string;
 }
 
 /** Clés partenaire conditionnelles (optionnel) — ex. Type=api_checkout → colonne session. */
@@ -181,6 +210,8 @@ export interface PartnerConditionalKeysConfig {
   conditionColumn: string;
   rules: PartnerConditionalKeyRule[];
   defaultKeyColumn?: string;
+  /** Si renseigné, les règles ne s'appliquent que lorsque la colonne ENV a cette valeur. */
+  envConditionValue?: string;
 }
 
 /** Clés BO conditionnelles (optionnel) — même principe sur les colonnes du fichier BO. */

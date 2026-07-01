@@ -3,7 +3,7 @@ import { firstValueFrom } from 'rxjs';
 import { AutoProcessingService, AutoProcessingModel } from './auto-processing.service';
 import { ReconciliationService } from './reconciliation.service';
 import { KeySuggestionService } from './key-suggestion.service';
-import { PartnerConditionalKeysService, PARTNER_CONDITIONAL_KEY_COLUMN } from './partner-conditional-keys.service';
+import { PartnerConditionalKeysService } from './partner-conditional-keys.service';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
 import { fixCellEncoding } from '../utils/encoding-fixer';
 
@@ -296,13 +296,27 @@ export class MagicReconciliationService {
     }
 
     let processedBo = boData;
+    let processedPartner = partnerData;
+    let boKeyColumn = keyResult.boKeyColumn;
+    let partnerKeyColumn = keyResult.partnerKeyColumn;
     const usedModel = keyResult.model ?? partnerModel ?? boModel;
     if (usedModel?.reconciliationKeys?.boTreatments) {
       processedBo = this.applyBoTreatments(processedBo, usedModel.reconciliationKeys.boTreatments);
     }
 
-    const { partnerData: processedPartner, partnerKeyColumn } =
-      this.preparePartnerDataForReconciliation(partnerData, usedModel, keyResult.partnerKeyColumn);
+    if (usedModel) {
+      const prepared = this.partnerConditionalKeysService.applyModelConditionalKeys(
+        processedBo,
+        processedPartner,
+        usedModel
+      );
+      if (prepared) {
+        processedBo = prepared.boData;
+        processedPartner = prepared.partnerData;
+        boKeyColumn = prepared.boKeyColumn;
+        partnerKeyColumn = prepared.partnerKeyColumn;
+      }
+    }
 
     const serviceColumns =
       this.findServiceColumnsByHeader(processedBo, processedPartner)
@@ -328,7 +342,7 @@ export class MagicReconciliationService {
         serviceMatches,
         serviceColumns.boColumn,
         serviceColumns.partnerColumn,
-        keyResult.boKeyColumn,
+        boKeyColumn,
         partnerKeyColumn,
         partnerFileName,
         onProgress
@@ -337,7 +351,7 @@ export class MagicReconciliationService {
         response: merged.response,
         mode,
         serviceSummaries: merged.summaries.map(s => ({ ...s, partnerFileName })),
-        boKeyColumn: keyResult.boKeyColumn,
+        boKeyColumn,
         partnerKeyColumn,
         boModelName: boModel?.name,
         partnerModelName: partnerModel?.name
@@ -355,7 +369,7 @@ export class MagicReconciliationService {
       await this.reconcileOnce(
         processedBo,
         processedPartner,
-        keyResult.boKeyColumn,
+        boKeyColumn,
         partnerKeyColumn,
         (step, percentage) => onProgress?.({
           step,
@@ -386,26 +400,11 @@ export class MagicReconciliationService {
         totalBoRecords: response.totalBoRecords,
         totalPartnerRecords: response.totalPartnerRecords
       }],
-      boKeyColumn: keyResult.boKeyColumn,
+      boKeyColumn,
       partnerKeyColumn,
       boModelName: boModel?.name,
       partnerModelName: partnerModel?.name
     };
-  }
-
-  private preparePartnerDataForReconciliation(
-    partnerData: Record<string, string>[],
-    usedModel: AutoProcessingModel | undefined,
-    defaultPartnerKeyColumn: string
-  ): { partnerData: Record<string, string>[]; partnerKeyColumn: string } {
-    const config = usedModel?.reconciliationKeys?.partnerConditionalKeys;
-    if (this.partnerConditionalKeysService.isEnabled(config)) {
-      return {
-        partnerData: this.partnerConditionalKeysService.applyPartnerConditionalKeys(partnerData, config!),
-        partnerKeyColumn: PARTNER_CONDITIONAL_KEY_COLUMN
-      };
-    }
-    return { partnerData, partnerKeyColumn: defaultPartnerKeyColumn };
   }
 
   private async reconcilePerService(
@@ -672,9 +671,19 @@ export class MagicReconciliationService {
   }
 
   private modelHasPartnerKeyConfig(model: AutoProcessingModel): boolean {
+    const rk = model.reconciliationKeys;
+    if (!rk) {
+      return false;
+    }
+    const hasBoModelKeys = (rk.boModels || []).some(
+      id => (rk.boModelKeys?.[id] || []).length > 0
+    );
     return !!(
-      model.reconciliationKeys?.partnerKeys?.length ||
-      this.partnerConditionalKeysService.isEnabled(model.reconciliationKeys?.partnerConditionalKeys)
+      rk.partnerKeys?.length ||
+      rk.boKeys?.length ||
+      hasBoModelKeys ||
+      this.partnerConditionalKeysService.isEnabled(rk.partnerConditionalKeys) ||
+      this.partnerConditionalKeysService.isBoConditionalEnabled(rk.boConditionalKeys)
     );
   }
 
@@ -730,55 +739,16 @@ export class MagicReconciliationService {
     boData: Record<string, string>[],
     partnerData: Record<string, string>[]
   ): { boKeyColumn: string; partnerKeyColumn: string; modelId?: string } | null {
-    const conditional = this.partnerConditionalKeysService.tryResolveConditionalPartnerKey(
+    const resolved = this.partnerConditionalKeysService.resolveKeysFromPartnerModel(
       model,
       boData,
       partnerData
     );
-    if (conditional) {
-      return {
-        ...conditional,
-        modelId: model.modelId || model.id
-      };
-    }
-
-    if (!model.reconciliationKeys?.partnerKeys?.length) {
+    if (!resolved) {
       return null;
     }
-
-    const boKeys = model.reconciliationKeys.boKeys || [];
-    const partnerKeys = model.reconciliationKeys.partnerKeys || [];
-    let boKeyColumn = '';
-    let partnerKeyColumn = '';
-
-    if (boKeys.length && partnerKeys.length) {
-      boKeyColumn = this.findExistingColumn(boData, boKeys) || '';
-      partnerKeyColumn = this.findExistingColumn(partnerData, partnerKeys) || '';
-    }
-
-    if (!boKeyColumn || !partnerKeyColumn) {
-      const boModels = model.reconciliationKeys.boModels || [];
-      for (const boModelId of boModels) {
-        const boModelKeys = model.reconciliationKeys.boModelKeys?.[boModelId];
-        if (boModelKeys?.length && partnerKeys.length) {
-          const foundBo = this.findExistingColumn(boData, boModelKeys);
-          const foundPartner = this.findExistingColumn(partnerData, partnerKeys);
-          if (foundBo && foundPartner) {
-            boKeyColumn = foundBo;
-            partnerKeyColumn = foundPartner;
-            break;
-          }
-        }
-      }
-    }
-
-    if (!boKeyColumn || !partnerKeyColumn) {
-      return null;
-    }
-
     return {
-      boKeyColumn,
-      partnerKeyColumn,
+      ...resolved,
       modelId: model.modelId || model.id
     };
   }
