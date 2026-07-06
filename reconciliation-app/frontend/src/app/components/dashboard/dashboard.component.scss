@@ -387,6 +387,26 @@
     gap: 30px;
 }
 
+.etat-reco-link-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    grid-column: 1 / -1;
+    padding: 14px 20px;
+    border-radius: 12px;
+    border: 1px solid #b8d9c5;
+    background: linear-gradient(135deg, #f1f8f4 0%, #ffffff 100%);
+    color: #1b5e20;
+    font-weight: 600;
+    text-decoration: none;
+    transition: box-shadow 0.2s ease, transform 0.15s ease;
+
+    &:hover {
+        box-shadow: 0 4px 14px rgba(46, 107, 71, 0.18);
+        transform: translateY(-1px);
+    }
+}
+
 .info-section {
     background: white;
     border-radius: 8px;

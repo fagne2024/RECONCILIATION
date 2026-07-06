@@ -1322,52 +1322,27 @@ public class OperationService {
         
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                System.out.println("DEBUG: 🔍 Tentative " + attempt + "/" + maxRetries + " - Récupération du nombre de transactions");
-                System.out.println("DEBUG: 📋 Service: " + operation.getService());
-                System.out.println("DEBUG: 📋 Agence: " + operation.getCodeProprietaire());
-                System.out.println("DEBUG: 📋 Date: " + operation.getDateOperation().toLocalDate());
-                
-                // Récupérer le nombre de transactions depuis l'AgencySummary
                 List<AgencySummaryEntity> summaries = agencySummaryRepository.findByDateAndAgencyAndService(
                     operation.getDateOperation().toLocalDate().toString(),
                     operation.getCodeProprietaire(),
                     operation.getService()
                 );
                 
-                System.out.println("DEBUG: Résultat repository findByDateAndAgencyAndService(" + operation.getDateOperation().toLocalDate().toString() + ", " + operation.getCodeProprietaire() + ", " + operation.getService() + ") => size=" + summaries.size());
-                
                 if (!summaries.isEmpty()) {
                     AgencySummaryEntity summary = summaries.get(0);
-                    int nombreTransactions = summary.getRecordCount();
-                    
-                    System.out.println("DEBUG: ✅ AgencySummary trouvé");
-                    System.out.println("DEBUG: 📊 Nombre de transactions réel: " + nombreTransactions);
-                    System.out.println("DEBUG: 📊 Volume total: " + summary.getTotalVolume() + " FCFA");
-                    
-                    return nombreTransactions;
-                } else {
-                    // Aucun AgencySummary trouvé, utiliser le recordCount de l'opération
-                    System.out.println("DEBUG: ⚠️ Aucun AgencySummary trouvé, utilisation du recordCount de l'opération");
-                    
-                    if (operation.getRecordCount() != null) {
-                        System.out.println("DEBUG: 📊 Utilisation du recordCount depuis l'opération: " + operation.getRecordCount());
-                        return operation.getRecordCount();
-                    } else {
-                        // Fallback : calculer à partir du volume de l'opération
-                        double volumeTotal = operation.getMontant();
-                        int nombreTransactions = (int) Math.round(volumeTotal / 118765.0);
-                        
-                        System.out.println("DEBUG: 📊 Aucune donnée AgencySummary trouvée, calcul basé sur le volume");
-                        System.out.println("DEBUG: 📊 Volume total: " + volumeTotal + " FCFA");
-                        System.out.println("DEBUG: 📊 Nombre de transactions calculé: " + nombreTransactions);
-                        
-                        // S'assurer d'avoir au moins 1 transaction
-                        return Math.max(1, nombreTransactions);
-                    }
+                    return summary.getRecordCount();
                 }
+
+                if (operation.getRecordCount() != null) {
+                    return operation.getRecordCount();
+                }
+
+                double volumeTotal = operation.getMontant();
+                int nombreTransactions = (int) Math.round(volumeTotal / 118765.0);
+                return Math.max(1, nombreTransactions);
                 
             } catch (Exception e) {
-                System.out.println("DEBUG: ❌ Erreur lors de la récupération du nombre de transactions (tentative " + attempt + "): " + e.getMessage());
+                logger.debug("Erreur recuperation nombre transactions (tentative {}/{}): {}", attempt, maxRetries, e.getMessage());
                 if (attempt < maxRetries) {
                     try {
                         Thread.sleep(retryDelayMs);
@@ -1376,26 +1351,20 @@ public class OperationService {
                         break;
                     }
                 } else {
-                    // Calculer à partir du volume de l'opération
                     double volumeTotal = operation.getMontant();
                     int nombreTransactions = (int) Math.round(volumeTotal / 118765.0);
-                    
-                    System.out.println("DEBUG: 📋 Calcul basé sur le volume: " + nombreTransactions + " transactions");
                     return Math.max(1, nombreTransactions);
                 }
             }
         }
         
-        // Utiliser le recordCount de l'opération si disponible, sinon estimation basée sur le volume
         if (operation.getRecordCount() != null) {
-            System.out.println("DEBUG: 📊 Utilisation du recordCount depuis l'opération (fallback final): " + operation.getRecordCount());
             return operation.getRecordCount();
-        } else {
-            double volumeTotal = operation.getMontant();
-            int nombreTransactions = (int) Math.round(volumeTotal / 118765.0);
-            System.out.println("DEBUG: 📊 Fallback final: calcul basé sur le volume: " + nombreTransactions + " transactions");
-            return Math.max(1, nombreTransactions);
         }
+
+        double volumeTotal = operation.getMontant();
+        int nombreTransactions = (int) Math.round(volumeTotal / 118765.0);
+        return Math.max(1, nombreTransactions);
     }
 
     /**
@@ -1479,7 +1448,6 @@ public class OperationService {
      */
     private int estimateNombreTransactions(Operation operation) {
         try {
-            // Récupérer le nombre de transactions depuis l'AgencySummary
             List<AgencySummaryEntity> summaries = agencySummaryRepository.findByDateAndAgencyAndService(
                 operation.getDateOperation().toLocalDate().toString(),
                 operation.getCodeProprietaire(),
@@ -1487,41 +1455,25 @@ public class OperationService {
             );
             
             if (!summaries.isEmpty()) {
-                AgencySummaryEntity summary = summaries.get(0);
-                return summary.getRecordCount();
-            } else {
-                // Aucun AgencySummary trouvé, utiliser le recordCount de l'opération
-                System.out.println("DEBUG: ⚠️ Aucun AgencySummary trouvé, utilisation du recordCount de l'opération");
-                
-                if (operation.getRecordCount() != null) {
-                    System.out.println("DEBUG: 📊 Utilisation du recordCount depuis l'opération: " + operation.getRecordCount());
-                    return operation.getRecordCount();
-                } else {
-                    // Fallback : calculer à partir du volume de l'opération
-                    double volumeTotal = operation.getMontant();
-                    int nombreTransactions = (int) Math.round(volumeTotal / 118765.0);
-                    
-                    System.out.println("DEBUG: 📊 Aucune donnée AgencySummary trouvée, calcul basé sur le volume");
-                    System.out.println("DEBUG: 📊 Volume total: " + volumeTotal + " FCFA");
-                    System.out.println("DEBUG: 📊 Nombre de transactions calculé: " + nombreTransactions);
-                    
-                    // S'assurer d'avoir au moins 1 transaction
-                    return Math.max(1, nombreTransactions);
-                }
+                return summaries.get(0).getRecordCount();
             }
+
+            if (operation.getRecordCount() != null) {
+                return operation.getRecordCount();
+            }
+
+            double volumeTotal = operation.getMontant();
+            int nombreTransactions = (int) Math.round(volumeTotal / 118765.0);
+            return Math.max(1, nombreTransactions);
             
         } catch (Exception e) {
-            System.out.println("DEBUG: ❌ Erreur lors de l'estimation du nombre de transactions: " + e.getMessage());
-            // Utiliser le recordCount de l'opération si disponible, sinon estimation basée sur le volume
+            logger.debug("Erreur estimation nombre transactions: {}", e.getMessage());
             if (operation.getRecordCount() != null) {
-                System.out.println("DEBUG: 📊 Utilisation du recordCount depuis l'opération (exception): " + operation.getRecordCount());
                 return operation.getRecordCount();
-            } else {
-                double volumeTotal = operation.getMontant();
-                int nombreTransactions = (int) Math.round(volumeTotal / 118765.0);
-                System.out.println("DEBUG: 📊 Exception: calcul basé sur le volume: " + nombreTransactions + " transactions");
-                return Math.max(1, nombreTransactions);
             }
+            double volumeTotal = operation.getMontant();
+            int nombreTransactions = (int) Math.round(volumeTotal / 118765.0);
+            return Math.max(1, nombreTransactions);
         }
     }
     

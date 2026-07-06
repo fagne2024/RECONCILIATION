@@ -62,8 +62,10 @@ export class PaysService {
    * Retourne null si l'utilisateur a accès à GNL (tous les pays)
    * Retourne une liste vide si l'utilisateur n'a aucun pays autorisé
    */
-  getAllowedPaysCodesForCurrentUser(): Observable<{ isGlobal: boolean; codes: string[] | null }> {
-    return this.http.get<{ isGlobal: boolean; codes: string[] | null }>(`${this.apiUrl}/user/allowed-codes`);
+  getAllowedPaysCodesForCurrentUser(): Observable<{ isGlobal: boolean; codes: string[] | null; names: string[] | null }> {
+    return this.http.get<{ isGlobal: boolean; codes: string[] | null; names: string[] | null }>(
+      `${this.apiUrl}/user/allowed-codes`
+    );
   }
 }
 

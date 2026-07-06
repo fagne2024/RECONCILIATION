@@ -7,6 +7,7 @@ import com.reconciliation.entity.ProfilPermissionEntity;
 import com.reconciliation.repository.ProfilPermissionRepository;
 import com.reconciliation.service.JwtService;
 import com.reconciliation.service.LoginLockService;
+import com.reconciliation.service.PaysFilterService;
 import com.reconciliation.service.TwoFactorAuthService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 import java.util.List;
 import java.util.Optional;
+import java.util.HashMap;
 import com.reconciliation.entity.ModuleEntity;
 import com.reconciliation.entity.PermissionEntity;
 import com.reconciliation.repository.ModuleRepository;
@@ -40,6 +42,8 @@ public class AuthController {
     private TwoFactorAuthService twoFactorAuthService;
     @Autowired
     private LoginLockService loginLockService;
+    @Autowired
+    private PaysFilterService paysFilterService;
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> payload) {
@@ -147,7 +151,23 @@ public class AuthController {
                 "permission", pp.getPermission().getNom()
             )).toList());
         }
+        putPaysScope(response, user.getUsername());
         return ResponseEntity.ok().body(response);
+    }
+
+    private void putPaysScope(Map<String, Object> response, String username) {
+        List<String> codes = paysFilterService.getAllowedPaysCodes(username);
+        Map<String, Object> pays = new HashMap<>();
+        if (codes == null) {
+            pays.put("isGlobal", true);
+            pays.put("codes", null);
+            pays.put("names", null);
+        } else {
+            pays.put("isGlobal", false);
+            pays.put("codes", codes);
+            pays.put("names", paysFilterService.getAllowedPaysNames(username));
+        }
+        response.put("pays", pays);
     }
 
     /**
@@ -226,6 +246,7 @@ public class AuthController {
                     "permission", pp.getPermission().getNom()
                 )).toList());
             }
+            putPaysScope(response, user.getUsername());
             return ResponseEntity.ok().body(response);
         } catch (NumberFormatException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "Code doit être un nombre à 6 chiffres"));

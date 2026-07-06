@@ -51,6 +51,7 @@ import { GuideUtilisationComponent } from './components/guide-utilisation/guide-
 import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des-ecarts.component';
 import { RapportReconciliationBoPartenaireComponent } from './components/rapport-reconciliation-bo-partenaire/rapport-reconciliation-bo-partenaire.component';
 import { ControleInterneBoPartenaireComponent } from './components/controle-interne-bo-partenaire/controle-interne-bo-partenaire.component';
+import { EtatReconciliationsComponent } from './components/etat-reconciliations/etat-reconciliations.component';
 import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-summary.component';
 import { CertificationSoldeComponent } from './components/certification-solde/certification-solde.component';
 import { RedevanceLoterieComponent } from './components/redevance-loterie/redevance-loterie.component';
@@ -253,6 +254,12 @@ const routes: Routes = [
   {
     path: 'reconciliation-report',
     component: ReconciliationReportComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Résultats', permissions: ['consulter'] }
+  },
+  {
+    path: 'etat-reconciliations',
+    component: EtatReconciliationsComponent,
     canActivate: [AuthGuard, ModuleAccessGuard],
     data: { module: 'Résultats', permissions: ['consulter'] }
   },

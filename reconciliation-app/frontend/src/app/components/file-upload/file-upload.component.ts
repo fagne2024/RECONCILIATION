@@ -36,7 +36,7 @@ import { take } from 'rxjs/operators';
 import { PopupService } from '../../services/popup.service';
 import { FileWatcherService } from '../../services/file-watcher.service';
 import { ProgressIndicatorService } from '../../services/progress-indicator.service';
-import { applyColumnProcessingRulesAsync } from '../../utils/column-processing.util';
+import { ColumnRulesProcessorService } from '../../services/column-rules-processor.service';
 import { readCsvFileUltraFast, readCsvContentUltraFast } from '../../utils/fast-csv-reader.util';
 import { findHeaderLineIndexInCsvLines, findHeaderRowIndexInGrid } from '../../utils/model-header-detection.util';
 import { discoverReconciliationKeyColumns } from '../../utils/reconciliation-key.util';
@@ -277,6 +277,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         private modelPreProcessingService: ModelPreProcessingService,
         private partnerConditionalKeysService: PartnerConditionalKeysService,
         private fileWatcherService: FileWatcherService,
+        private columnRulesProcessor: ColumnRulesProcessorService,
         private cd: ChangeDetectorRef,
         private ngZone: NgZone
     ) {
@@ -1378,10 +1379,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         );
 
         const processed = columnRules.length
-            ? await applyColumnProcessingRulesAsync(
+            ? await this.columnRulesProcessor.applyRulesAsync(
                 workingRows,
                 columnRules,
-                workingRows.length > 100000 ? 10000 : 5000,
                 workingRows.length <= 20000
                     ? undefined
                     : async (done, total) => {

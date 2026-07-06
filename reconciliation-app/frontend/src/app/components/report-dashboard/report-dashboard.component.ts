@@ -1360,7 +1360,19 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
         this.applyFilters();
 
         // Essayer de charger les vraies données en arrière-plan
-        this.http.get<any[]>('/api/result8rec', { headers: this.reportDashboardHeaders })
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const ymd = yesterday.toISOString().slice(0, 10);
+        this.http
+          .get<any[]>('/api/result8rec', {
+            headers: this.reportDashboardHeaders,
+            params: {
+              startDate: ymd,
+              endDate: ymd,
+              fields: 'slim',
+              _t: String(Date.now())
+            }
+          })
         .subscribe({
             next: (rows: any[]) => {
                 if (Array.isArray(rows) && rows.length > 0) {

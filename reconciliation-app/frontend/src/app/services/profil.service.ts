@@ -60,4 +60,22 @@ export class ProfilService {
   removePermissionFromProfil(profilPermissionId: number): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/droits/${profilPermissionId}`);
   }
+
+  syncModuleActions(moduleName: string): Observable<{ moduleName: string; actionsCount: number; permissionsCreated: number; message: string }> {
+    return this.http.post<{ moduleName: string; actionsCount: number; permissionsCreated: number; message: string }>(
+      `${this.apiUrl}/modules/${encodeURIComponent(moduleName)}/sync-actions`,
+      {}
+    );
+  }
+
+  syncSubmenuModuleActions(
+    accessModuleName: string,
+    parentModule: string,
+    prefixes: string[]
+  ): Observable<{ moduleName: string; actionsCount: number; permissionsCreated: number; message: string }> {
+    return this.http.post<{ moduleName: string; actionsCount: number; permissionsCreated: number; message: string }>(
+      `${this.apiUrl}/modules/${encodeURIComponent(accessModuleName)}/sync-submenu-actions`,
+      { parentModule, prefixes }
+    );
+  }
 } 

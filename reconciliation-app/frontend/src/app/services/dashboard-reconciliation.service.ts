@@ -27,6 +27,16 @@ export interface Result8RecData {
     createdAt: string;
 }
 
+export interface RecoJ1BlockingComment {
+    recoDate: string;
+    service: string;
+    country: string;
+    env: string;
+    commentText: string;
+    updatedBy?: string;
+    updatedAt?: string;
+}
+
 export interface ServiceMetricDetails {
     bkRecoBanque: number;
     bkRecoBO: number;
@@ -582,5 +592,28 @@ export class DashboardReconciliationService {
         }
 
         return { boCount, partnerCount };
+    }
+
+    getJ1BlockingComments(
+        startDate: string,
+        endDate: string,
+        moduleContext?: string
+    ): Observable<RecoJ1BlockingComment[]> {
+        const params = new HttpParams()
+            .set('startDate', startDate)
+            .set('endDate', endDate);
+        return this.http.get<RecoJ1BlockingComment[]>('/api/reco-j1-blocking-comments', {
+            headers: this.buildContextHeaders(moduleContext),
+            params
+        });
+    }
+
+    saveJ1BlockingComment(
+        payload: RecoJ1BlockingComment,
+        moduleContext?: string
+    ): Observable<RecoJ1BlockingComment> {
+        return this.http.put<RecoJ1BlockingComment>('/api/reco-j1-blocking-comments', payload, {
+            headers: this.buildContextHeaders(moduleContext)
+        });
     }
 }

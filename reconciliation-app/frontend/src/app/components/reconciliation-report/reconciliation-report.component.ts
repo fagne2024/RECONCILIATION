@@ -11,6 +11,7 @@ import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationSummaryService, AgencySummaryData } from '../../services/reconciliation-summary.service';
 import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
+import { ReconciliationService } from '../../services/reconciliation.service';
 import { PopupService } from '../../services/popup.service';
 import { PaysService } from '../../services/pays.service';
 import { EcartBoSummaryService, EcartBoSummary } from '../../services/ecart-bo-summary.service';
@@ -20,6 +21,7 @@ import {
 } from '../../constants/reconciliation-env-options';
 import { LoggerService } from '../../services/logger.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import { countryNameFromCode } from '../../utils/country-codes.util';
 import {
     auditSnapshotStatutClass as statutAuditPillClassFn,
     auditSnapshotTraitementClass as traitementAuditPillClassFn,
@@ -164,9 +166,10 @@ export interface ReconciliationReportData {
                     <span class="report-display-mode" *ngIf="!hasSelectedRows() && currentSource !== 'live'">
                         ({{ showAllMonths ? 'Toutes' : 'Mois en cours' }} : {{ kpiSummary.lineCount }} ligne(s))
                     </span>
-                    <span class="report-loading-more" *ngIf="isLoadingMoreDbReport">
-                        ⏳ Chargement des dates précédentes...
+                    <span class="report-loading-more" *ngIf="isLoadingMoreDbReport || isLoadingLiveDetails">
+                        ⏳ {{ isLoadingLiveDetails ? 'Chargement des détails de réconciliation...' : 'Chargement des dates précédentes...' }}
                     </span>
+                    <span class="report-load-error" *ngIf="dbLoadError">{{ dbLoadError }}</span>
                     <button class="btn btn-add" *ngIf="showExtendedReportActions" (click)="addNewRow()" title="Ajouter une nouvelle ligne">
                         ➕ Nouvelle ligne
                     </button>
@@ -3188,7 +3191,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private subscription = new Subscription();
     private loadedFromDb = false;
     private isLoadingDbReport = false;
+    dbLoadError: string | null = null;
     isLoadingMoreDbReport = false;
+    isLoadingLiveDetails = false;
     private dbLoadToken = 0;
     private lastDbReportFetchKey = '';
     currentSource: 'live' | 'db' = 'db';
@@ -3441,6 +3446,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         private appStateService: AppStateService,
         private reconciliationSummaryService: ReconciliationSummaryService,
         private reconciliationTabsService: ReconciliationTabsService,
+        private reconciliationService: ReconciliationService,
         private exportService: ExportOptimizationService,
         private popupService: PopupService,
         private paysService: PaysService,
@@ -3584,24 +3590,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.currentSource = 'live';
             this.autoSelectAllOnNextPagination = true;
             console.log('✅ Résumé disponible, vue "live" par défaut - chargement immédiat');
-            // Charger immédiatement les données du résumé
-            this.generateReportDataFromSummary(summary);
-            this.extractUniqueValues();
-            this.filterReport();
-            this.hasSummary = true;
+            void this.applySummaryLiveReport(summary);
             this.tryOpenReleveFromDashboard();
         } else {
             // Vérifier les résultats de réconciliation
             this.appStateService.getReconciliationResults().pipe(take(1)).subscribe(response => {
                 if (response) {
-                    this.currentSource = 'live';
-                    this.autoSelectAllOnNextPagination = true;
                     console.log('✅ Résultats de réconciliation disponibles, vue "live" par défaut - chargement immédiat');
-                    // Charger immédiatement les données de réconciliation
-                    this.response = response;
-                    this.generateReportData();
-                    this.extractUniqueValues();
-                    this.filterReport();
+                    void this.applyLiveReconciliationResponse(response);
                     this.tryOpenReleveFromDashboard();
                 }
             });
@@ -3613,16 +3609,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 console.log('📊 ReconciliationReportComponent - Résumé reçu:', summary);
                 if (summary && summary.length > 0) {
                     console.log('📊 ReconciliationReportComponent - Génération du rapport...');
-                    this.currentSource = 'live';
-                    if (!this.hasUserSelectionChanged) {
-                        // Le flux "résumé" peut réémettre et recréer les objets: réinitialiser + re-sélectionner tant que l'utilisateur n'a pas touché.
-                        this.resetSelectionForAuto();
-                        this.autoSelectAllOnNextPagination = true;
-                    }
-                    this.generateReportDataFromSummary(summary);
-                    this.extractUniqueValues();
-                    this.filterReport();
-                    this.hasSummary = true;
+                    void this.applySummaryLiveReport(summary);
                 } else if (!this.response && !this.loadedFromDb && this.currentSource !== 'live') {
                     // Pas de résumé et pas de réponse en cours → charger depuis la base
                     // Mais seulement si on n'est pas déjà en mode 'live'
@@ -3634,16 +3621,146 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Également récupérer les données de réconciliation pour les statistiques détaillées
         this.subscription.add(
             this.appStateService.getReconciliationResults().subscribe(response => {
-                this.response = response;
-                // Toujours recalculer à partir des onglets dès que la réponse est disponible
-                if (this.response) {
-                    this.currentSource = 'live';
-                    if (!this.hasUserSelectionChanged) {
-                        // La réponse peut se mettre à jour et recréer des objets: re-sélectionner par défaut tant que l'utilisateur n'a pas modifié.
-                        this.resetSelectionForAuto();
-                        this.autoSelectAllOnNextPagination = true;
+                if (!response) {
+                    if (!this.loadedFromDb && this.currentSource !== 'live') {
+                        this.loadSavedReportFromDatabase();
                     }
-                    if (this.hasSummary && this.reportData.length > 0) {
+                    return;
+                }
+                void this.applyLiveReconciliationResponse(response);
+            })
+        );
+    }
+
+    private needsPaginatedDetailLoad(response: ReconciliationResponse | null): boolean {
+        if (!response) {
+            return false;
+        }
+        if (response.resultsPaginated) {
+            return true;
+        }
+        const detailCount =
+            (response.matches?.length ?? 0) +
+            (response.boOnly?.length ?? 0) +
+            (response.partnerOnly?.length ?? 0) +
+            (response.mismatches?.length ?? 0);
+        const totalCount =
+            (response.totalMatches ?? 0) +
+            (response.totalBoOnly ?? 0) +
+            (response.totalPartnerOnly ?? 0) +
+            (response.totalMismatches ?? 0);
+        return totalCount > 0 && detailCount === 0;
+    }
+
+    private async ensureLiveDetailDataLoaded(): Promise<void> {
+        if (!this.response || !this.needsPaginatedDetailLoad(this.response)) {
+            return;
+        }
+
+        const sessionId =
+            this.response.progressSessionId ||
+            this.reconciliationService.getCurrentJobId();
+        if (!sessionId) {
+            return;
+        }
+
+        this.isLoadingLiveDetails = true;
+        this.dbLoadError = null;
+        try {
+            const details = await this.reconciliationService.loadAllDetailResults(sessionId);
+            this.response = {
+                ...this.response,
+                ...details,
+                resultsPaginated: false
+            };
+            this.appStateService.setReconciliationResults(this.response);
+            this.reconciliationTabsService.setFilteredMatches(details.matches || []);
+            this.reconciliationTabsService.setFilteredBoOnly(details.boOnly || []);
+            this.reconciliationTabsService.setFilteredPartnerOnly(details.partnerOnly || []);
+            this.reconciliationTabsService.setFilteredMismatches(details.mismatches || []);
+
+            const summary = this.buildAgencySummaryFromDetails(details);
+            if (summary.length > 0) {
+                this.reconciliationSummaryService.setAgencySummary(summary);
+                this.hasSummary = true;
+            }
+        } catch (error) {
+            console.error('Erreur chargement détails paginés pour le rapport:', error);
+            this.dbLoadError = 'Impossible de charger les détails de la réconciliation.';
+        } finally {
+            this.isLoadingLiveDetails = false;
+        }
+    }
+
+    private buildAgencySummaryFromDetails(
+        details: Pick<ReconciliationResponse, 'matches' | 'boOnly' | 'partnerOnly' | 'mismatches'>
+    ): AgencySummaryData[] {
+        const summaryMap = new Map<string, AgencySummaryData>();
+
+        const addRecord = (record: Record<string, string>) => {
+            const agency = record['Agence'] || record['agency'] || record['agence'] || record['AGENCE'] || 'Inconnue';
+            const service = record['Service'] || record['service'] || record['SERVICE'] || 'Inconnu';
+            const country = record['GRX'] || record['grx'] || record['Pays provenance'] || record['country'] || record['pays'] || record['PAYS'] || 'Inconnu';
+            const date = record['Date'] || record['date'] || record['DATE'] || new Date().toISOString().split('T')[0];
+            const key = `${agency}-${service}-${country}`;
+
+            if (!summaryMap.has(key)) {
+                summaryMap.set(key, {
+                    agency,
+                    service,
+                    country,
+                    date,
+                    totalVolume: 0,
+                    recordCount: 0
+                });
+            }
+
+            const summary = summaryMap.get(key)!;
+            summary.totalVolume += this.parseAmount(record['montant'] || record['amount'] || record['AMOUNT'] || '0');
+            summary.recordCount += 1;
+        };
+
+        (details.matches || []).forEach(match => addRecord(match.boData || {}));
+        (details.boOnly || []).forEach(record => addRecord(record));
+        (details.mismatches || []).forEach(record => addRecord(record));
+
+        return Array.from(summaryMap.values()).sort((a, b) => {
+            if (a.agency !== b.agency) {
+                return a.agency.localeCompare(b.agency);
+            }
+            return a.service.localeCompare(b.service);
+        });
+    }
+
+    private async applySummaryLiveReport(summary: AgencySummaryData[]): Promise<void> {
+        this.currentSource = 'live';
+        if (!this.hasUserSelectionChanged) {
+            this.resetSelectionForAuto();
+            this.autoSelectAllOnNextPagination = true;
+        }
+
+        if (!this.response) {
+            this.response = await firstValueFrom(this.appStateService.getReconciliationResults().pipe(take(1)));
+        }
+        await this.ensureLiveDetailDataLoaded();
+        this.generateReportDataFromSummary(summary);
+        this.hasSummary = true;
+        this.syncLastSavedGlpiValues(this.reportData);
+        this.extractUniqueValues();
+        this.filterReport();
+    }
+
+    private async applyLiveReconciliationResponse(response: ReconciliationResponse): Promise<void> {
+        this.response = response;
+        this.currentSource = 'live';
+        if (!this.hasUserSelectionChanged) {
+            this.resetSelectionForAuto();
+            this.autoSelectAllOnNextPagination = true;
+        }
+
+        await this.ensureLiveDetailDataLoaded();
+
+        if (this.hasSummary && this.reportData.length > 0) {
                         // Si on a un résumé, on garde les colonnes Agence/Service/Pays du résumé
                         // mais on récupère les compteurs directement des onglets
                         
@@ -3734,20 +3851,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         // Si les écarts partenaires n'étaient pas disponibles au premier rendu,
                         // les récupérer maintenant et garantir la ligne spéciale (agence = service).
                         this.ensurePartnerOnlySpecialLine();
-                    } else {
-                        // Pas de résumé → construire à partir des données en cours
-                    this.generateReportData();
-                    }
-                    this.syncLastSavedGlpiValues(this.reportData);
-                    this.extractUniqueValues();
-                    this.filterReport();
-                } else if (!this.loadedFromDb && this.currentSource !== 'live') {
-                    // Pas de résultat courant → charger depuis la base
-                    // Mais seulement si on n'est pas déjà en mode 'live'
-                    this.loadSavedReportFromDatabase();
-                }
-            })
-        );
+        } else {
+            const summary = this.reconciliationSummaryService.getAgencySummary();
+            if (summary.length > 0) {
+                this.hasSummary = true;
+                this.generateReportDataFromSummary(summary);
+            } else {
+                this.generateReportData();
+            }
+        }
+
+        this.syncLastSavedGlpiValues(this.reportData);
+        this.extractUniqueValues();
+        this.filterReport();
     }
 
     ngOnDestroy() {
@@ -4601,11 +4717,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private generateReportData() {
         if (!this.response) return;
 
-        // Récupérer les données filtrées des onglets
-        const filteredMatches = this.reconciliationTabsService.getFilteredMatches();
-        const filteredBoOnly = this.reconciliationTabsService.getFilteredBoOnly();
-        const filteredPartnerOnly = this.reconciliationTabsService.getFilteredPartnerOnly();
-        const filteredMismatches = this.reconciliationTabsService.getFilteredMismatches();
+        // Récupérer les données filtrées des onglets (fallback sur la réponse si paginée)
+        const tabMatches = this.reconciliationTabsService.getFilteredMatches();
+        const tabBoOnly = this.reconciliationTabsService.getFilteredBoOnly();
+        const tabPartnerOnly = this.reconciliationTabsService.getFilteredPartnerOnly();
+        const tabMismatches = this.reconciliationTabsService.getFilteredMismatches();
+        const filteredMatches = tabMatches?.length ? tabMatches : (this.response.matches || []);
+        const filteredBoOnly = tabBoOnly?.length ? tabBoOnly : (this.response.boOnly || []);
+        const filteredPartnerOnly = tabPartnerOnly?.length ? tabPartnerOnly : (this.response.partnerOnly || []);
+        const filteredMismatches = tabMismatches?.length ? tabMismatches : (this.response.mismatches || []);
 
         // Grouper les données par agence, service, pays et date
         const groupedData = new Map<string, ReconciliationReportData>();
@@ -5150,6 +5270,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.showAllMonths = !this.showAllMonths;
         this.currentPage = 1; // Toujours revenir à la page 1 pour afficher les données cohérentes
         if (this.loadedFromDb && this.shouldReloadSavedReportForCurrentScope()) {
+            this.dbLoadToken++;
             this.loadSavedReportFromDatabase();
             return;
         }
@@ -5235,13 +5356,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     private getDbReportFetchScope(): { startDate?: string; endDate?: string; key: string } {
-        const start = (this.selectedDateDebut || '').trim();
-        const end = (this.selectedDateFin || '').trim();
-        if (start || end) {
+        const startRaw = (this.selectedDateDebut || '').trim();
+        const endRaw = (this.selectedDateFin || '').trim();
+        if (startRaw || endRaw) {
+            const normalized = this.normalizeDbReportDateBounds(startRaw, endRaw);
             return {
-                startDate: start || undefined,
-                endDate: end || undefined,
-                key: `range:${start || '*'}:${end || '*'}`
+                startDate: normalized.start,
+                endDate: normalized.end,
+                key: `range:${normalized.start}:${normalized.end}`
             };
         }
         if (!this.showAllMonths) {
@@ -5251,8 +5373,47 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return { key: 'all' };
     }
 
+    /** Une seule borne saisie → jour unique ; bornes inversées → échange. */
+    private normalizeDbReportDateBounds(
+        startRaw: string,
+        endRaw: string
+    ): { start: string; end: string } {
+        let start = startRaw;
+        let end = endRaw;
+        if (start && !end) {
+            end = start;
+        } else if (!start && end) {
+            start = end;
+        }
+        if (start && end && start > end) {
+            const t = start;
+            start = end;
+            end = t;
+        }
+        return { start, end };
+    }
+
+    /** Pays transmis à l’API pour éviter le refus 413 (période multi-jours sans filtre pays). */
+    private resolveCountryParamForApi(): string | undefined {
+        if (this.selectedCountries.length === 1) {
+            return this.selectedCountries[0];
+        }
+        const profileNames = this.appStateService.getProfileCountryNames();
+        if (profileNames.length === 1) {
+            return profileNames[0];
+        }
+        const scope = this.appStateService.getUserPaysScope();
+        if (scope?.codes?.length === 1) {
+            return countryNameFromCode(scope.codes[0]) || scope.codes[0];
+        }
+        return undefined;
+    }
+
     private shouldReloadSavedReportForCurrentScope(): boolean {
-        if (this.currentSource === 'live' || this.isLoadingDbReport || this.isLoadingMoreDbReport) {
+        if (this.currentSource === 'live') {
+            return false;
+        }
+        if (this.isLoadingDbReport) {
             return false;
         }
         return this.getDbReportFetchScope().key !== this.lastDbReportFetchKey;
@@ -5288,11 +5449,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const ticketMatch = !ticketFilter || (item.glpiId || '').toLowerCase().includes(ticketFilter);
 
         if (this.selectedDateDebut || this.selectedDateFin) {
+            const bounds = this.normalizeDbReportDateBounds(
+                (this.selectedDateDebut || '').trim(),
+                (this.selectedDateFin || '').trim()
+            );
             const itemYmd = this.formatDateForSearch(item.date);
-            if (this.selectedDateDebut && itemYmd < this.selectedDateDebut) {
+            if (bounds.start && itemYmd < bounds.start) {
                 return false;
             }
-            if (this.selectedDateFin && itemYmd > this.selectedDateFin) {
+            if (bounds.end && itemYmd > bounds.end) {
                 return false;
             }
         }
@@ -5325,6 +5490,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     filterReport() {
         if (this.loadedFromDb && this.shouldReloadSavedReportForCurrentScope()) {
+            this.dbLoadToken++;
             this.loadSavedReportFromDatabase();
             return;
         }
@@ -6616,6 +6782,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (scope.startDate && scope.endDate && scope.startDate === scope.endDate) {
             return false;
         }
+        if (scope.startDate && scope.endDate && this.resolveCountryParamForApi()) {
+            return false;
+        }
         return true;
     }
 
@@ -6633,7 +6802,29 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (endDate) {
             params = params.set('endDate', endDate);
         }
+        const country = this.resolveCountryParamForApi();
+        if (country) {
+            params = params.set('country', country);
+        }
         return params;
+    }
+
+    private resolveDbLoadErrorMessage(err: unknown): string {
+        const httpErr = err as HttpErrorResponse;
+        if (httpErr?.status === 413) {
+            const body = httpErr.error as { message?: string; error?: string } | null;
+            if (body?.error === 'country_required') {
+                return 'Filtrez par pays ou réduisez la période : trop de lignes sans filtre pays.';
+            }
+            return (
+                body?.message ||
+                'Trop de lignes pour cette période. Sélectionnez un pays ou réduisez les dates.'
+            );
+        }
+        if (httpErr?.status === 403) {
+            return 'Accès refusé au module Résultats pour ce périmètre.';
+        }
+        return 'Impossible de charger le rapport pour cette période.';
     }
 
     private buildDbReportFetchHeaders(): HttpHeaders {
@@ -6889,6 +7080,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.loadedFromDb = true;
         this.isLoadingDbReport = true;
         this.isLoadingMoreDbReport = false;
+        this.dbLoadError = null;
         this.reportData = [];
         this.filteredReportData = [];
         this.kpiScopeData = [];
@@ -6958,7 +7150,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const httpErr = err as HttpErrorResponse;
             if (httpErr?.status === 404) {
                 console.log('Backend non disponible - les donnees sauvegardees ne seront pas chargees');
+                return;
             }
+            this.dbLoadError = this.resolveDbLoadErrorMessage(err);
+            console.error('Erreur chargement rapport base:', err);
+            this.popupService.showError('Chargement du rapport', this.dbLoadError);
         }
     }
 

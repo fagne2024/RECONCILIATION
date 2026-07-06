@@ -2,10 +2,12 @@ package com.reconciliation.controller;
 
 import com.reconciliation.dto.Result8RecBulkSaveResponse;
 import com.reconciliation.dto.Result8RecAuditDto;
+import com.reconciliation.dto.Result8RecReportDto;
 import com.reconciliation.entity.Result8RecEntity;
 import com.reconciliation.repository.Result8RecRepository;
 import com.reconciliation.service.PaysFilterService;
 import com.reconciliation.service.Result8RecAuditService;
+import com.reconciliation.util.CountryNormalizationUtil;
 import com.reconciliation.util.RequestContextUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,8 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -26,6 +32,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class Result8RecController {
+
+    private static final int MAX_ROWS_WITHOUT_COUNTRY = 500;
+    private static final int HARD_MAX_ROWS = 8_000;
 
     private final Result8RecRepository repository;
     private final JdbcTemplate jdbcTemplate;
@@ -81,11 +90,12 @@ public class Result8RecController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Result8RecEntity>> list(
+    public ResponseEntity<?> list(
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
             @RequestParam(required = false) String country,
-            @RequestParam(required = false) String env) {
+            @RequestParam(required = false) String env,
+            @RequestParam(required = false) String fields) {
         // Récupérer le username pour le filtrage par pays
         String username = RequestContextUtil.getUsernameFromRequest();
         
@@ -103,13 +113,57 @@ public class Result8RecController {
         String end = blankToNull(endDate);
         String countryFilter = blankToNull(country);
         String envFilter = normalizeEnvForQuery(env);
-        List<Result8RecEntity> all = repository.findForReport(start, end, countryFilter, envFilter);
+        List<String> countryVariants = CountryNormalizationUtil.expandCountryFilterValues(countryFilter);
+
+        log.debug(
+            "Result8Rec list user={} country={} env={} periode={}..{} variants={}",
+            username, countryFilter, envFilter, start, end, countryVariants
+        );
+
+        if (countryVariants == null) {
+            long rowCount = repository.countForReport(start, end, null, envFilter);
+            boolean singleDay = start != null && start.equals(end);
+            long spanDays = periodSpanDays(start, end);
+            if (!singleDay || spanDays > 1 || rowCount > MAX_ROWS_WITHOUT_COUNTRY) {
+                log.warn(
+                    "Result8Rec refuse sans filtre pays: user={}, periode {}..{} ({} j), {} lignes",
+                    username, start, end, spanDays, rowCount
+                );
+                Map<String, Object> body = new HashMap<>();
+                body.put("error", "country_required");
+                body.put(
+                    "message",
+                    "Le parametre country est obligatoire pour cette periode ("
+                        + rowCount
+                        + " lignes sans filtre pays)."
+                );
+                body.put("rowCount", rowCount);
+                return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
+            }
+        }
+
+        List<Result8RecEntity> all = repository.findForReport(start, end, countryVariants, envFilter);
+
+        if (all.size() > HARD_MAX_ROWS) {
+            log.error(
+                "Result8Rec plafond depasse: user={}, country={}, periode {}..{}, {} lignes",
+                username, countryFilter, start, end, all.size()
+            );
+            Map<String, Object> body = new HashMap<>();
+            body.put("error", "result_set_too_large");
+            body.put(
+                "message",
+                "Trop de lignes (" + all.size() + "). Precisez country, env ou une periode plus courte."
+            );
+            body.put("rowCount", all.size());
+            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
+        }
         
         // Filtrer par pays autorisés si nécessaire
         if (allowedCountries == null) {
             // GNL ou admin : tous les pays
             log.info("🌍 Cloisonnement Result8Rec: Admin/GNL détecté, retour de {} enregistrements", all.size());
-            return ResponseEntity.ok(all);
+            return ResponseEntity.ok(toListResponse(all, fields));
         } else if (allowedCountries.isEmpty()) {
             // Aucun pays autorisé
             log.info("🌍 Cloisonnement Result8Rec: Aucun pays autorisé pour l'utilisateur {}", username);
@@ -137,8 +191,15 @@ public class Result8RecController {
                 .collect(Collectors.toList());
             
             log.info("🌍 Cloisonnement Result8Rec: Total enregistrements après filtrage: {}", filtered.size());
-            return ResponseEntity.ok(filtered);
+            return ResponseEntity.ok(toListResponse(filtered, fields));
         }
+    }
+
+    private static List<?> toListResponse(List<Result8RecEntity> entities, String fields) {
+        if ("slim".equalsIgnoreCase(blankToNull(fields))) {
+            return entities.stream().map(Result8RecReportDto::fromEntity).collect(Collectors.toList());
+        }
+        return entities;
     }
 
     private static String blankToNull(String value) {
@@ -156,6 +217,19 @@ public class Result8RecController {
         }
         String upper = trimmed.toUpperCase();
         return "TOTAL".equals(upper) ? "T-E" : upper;
+    }
+
+    private static long periodSpanDays(String start, String end) {
+        if (start == null || end == null || start.length() < 10 || end.length() < 10) {
+            return Long.MAX_VALUE;
+        }
+        try {
+            LocalDate s = LocalDate.parse(start.substring(0, 10));
+            LocalDate e = LocalDate.parse(end.substring(0, 10));
+            return Math.max(0, ChronoUnit.DAYS.between(s, e));
+        } catch (Exception ignored) {
+            return Long.MAX_VALUE;
+        }
     }
     
     /**
@@ -452,14 +526,14 @@ public class Result8RecController {
         return u;
     }
 
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{id:\\d+}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         if (!repository.existsById(id)) return ResponseEntity.notFound().build();
         repository.deleteById(id);
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/{id}/audit-history")
+    @GetMapping("/{id:\\d+}/audit-history")
     public ResponseEntity<List<Result8RecAuditDto>> getAuditHistory(@PathVariable Long id) {
         if (!repository.existsById(id)) {
             return ResponseEntity.notFound().build();
@@ -467,7 +541,7 @@ public class Result8RecController {
         return ResponseEntity.ok(result8RecAuditService.listHistory(id));
     }
 
-    @PutMapping("/{id}")
+    @PutMapping("/{id:\\d+}")
     public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Result8RecEntity body) {
         return repository.findById(id)
                 .map(existing -> {

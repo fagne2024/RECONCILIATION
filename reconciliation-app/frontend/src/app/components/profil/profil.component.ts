@@ -15,8 +15,23 @@ import {
   APP_NAVIGATION_CATALOG,
   AppNavigationGroup,
   AppNavigationSubmenu,
-  getNavigationCatalogModuleNames
+  NavigationAccessContext,
+  buildNavigationAccessContext,
+  findNavigationAccessContextByAccessModuleName,
+  getNavigationCatalogModuleNames,
+  groupUsesGranularSubmenuAccess
 } from '../../constants/app-navigation-catalog';
+import { PermissionService } from '../../services/permission.service';
+import {
+  ActionCategoryGroup,
+  ModuleActionDetail,
+  deduplicateModuleActions,
+  getActionLabel,
+  getHttpMethodClass,
+  groupActionsByCategory,
+  matchesActionSearch,
+  normalizeActionName
+} from '../../utils/permission-action.util';
 
 @Component({
   selector: 'app-profil',
@@ -60,9 +75,16 @@ export class ProfilComponent implements OnInit {
   readonly navigationCatalog = APP_NAVIGATION_CATALOG;
   expandedNavGroups = new Set<string>(APP_NAVIGATION_CATALOG.map(group => group.key));
   expandedSubmenuActions = new Set<string>();
+  /** Groupes dont la liste des sous-menus non activés est visible. */
+  expandedInactiveSubmenuGroups = new Set<string>();
   showLegacyModuleGrid = false;
   navMenuSearch = '';
   showModuleSelection = false;
+  moduleActionsCache: { [moduleName: string]: ModuleActionDetail[] } = {};
+  loadingModuleActionsSet = new Set<string>();
+  syncingModuleActionsSet = new Set<string>();
+  private autoSyncedModuleActionsSet = new Set<string>();
+  actionSearchByModule: { [moduleName: string]: string } = {};
   
   // Nombre de permissions à afficher par défaut dans la liste
   defaultPermissionsDisplayCount = 10;
@@ -103,6 +125,7 @@ export class ProfilComponent implements OnInit {
 
   constructor(
     private profilService: ProfilService,
+    private permissionService: PermissionService,
     private paysService: PaysService,
     private fb: FormBuilder,
     private cd: ChangeDetectorRef,
@@ -268,15 +291,24 @@ export class ProfilComponent implements OnInit {
     if (this.selectedProfil && this.selectedProfil.id === profil.id) {
       this.selectedProfil = null;
       this.profilPermissions = [];
-      this.modulePermissionsCache = {}; // Nettoyer le cache
-      this.loadingModulePermissionsSet.clear(); // Nettoyer les requêtes en cours
-      this.permissionRequestQueue = []; // Vider la queue
+      this.modulePermissionsCache = {};
+      this.moduleActionsCache = {};
+      this.actionSearchByModule = {};
+      this.loadingModulePermissionsSet.clear();
+      this.loadingModuleActionsSet.clear();
+      this.syncingModuleActionsSet.clear();
+      this.autoSyncedModuleActionsSet.clear();
+      this.permissionRequestQueue = [];
     } else {
-      // Sinon, sélectionner le profil et charger ses permissions
       this.selectedProfil = profil;
-      this.modulePermissionsCache = {}; // Réinitialiser le cache
-      this.loadingModulePermissionsSet.clear(); // Nettoyer les requêtes en cours
-      this.permissionRequestQueue = []; // Vider la queue
+      this.modulePermissionsCache = {};
+      this.moduleActionsCache = {};
+      this.actionSearchByModule = {};
+      this.loadingModulePermissionsSet.clear();
+      this.loadingModuleActionsSet.clear();
+      this.syncingModuleActionsSet.clear();
+      this.autoSyncedModuleActionsSet.clear();
+      this.permissionRequestQueue = [];
       this.withRetry(this.profilService.getProfilPermissions(profil.id!)).subscribe(pp => {
         this.profilPermissions = pp;
         // Charger les permissions pour tous les modules associés
@@ -328,18 +360,327 @@ export class ProfilComponent implements OnInit {
     return this.expandedSubmenuActions.has(submenuKey);
   }
 
-  toggleSubmenuActions(submenuKey: string, moduleName?: string): void {
+  toggleSubmenuActions(submenuKey: string, accessContext?: NavigationAccessContext): void {
     if (this.expandedSubmenuActions.has(submenuKey)) {
       this.expandedSubmenuActions.delete(submenuKey);
       return;
     }
     this.expandedSubmenuActions.add(submenuKey);
-    if (moduleName) {
-      const module = this.findModuleByName(moduleName);
-      if (module) {
-        this.loadModulePermissionsForDisplay(module);
-      }
+    if (accessContext) {
+      this.loadModuleActionsForNavigationContext(accessContext);
     }
+  }
+
+  getNavigationContext(group: AppNavigationGroup, submenu?: AppNavigationSubmenu): NavigationAccessContext | null {
+    return buildNavigationAccessContext(group, submenu);
+  }
+
+  loadModuleActionsForNavigationContext(context: NavigationAccessContext): void {
+    const moduleName = context.accessModuleName;
+    this.resolveModuleForName(moduleName, module => {
+      this.loadModuleActionsForDisplay(moduleName, module, context);
+    });
+  }
+
+  loadModuleActionsForDisplay(moduleName: string, module?: Module, accessContext?: NavigationAccessContext): void {
+    if (module?.id) {
+      this.loadModulePermissionsForDisplay(module);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(this.moduleActionsCache, moduleName)) {
+      return;
+    }
+
+    if (this.loadingModuleActionsSet.has(moduleName)) {
+      return;
+    }
+
+    this.loadingModuleActionsSet.add(moduleName);
+    const actionPathPrefixes = accessContext?.actionPathPrefixes;
+    this.permissionService.getActionsForModule(moduleName, actionPathPrefixes).subscribe({
+      next: (actions) => {
+        this.moduleActionsCache[moduleName] = deduplicateModuleActions(actions || []);
+        this.loadingModuleActionsSet.delete(moduleName);
+        if (
+          (actions || []).length === 0
+          && accessContext?.usesGranularAccess
+          && !this.syncingModuleActionsSet.has(moduleName)
+          && !this.autoSyncedModuleActionsSet.has(moduleName)
+        ) {
+          this.autoSyncedModuleActionsSet.add(moduleName);
+          this.syncModuleActions(moduleName, accessContext);
+        }
+        this.cd.detectChanges();
+      },
+      error: (error) => {
+        console.error(`Erreur chargement actions pour ${moduleName}:`, error);
+        this.moduleActionsCache[moduleName] = [];
+        this.loadingModuleActionsSet.delete(moduleName);
+        this.cd.detectChanges();
+      }
+    });
+  }
+
+  isModuleActionsLoading(moduleName: string): boolean {
+    return this.loadingModuleActionsSet.has(moduleName);
+  }
+
+  isModuleActionsSyncing(moduleName: string): boolean {
+    return this.syncingModuleActionsSet.has(moduleName);
+  }
+
+  getSubmenuActionDetails(moduleName: string): ModuleActionDetail[] {
+    const fromApi = this.moduleActionsCache[moduleName];
+    if (fromApi?.length) {
+      return fromApi;
+    }
+
+    const module = this.findModuleByName(moduleName);
+    if (!module?.id) {
+      return [];
+    }
+
+    return deduplicateModuleActions(
+      this.getDisplayedPermissions(module)
+        .filter(permission => permission.nom && permission.nom !== 'module_associé')
+        .map(permission => ({
+          action: normalizeActionName(permission.nom!),
+          httpMethod: '',
+          path: ''
+        }))
+    );
+  }
+
+  getFilteredSubmenuActionDetails(moduleName: string): ModuleActionDetail[] {
+    const search = this.actionSearchByModule[moduleName] || '';
+    return this.getSubmenuActionDetails(moduleName).filter(action => matchesActionSearch(action, search));
+  }
+
+  getGroupedSubmenuActions(moduleName: string): ActionCategoryGroup[] {
+    return groupActionsByCategory(this.getFilteredSubmenuActionDetails(moduleName));
+  }
+
+  getSubmenuActionsSummary(moduleName: string): { granted: number; total: number } {
+    const module = this.findModuleByName(moduleName);
+    const actions = this.getSubmenuActionDetails(moduleName);
+    if (!module?.id || actions.length === 0) {
+      return { granted: 0, total: 0 };
+    }
+    const granted = actions.filter(action => this.hasActionForModuleName(moduleName, action.action)).length;
+    return { granted, total: actions.length };
+  }
+
+  hasSubmenuActionsToShow(accessModuleName: string): boolean {
+    return this.getSubmenuActionsSummary(accessModuleName).total > 0;
+  }
+
+  getSubmenuActionsSummaryLabel(accessModuleName: string): string {
+    const summary = this.getSubmenuActionsSummary(accessModuleName);
+    return `${summary.granted}/${summary.total}`;
+  }
+
+  hasUnsyncedActions(moduleName: string): boolean {
+    const module = this.findModuleByName(moduleName);
+    if (!module?.id) {
+      return this.getSubmenuActionDetails(moduleName).length > 0;
+    }
+    return this.getSubmenuActionDetails(moduleName).some(
+      action => !this.findPermissionForAction(module, action.action)
+    );
+  }
+
+  syncModuleActions(moduleName: string, accessContext?: NavigationAccessContext): void {
+    if (this.syncingModuleActionsSet.has(moduleName)) {
+      return;
+    }
+    this.syncingModuleActionsSet.add(moduleName);
+    const request$ = accessContext?.usesGranularAccess
+      ? this.profilService.syncSubmenuModuleActions(
+        accessContext.accessModuleName,
+        accessContext.apiModuleName,
+        accessContext.actionPathPrefixes
+      )
+      : this.profilService.syncModuleActions(moduleName);
+
+    request$.subscribe({
+      next: (result) => {
+        const module = this.findModuleByName(moduleName);
+        if (module?.id) {
+          delete this.modulePermissionsCache[module.id];
+          this.loadModulePermissionsForDisplay(module);
+        }
+        delete this.moduleActionsCache[moduleName];
+        if (accessContext) {
+          this.loadModuleActionsForNavigationContext(accessContext);
+        } else {
+          this.loadModuleActionsForDisplay(moduleName, module);
+        }
+        this.syncingModuleActionsSet.delete(moduleName);
+        void this.popupService.showSuccess(result.message || 'Actions synchronisées.', 'Synchronisation');
+        this.cd.detectChanges();
+      },
+      error: (error) => {
+        console.error(`Erreur synchronisation actions ${moduleName}:`, error);
+        this.syncingModuleActionsSet.delete(moduleName);
+        void this.popupService.showError(
+          'Impossible de synchroniser les actions pour ce sous-menu.',
+          'Erreur de synchronisation'
+        );
+      }
+    });
+  }
+
+  getActionSearchTerm(moduleName: string): string {
+    return this.actionSearchByModule[moduleName] || '';
+  }
+
+  setActionSearchTerm(moduleName: string, value: string): void {
+    this.actionSearchByModule[moduleName] = value;
+  }
+
+  clearActionSearch(moduleName: string): void {
+    this.actionSearchByModule[moduleName] = '';
+  }
+
+  getActionLabel(action: string): string {
+    return getActionLabel(action);
+  }
+
+  getHttpMethodClass(httpMethod: string): string {
+    return getHttpMethodClass(httpMethod);
+  }
+
+  findPermissionForAction(module: Module | undefined, actionName: string): Permission | undefined {
+    if (!module?.id) {
+      return undefined;
+    }
+    const normalized = normalizeActionName(actionName);
+    const fromModuleCache = (this.modulePermissionsCache[module.id] || []).find(
+      permission => normalizeActionName(permission.nom || '') === normalized
+    );
+    if (fromModuleCache) {
+      return fromModuleCache;
+    }
+    return this.permissions.find(
+      permission => normalizeActionName(permission.nom || '') === normalized
+    );
+  }
+
+  isActionAssignable(moduleName: string, actionName: string): boolean {
+    const module = this.findModuleByName(moduleName);
+    return !!this.findPermissionForAction(module, actionName);
+  }
+
+  hasActionForModuleName(moduleName: string, actionName: string): boolean {
+    const module = this.findModuleByName(moduleName);
+    const permission = module ? this.findPermissionForAction(module, actionName) : undefined;
+    if (!module || !permission) {
+      return false;
+    }
+    return this.hasPermission(module, permission);
+  }
+
+  toggleActionForModuleName(moduleName: string, actionName: string, event: Event): void {
+    const module = this.findModuleByName(moduleName);
+    if (!module) {
+      return;
+    }
+
+    const permission = this.findPermissionForAction(module, actionName);
+    if (!permission?.id) {
+      void this.popupService.showError(
+        `L'action « ${this.getActionLabel(actionName)} » n'est pas encore enregistrée. Synchronisez les actions du module.`,
+        'Action indisponible'
+      );
+      (event.target as HTMLInputElement).checked = false;
+      return;
+    }
+
+    this.togglePermission(module, permission, event);
+  }
+
+  selectAllSubmenuActions(moduleName: string): void {
+    const context = findNavigationAccessContextByAccessModuleName(moduleName);
+    this.ensureAllSubmenuActionsGranted(moduleName, context);
+  }
+
+  private ensureAllSubmenuActionsGranted(moduleName: string, accessContext?: NavigationAccessContext): void {
+    const module = this.findModuleByName(moduleName);
+    if (!module?.id || !this.selectedProfil?.id) {
+      return;
+    }
+
+    const applySelection = () => {
+      const permissionIds = this.getSubmenuActionDetails(moduleName)
+        .map(action => this.findPermissionForAction(module, action.action))
+        .filter((permission): permission is Permission => !!permission?.id && !this.hasPermission(module, permission))
+        .map(permission => permission.id!);
+
+      if (permissionIds.length === 0) {
+        this.revealSubmenuActions(accessContext);
+        return;
+      }
+
+      this.withRetry(
+        this.profilService.addMultiplePermissionsToProfil(this.selectedProfil!.id!, module.id!, permissionIds)
+      ).subscribe({
+        next: (added) => {
+          for (const pp of added) {
+            if (!this.profilPermissions.some(existing =>
+              existing.id === pp.id
+              || (existing.module?.id === pp.module?.id
+                && existing.permission?.id === pp.permission?.id
+                && existing.profil?.id === pp.profil?.id)
+            )) {
+              this.profilPermissions.push(pp);
+            }
+          }
+          this.refreshAllProfilPermissionsForProfil(this.selectedProfil!.id!);
+          this.revealSubmenuActions(accessContext);
+          this.cd.detectChanges();
+        },
+        error: (error) => {
+          console.error(`Erreur sélection de toutes les actions pour ${moduleName}:`, error);
+          this.reloadProfilData();
+        }
+      });
+    };
+
+    if (this.hasUnsyncedActions(moduleName)) {
+      if (this.syncingModuleActionsSet.has(moduleName)) {
+        return;
+      }
+      this.syncingModuleActionsSet.add(moduleName);
+      const request$ = accessContext?.usesGranularAccess
+        ? this.profilService.syncSubmenuModuleActions(
+          accessContext.accessModuleName,
+          accessContext.apiModuleName,
+          accessContext.actionPathPrefixes
+        )
+        : this.profilService.syncModuleActions(moduleName);
+
+      request$.subscribe({
+        next: () => {
+          delete this.modulePermissionsCache[module.id!];
+          this.loadModulePermissionsForDisplay(module);
+          delete this.moduleActionsCache[moduleName];
+          if (accessContext) {
+            this.loadModuleActionsForNavigationContext(accessContext);
+          } else {
+            this.loadModuleActionsForDisplay(moduleName, module);
+          }
+          this.syncingModuleActionsSet.delete(moduleName);
+          setTimeout(() => applySelection(), 300);
+        },
+        error: () => {
+          this.syncingModuleActionsSet.delete(moduleName);
+          void this.popupService.showError('Synchronisation requise avant la sélection.', 'Erreur');
+        }
+      });
+      return;
+    }
+
+    applySelection();
   }
 
   findModuleByName(moduleName: string): Module | undefined {
@@ -349,8 +690,18 @@ export class ProfilComponent implements OnInit {
 
   getNavGroupGrantedCount(group: AppNavigationGroup): { granted: number; total: number } {
     if (group.children?.length) {
-      const granted = group.children.filter(sub => this.hasSubmenuModuleAccess(sub.moduleName)).length;
+      const granted = group.children.filter(sub => {
+        const context = this.getNavigationContext(group, sub);
+        return context ? this.hasSubmenuAccessGranted(context.accessModuleName) : false;
+      }).length;
       return { granted, total: group.children.length };
+    }
+    const context = this.getNavigationContext(group);
+    if (context) {
+      return {
+        granted: this.hasNavigationAccess(context) ? 1 : 0,
+        total: 1
+      };
     }
     if (group.moduleName) {
       return {
@@ -359,6 +710,20 @@ export class ProfilComponent implements OnInit {
       };
     }
     return { granted: 0, total: 0 };
+  }
+
+  hasGranularNavigationAccessForGroup(group: AppNavigationGroup): boolean {
+    if (!groupUsesGranularSubmenuAccess(group) || !group.children?.length) {
+      return false;
+    }
+    return group.children.some(sub => {
+      const context = this.getNavigationContext(group, sub);
+      return !!context?.usesGranularAccess && this.hasSubmenuAccessGranted(context.accessModuleName);
+    });
+  }
+
+  hasNavigationAccess(context: NavigationAccessContext): boolean {
+    return this.hasSubmenuAccessGranted(context.accessModuleName);
   }
 
   hasSubmenuModuleAccess(moduleName: string): boolean {
@@ -374,40 +739,52 @@ export class ProfilComponent implements OnInit {
     );
   }
 
-  getSubmenuActionPermissions(moduleName: string): Permission[] {
+  /** Accès navigation coché (toute permission sur le module d'accès du sous-menu). */
+  hasSubmenuAccessGranted(moduleName: string): boolean {
     const module = this.findModuleByName(moduleName);
-    if (!module) {
-      return [];
+    if (!module?.id || !this.selectedProfil) {
+      return false;
     }
-    return this.getDisplayedPermissions(module).filter(
-      permission => permission.nom !== 'module_associé'
+    return this.profilPermissions.some(pp =>
+      pp.profil?.id === this.selectedProfil!.id
+      && pp.module?.id === module.id
+      && !!pp.permission?.nom
     );
   }
 
   isSubmenuPermissionsLoading(moduleName: string): boolean {
+    if (this.isModuleActionsLoading(moduleName)) {
+      return true;
+    }
     const module = this.findModuleByName(moduleName);
     return module ? this.isModulePermissionsLoading(module) : false;
   }
 
-  onSubmenuAccessChange(moduleName: string, event: Event): void {
+  onSubmenuAccessChange(accessModuleName: string, event: Event): void {
     if (!this.selectedProfil) {
       return;
     }
     const checked = (event.target as HTMLInputElement).checked;
-    this.resolveModuleForName(moduleName, module => {
+    const context = findNavigationAccessContextByAccessModuleName(accessModuleName);
+    this.resolveModuleForName(accessModuleName, module => {
       if (checked) {
-        this.grantSubmenuAccess(module);
+        this.grantSubmenuAccess(module, context);
       } else {
         this.revokeSubmenuAccess(module);
       }
     });
   }
 
+  onNavigationAccessChange(context: NavigationAccessContext, event: Event): void {
+    this.onSubmenuAccessChange(context.accessModuleName, event);
+  }
+
   onSingleMenuAccessChange(group: AppNavigationGroup, event: Event): void {
-    if (!group.moduleName) {
+    const context = this.getNavigationContext(group);
+    if (!context) {
       return;
     }
-    this.onSubmenuAccessChange(group.moduleName, event);
+    this.onNavigationAccessChange(context, event);
   }
 
   private resolveModuleForName(moduleName: string, onReady: (module: Module) => void): void {
@@ -436,67 +813,48 @@ export class ProfilComponent implements OnInit {
     });
   }
 
-  private grantSubmenuAccess(module: Module): void {
+  private grantSubmenuAccess(module: Module, accessContext?: NavigationAccessContext): void {
     if (!this.selectedProfil?.id || !module.id) {
       return;
     }
-    if (this.isModuleAssociated(module)) {
+    const moduleName = (module.nom || accessContext?.accessModuleName || '').trim();
+    if (!moduleName) {
       return;
     }
+    this.ensureModuleAssociationMarker(module);
+  }
 
-    const applyGrant = (permissions: Permission[]) => {
-      const consulter = permissions.find(permission => permission.nom === 'consulter');
-      const fallback = permissions.find(permission => permission.nom !== 'module_associé');
-      const target = consulter || fallback;
-
-      if (!target?.id) {
-        const fakeEvent = { target: { checked: true } } as unknown as Event;
-        this.toggleModuleAssociation(module, fakeEvent);
-        return;
-      }
-
-      this.withRetry(
-        this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, target.id)
-      ).subscribe({
-        next: (pp) => {
-          if (!this.profilPermissions.some(existing =>
-            existing.id === pp.id
-            || (existing.module?.id === pp.module?.id
-              && existing.permission?.id === pp.permission?.id
-              && existing.profil?.id === pp.profil?.id)
-          )) {
-            this.profilPermissions.push(pp);
-          }
-          this.refreshAllProfilPermissionsForProfil(this.selectedProfil!.id!);
-          this.cd.detectChanges();
-        },
-        error: (error) => {
-          console.error(`Erreur lors de l'activation de l'accès pour ${module.nom}:`, error);
+  /** Marqueur d'accès navigation (sous-menu coché) sans accorder toutes les actions. */
+  private ensureModuleAssociationMarker(module: Module): void {
+    if (!this.selectedProfil?.id || !module.id || this.isModuleAssociated(module)) {
+      return;
+    }
+    const marker = this.permissions.find(p =>
+      p.nom === 'module_associé' || p.nom === 'aucune' || p.nom === 'module_associe'
+    );
+    if (!marker?.id) {
+      return;
+    }
+    this.withRetry(
+      this.profilService.addPermissionToProfil(this.selectedProfil.id, module.id, marker.id)
+    ).subscribe({
+      next: (pp) => {
+        if (!this.profilPermissions.some(existing => existing.id === pp.id)) {
+          this.profilPermissions.push(pp);
         }
-      });
-    };
-
-    const cached = this.modulePermissionsCache[module.id];
-    if (cached) {
-      applyGrant(cached);
-      return;
-    }
-
-    this.profilService.getPermissionsForModule(module.id).subscribe({
-      next: (permissions) => {
-        this.modulePermissionsCache[module.id!] = permissions;
-        applyGrant(permissions);
         this.cd.detectChanges();
       },
-      error: (error) => {
-        console.error(`Erreur chargement permissions ${module.nom}:`, error);
-      }
+      error: (error) => console.error('Association navigation sous-menu:', error)
     });
   }
 
   private revokeSubmenuAccess(module: Module): void {
     if (!module.id) {
       return;
+    }
+    const context = findNavigationAccessContextByAccessModuleName((module.nom || '').trim());
+    if (context?.key) {
+      this.expandedSubmenuActions.delete(context.key);
     }
     this.deselectAllPermissions(module);
   }
@@ -517,13 +875,6 @@ export class ProfilComponent implements OnInit {
     return this.hasPermission(module, permission);
   }
 
-  selectAllSubmenuActions(moduleName: string): void {
-    const module = this.findModuleByName(moduleName);
-    if (module) {
-      this.selectAllPermissions(module);
-    }
-  }
-
   deselectAllSubmenuActions(moduleName: string): void {
     const module = this.findModuleByName(moduleName);
     if (module) {
@@ -539,12 +890,81 @@ export class ProfilComponent implements OnInit {
     return submenu.key;
   }
 
-  getSharedModuleHint(group: AppNavigationGroup, moduleName: string): string | null {
-    if (!group.children?.length) {
-      return null;
+  private submenuMatchesNavSearch(submenu: AppNavigationSubmenu, query: string): boolean {
+    if (!query) {
+      return true;
     }
-    const count = group.children.filter(child => child.moduleName === moduleName).length;
-    return count > 1 ? 'Droit partagé avec les autres entrées de ce menu' : null;
+    const normalized = query.toLowerCase();
+    return submenu.label.toLowerCase().includes(normalized)
+      || submenu.moduleName.toLowerCase().includes(normalized)
+      || submenu.route.toLowerCase().includes(normalized);
+  }
+
+  /** Sous-menus activés pour le profil courant (seuls affichés dans la liste principale). */
+  getGrantedSubmenusForGroup(group: AppNavigationGroup): AppNavigationSubmenu[] {
+    if (!group.children?.length) {
+      return [];
+    }
+    const query = this.navMenuSearch.trim();
+    return group.children.filter(sub => {
+      const context = this.getNavigationContext(group, sub);
+      if (!context || !this.hasNavigationAccess(context)) {
+        return false;
+      }
+      return this.submenuMatchesNavSearch(sub, query);
+    });
+  }
+
+  /** Sous-menus non encore activés (section « Activer d'autres sous-menus »). */
+  getUngrantedSubmenusForGroup(group: AppNavigationGroup): AppNavigationSubmenu[] {
+    if (!group.children?.length) {
+      return [];
+    }
+    const query = this.navMenuSearch.trim();
+    return group.children.filter(sub => {
+      const context = this.getNavigationContext(group, sub);
+      if (!context || this.hasNavigationAccess(context)) {
+        return false;
+      }
+      return this.submenuMatchesNavSearch(sub, query);
+    });
+  }
+
+  isInactiveSubmenusVisible(groupKey: string): boolean {
+    return this.expandedInactiveSubmenuGroups.has(groupKey) || !!this.navMenuSearch.trim();
+  }
+
+  toggleInactiveSubmenus(groupKey: string): void {
+    if (this.expandedInactiveSubmenuGroups.has(groupKey)) {
+      this.expandedInactiveSubmenuGroups.delete(groupKey);
+    } else {
+      this.expandedInactiveSubmenuGroups.add(groupKey);
+    }
+  }
+
+  hasGrantedStandaloneMenu(group: AppNavigationGroup): boolean {
+    if (group.children?.length) {
+      return false;
+    }
+    const context = this.getNavigationContext(group);
+    return !!context && this.hasNavigationAccess(context);
+  }
+
+  hasUngrantedStandaloneMenu(group: AppNavigationGroup): boolean {
+    if (group.children?.length || !group.moduleName) {
+      return false;
+    }
+    const context = this.getNavigationContext(group);
+    return !!context && !this.hasNavigationAccess(context);
+  }
+
+  private revealSubmenuActions(context?: NavigationAccessContext): void {
+    if (!context?.key) {
+      return;
+    }
+    this.expandedSubmenuActions.add(context.key);
+    this.loadModuleActionsForNavigationContext(context);
+    this.cd.detectChanges();
   }
 
   get filteredNavigationCatalog(): AppNavigationGroup[] {
@@ -644,7 +1064,12 @@ export class ProfilComponent implements OnInit {
     this.selectedProfil = null;
     this.profilPermissions = [];
     this.expandedSubmenuActions.clear();
+    this.expandedInactiveSubmenuGroups.clear();
     this.navMenuSearch = '';
+    this.moduleActionsCache = {};
+    this.actionSearchByModule = {};
+    this.loadingModuleActionsSet.clear();
+    this.syncingModuleActionsSet.clear();
   }
 
   createProfil() {

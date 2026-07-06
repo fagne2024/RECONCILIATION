@@ -11,6 +11,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Map;
@@ -18,6 +20,8 @@ import java.util.HashMap;
 
 @Component
 public class PermissionInterceptor implements HandlerInterceptor {
+
+    private static final Logger log = LoggerFactory.getLogger(PermissionInterceptor.class);
 
     @Autowired
     private PermissionCheckService permissionCheckService;
@@ -65,6 +69,9 @@ public class PermissionInterceptor implements HandlerInterceptor {
         if (path.matches("/api/pays/profil/\\d+")) {
             return true;
         }
+        if (path.equals("/api/pays/user/allowed-codes")) {
+            return true;
+        }
 
         // Ignorer les requêtes OPTIONS (CORS)
         if ("OPTIONS".equals(method)) {
@@ -79,14 +86,11 @@ public class PermissionInterceptor implements HandlerInterceptor {
         // Récupérer le nom d'utilisateur depuis le header ou la session
         String username = getUsernameFromRequest(request);
         
-        // Log pour débogage
-        System.out.println("🔍 PermissionInterceptor - Path: " + path + ", Method: " + method + ", Username: " + username);
+        log.trace("PermissionInterceptor path={} method={} user={}", path, method, username);
 
         // Si pas d'utilisateur, autoriser (sera géré par l'authentification)
         if (username == null || username.isEmpty()) {
-            // Pour l'instant, autoriser toutes les requêtes sans utilisateur
-            // À adapter selon votre système d'authentification
-            System.out.println("⚠️ PermissionInterceptor - Aucun username trouvé, autorisation par défaut");
+            log.trace("PermissionInterceptor: pas de username, autorisation par defaut");
             return true;
         }
 
@@ -94,11 +98,10 @@ public class PermissionInterceptor implements HandlerInterceptor {
         if (path.startsWith("/api/")) {
             try {
                 boolean hasPermission = permissionCheckService.hasPermissionForApiPath(username, path, method, moduleOverride, permissionOverride);
-                System.out.println("🔍 PermissionInterceptor - hasPermission: " + hasPermission + " pour " + username + " sur " + path);
+                log.trace("PermissionInterceptor hasPermission={} user={} path={}", hasPermission, username, path);
                 
                 if (!hasPermission) {
-                    // Log pour débogage
-                    System.out.println("🔒 Permission refusée pour " + username + " sur " + method + " " + path);
+                    log.debug("Permission refusee user={} {} {}", username, method, path);
                     
                     response.setStatus(HttpStatus.FORBIDDEN.value());
                     response.setContentType("application/json");
@@ -136,7 +139,7 @@ public class PermissionInterceptor implements HandlerInterceptor {
                     
                     return false;
                 } else {
-                    System.out.println("✅ Permission accordée pour " + username + " sur " + method + " " + path);
+                    log.trace("Permission accordee user={} {} {}", username, method, path);
                     
                     // Logger l'action utilisateur
                     try {
@@ -173,18 +176,14 @@ public class PermissionInterceptor implements HandlerInterceptor {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             Object principal = authentication.getPrincipal();
-            System.out.println("🔍 PermissionInterceptor - Authentication trouvée, principal type: " + (principal != null ? principal.getClass().getName() : "null"));
+            log.trace("PermissionInterceptor principal type={}", principal != null ? principal.getClass().getName() : "null");
             if (principal instanceof UserDetails) {
-                String username = ((UserDetails) principal).getUsername();
-                System.out.println("🔍 PermissionInterceptor - Username depuis UserDetails: " + username);
-                return username;
+                return ((UserDetails) principal).getUsername();
             } else if (principal instanceof String) {
-                String username = (String) principal;
-                System.out.println("🔍 PermissionInterceptor - Username depuis String: " + username);
-                return username;
+                return (String) principal;
             }
         } else {
-            System.out.println("⚠️ PermissionInterceptor - Aucune authentication trouvée dans SecurityContext");
+            log.trace("PermissionInterceptor: aucune authentication dans SecurityContext");
         }
 
         // Essayer depuis le header X-Username (si envoyé par le frontend)
@@ -236,6 +235,7 @@ public class PermissionInterceptor implements HandlerInterceptor {
         if (path.startsWith("/api/dashboard")) return "Dashboard";
         if (path.startsWith("/api/traitement")) return "Traitement";
         if (path.startsWith("/api/results")) return "Résultats";
+        if (path.startsWith("/api/reco-j1-blocking-comments")) return "Résultats";
         if (path.startsWith("/api/result8rec")) return "Résultats";
         
         return null;

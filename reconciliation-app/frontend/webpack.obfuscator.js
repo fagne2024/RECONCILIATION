@@ -20,6 +20,11 @@ const SECURITY_HEADERS = {
  */
 module.exports = (config, options) => {
   config.devServer = config.devServer || {};
+  // Routes Angular (/login, /dashboard, etc.) : renvoyer index.html au rechargement direct
+  config.devServer.historyApiFallback = {
+    index: '/index.html',
+    disableDotRule: true,
+  };
   config.devServer.headers = {
     ...(config.devServer.headers || {}),
     ...SECURITY_HEADERS,

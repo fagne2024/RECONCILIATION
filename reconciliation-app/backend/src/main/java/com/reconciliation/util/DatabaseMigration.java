@@ -13,30 +13,27 @@ public class DatabaseMigration implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
+        // Migration pour ajouter la colonne commentaire à releve_bancaire (MySQL)
         try {
-            // Vérifier si la colonne commentaire existe
-            String checkColumnQuery = "PRAGMA table_info(releve_bancaire)";
-            var columns = jdbcTemplate.queryForList(checkColumnQuery);
-            
-            boolean commentaireExists = columns.stream()
-                .anyMatch(column -> "commentaire".equals(column.get("name")));
-            
-            if (!commentaireExists) {
+            String checkColumnQuery = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS " +
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'releve_bancaire' AND COLUMN_NAME = 'commentaire'";
+
+            Integer countCommentaire = jdbcTemplate.queryForObject(checkColumnQuery, Integer.class);
+
+            if (countCommentaire == null || countCommentaire == 0) {
                 System.out.println("🔄 Ajout de la colonne commentaire à la table releve_bancaire...");
-                
-                // Ajouter la colonne commentaire
-                String alterTableQuery = "ALTER TABLE releve_bancaire ADD COLUMN commentaire VARCHAR(1000)";
+
+                String alterTableQuery = "ALTER TABLE releve_bancaire ADD COLUMN commentaire VARCHAR(1000) NULL";
                 jdbcTemplate.execute(alterTableQuery);
-                
+
                 System.out.println("✅ Colonne commentaire ajoutée avec succès!");
             } else {
                 System.out.println("✅ Colonne commentaire déjà présente dans la table releve_bancaire");
             }
-            
+
         } catch (Exception e) {
             System.err.println("❌ Erreur lors de l'ajout de la colonne commentaire: " + e.getMessage());
         }
-        
         // Migration pour ajouter la colonne traitement à result8rec (MySQL)
         try {
             String checkTraitementQuery = "SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.COLUMNS " +
@@ -106,6 +103,33 @@ public class DatabaseMigration implements CommandLineRunner {
         } catch (Exception e) {
             System.err.println("❌ Erreur lors de l'ajout de la colonne traitement à operation_bancaire: " + e.getMessage());
             e.printStackTrace();
+        }
+
+        try {
+            String checkTableQuery = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES " +
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'reco_j1_blocking_comment'";
+            Integer tableCount = jdbcTemplate.queryForObject(checkTableQuery, Integer.class);
+            if (tableCount == null || tableCount == 0) {
+                System.out.println("🔄 Création de la table reco_j1_blocking_comment...");
+                jdbcTemplate.execute(
+                    "CREATE TABLE reco_j1_blocking_comment (" +
+                    "id BIGINT AUTO_INCREMENT PRIMARY KEY, " +
+                    "reco_date VARCHAR(10) NOT NULL, " +
+                    "service VARCHAR(255) NOT NULL, " +
+                    "country VARCHAR(128) NOT NULL, " +
+                    "env VARCHAR(32) NOT NULL, " +
+                    "comment_text TEXT NOT NULL, " +
+                    "updated_by VARCHAR(128) NULL, " +
+                    "updated_at DATETIME NULL, " +
+                    "UNIQUE KEY uk_reco_j1_blocking_scope (reco_date, service, country, env)" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+                );
+                System.out.println("✅ Table reco_j1_blocking_comment créée.");
+            } else {
+                System.out.println("✅ Table reco_j1_blocking_comment déjà présente");
+            }
+        } catch (Exception e) {
+            System.err.println("❌ Erreur création reco_j1_blocking_comment: " + e.getMessage());
         }
     }
 }

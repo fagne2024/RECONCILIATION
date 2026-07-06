@@ -6,7 +6,7 @@ import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 
 import { Subscription, firstValueFrom, forkJoin, of } from 'rxjs';
 
-import { catchError } from 'rxjs/operators';
+import { catchError, switchMap } from 'rxjs/operators';
 
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -57,7 +57,8 @@ import {
 } from '../../constants/reconciliation-env-options';
 
 import { PopupService } from '../../services/popup.service';
-import { AppStateService } from '../../services/app-state.service';
+import { AppStateService, UserPaysScope } from '../../services/app-state.service';
+import { countriesMatch, countryNameFromCode } from '../../utils/country-codes.util';
 
 
 
@@ -116,7 +117,8 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
   validatingEnvBulk = false;
 
   error: string | null = null;
-
+  /** Message explicite lorsque le rapport est vide (pays profil ou filtres). */
+  emptyScopeHint: string | null = null;
   dataFromRapportCache = false;
 
 
@@ -125,9 +127,9 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   selectedYear = new Date().getFullYear();
 
-  /** Vide = tous les mois ; sinon `01`…`12`. */
+  /** Vide = tous les mois ; sinon `01`…`12`. Par défaut : mois calendaire en cours. */
 
-  selectedMonth = '';
+  selectedMonth = ControleInterneBoPartenaireComponent.currentMonthMm();
 
   selectedEnv = 'HT';
 
@@ -143,6 +145,9 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
 
   countries: string[] = [];
+
+  /** Pays autorisés par le profil utilisateur (noms affichés dans les filtres). */
+  private profileCountryNames: string[] = [];
 
   availableServices: string[] = [];
 
@@ -192,9 +197,19 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
   /** Toutes les lignes du périmètre (sans filtre service) — base de la validation par ENV. */
   monthlyRowsAll: ControleInterneDisplayRow[] = [];
 
-  validesClotures: RapportDateServiceLine[] = [];
+  validesCloturesAll: RapportDateServiceLine[] = [];
 
-  nonValidesClotures: RapportDateServiceLine[] = [];
+  nonValidesCloturesAll: RapportDateServiceLine[] = [];
+
+  nonValidesPanelFilter = { date: '', service: '', statut: '' };
+
+  validesPanelFilter = { date: '', service: '', statut: '' };
+
+  nonValidesPanelPage = 1;
+
+  validesPanelPage = 1;
+
+  readonly panelItemsPerPage = 15;
 
   commentaire = '';
   destinatairesEmails = '';
@@ -240,6 +255,9 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
   private loadSeq = 0;
 
   private lastFetchKey = '';
+
+  /** Évite une boucle lors de la synchronisation des query params par défaut. */
+  private initialDefaultsSynced = false;
 
   private rawReport: BoPartenaireResult8Row[] = [];
 
@@ -300,11 +318,27 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     this.subs.add(
 
-      this.route.queryParams.subscribe((qp) => {
+      this.appState.ensureUserPaysScope(true).pipe(
+
+        switchMap((scope) => {
+
+          this.applyProfileCountryScope(scope);
+
+          return this.loadCountriesFromReportFilters().pipe(
+
+            switchMap(() => this.route.queryParams)
+
+          );
+
+        }),
+
+        catchError(() => this.route.queryParams)
+
+      ).subscribe((qp) => {
 
         if (qp['country']) {
 
-          this.selectedCountry = qp['country'];
+          this.selectedCountry = this.resolveCountryLabel(String(qp['country']));
 
         }
 
@@ -326,15 +360,31 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
         }
 
-        if (qp['month']) {
+        const hasMonthParam = qp['month'] != null && String(qp['month']).trim() !== '';
 
-          const m = String(qp['month']).padStart(2, '0').slice(-2);
+        if (hasMonthParam) {
 
-          this.selectedMonth = this.monthOptions.some((o) => o.value === m) ? m : '';
+          const raw = String(qp['month']).trim().toLowerCase();
+
+          if (raw === 'all' || raw === 'tous') {
+
+            this.selectedMonth = '';
+
+          } else {
+
+            const m = raw.padStart(2, '0').slice(-2);
+
+            this.selectedMonth = this.monthOptions.some((o) => o.value === m)
+
+              ? m
+
+              : ControleInterneBoPartenaireComponent.currentMonthMm();
+
+          }
 
         } else {
 
-          this.selectedMonth = '';
+          this.applyDefaultMonthForYear();
 
         }
 
@@ -343,6 +393,34 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
         this.rapportDateDebut = qp['dateDebut'] || '';
 
         this.rapportDateFin = qp['dateFin'] || '';
+
+        if (this.rapportDateDebut && this.rapportDateFin) {
+
+          this.selectedMonth = '';
+
+        }
+
+        this.ensureDefaultCountry();
+
+        const needsDefaultUrlSync =
+
+          !this.initialDefaultsSynced
+
+          && !this.rapportDateDebut
+
+          && (!qp['country'] || !hasMonthParam);
+
+        if (needsDefaultUrlSync) {
+
+          this.initialDefaultsSynced = true;
+
+          this.syncQueryParams();
+
+          return;
+
+        }
+
+
 
         const fetchKey = JSON.stringify({
 
@@ -375,6 +453,165 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
       })
 
     );
+
+  }
+
+
+
+  private applyProfileCountryScope(scope: UserPaysScope | null): void {
+
+    this.profileCountryNames = this.appState.getProfileCountryNames();
+
+    // Contrôle interne : tous les pays du rapport sont proposés (pas de cloisonnement profil).
+
+  }
+
+
+
+  /** Pays distincts présents dans result8rec (tous pays, sans cloisonnement profil). */
+  private loadCountriesFromReportFilters() {
+
+    return this.http
+
+      .get<{ countries?: string[] }>('/api/result8rec/filters')
+
+      .pipe(
+
+        catchError(() => of({ countries: [] as string[] })),
+
+        switchMap((filters) => {
+
+          const fromApi = (filters.countries ?? []).map((c) => (c || '').trim()).filter(Boolean);
+
+          const merged = new Set<string>([...fromApi, ...this.countries]);
+
+          if (this.selectedCountry) {
+
+            merged.add(this.selectedCountry);
+
+          }
+
+          this.countries = Array.from(merged).sort((a, b) => a.localeCompare(b, 'fr'));
+
+          this.syncSelectedCountryWithList();
+
+          this.cdr.markForCheck();
+
+          return of(void 0);
+
+        })
+
+      );
+
+  }
+
+
+
+  private static currentMonthMm(): string {
+
+    return String(new Date().getMonth() + 1).padStart(2, '0');
+
+  }
+
+  private applyDefaultMonthForYear(): void {
+
+    const now = new Date();
+
+    this.selectedMonth =
+
+      this.selectedYear === now.getFullYear()
+
+        ? ControleInterneBoPartenaireComponent.currentMonthMm()
+
+        : '01';
+
+  }
+
+  private ensureDefaultCountry(): void {
+
+    if (this.selectedCountry) {
+
+      this.syncSelectedCountryWithList();
+
+      return;
+
+    }
+
+    if (this.profileCountryNames.length) {
+
+      this.selectedCountry =
+
+        this.resolveCountryLabel(this.profileCountryNames[0]) || this.profileCountryNames[0];
+
+      this.syncSelectedCountryWithList();
+
+      return;
+
+    }
+
+    const scope = this.appState.getUserPaysScope();
+
+    if (scope?.codes?.length) {
+
+      this.selectedCountry = this.resolveCountryLabel(scope.codes[0]) || scope.codes[0];
+
+      this.syncSelectedCountryWithList();
+
+      return;
+
+    }
+
+    const preferred = this.countries.find((c) => countriesMatch(c, 'GA'));
+
+    this.selectedCountry = preferred || this.countries[0] || '';
+
+    if (this.selectedCountry) {
+
+      this.syncSelectedCountryWithList();
+
+    }
+
+  }
+
+  private resolveCountryLabel(value: string | null | undefined): string {
+
+    const trimmed = (value || '').trim();
+
+    if (!trimmed) {
+
+      return '';
+
+    }
+
+    return countryNameFromCode(trimmed) || trimmed;
+
+  }
+
+  private syncSelectedCountryWithList(): void {
+
+    if (!this.selectedCountry || !this.countries.length) {
+
+      return;
+
+    }
+
+    const match = this.countries.find((c) => countriesMatch(c, this.selectedCountry));
+
+    if (match) {
+
+      this.selectedCountry = match;
+
+      return;
+
+    }
+
+    this.countries = [...this.countries, this.selectedCountry].sort((a, b) => a.localeCompare(b, 'fr'));
+
+  }
+
+  private countryMatchesSelected(rowCountry: string | null | undefined): boolean {
+
+    return countriesMatch(rowCountry, this.selectedCountry);
 
   }
 
@@ -458,6 +695,28 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   }
 
+  get canShowCommentSection(): boolean {
+    return this.canConsultCommentaireControleInterne
+      || this.canModifyCommentaireControleInterne
+      || this.canSendEmailControleInterne;
+  }
+
+  get canConsultCommentaireControleInterne(): boolean {
+    return this.appState.canConsultCommentaireControleInterneBoPartenaire();
+  }
+
+  get canModifyCommentaireControleInterne(): boolean {
+    return this.appState.canModifyCommentaireControleInterneBoPartenaire();
+  }
+
+  get canSendEmailControleInterne(): boolean {
+    return this.appState.canSendEmailControleInterneBoPartenaire();
+  }
+
+  get canShowValidationActions(): boolean {
+    return this.canValidateControleInterne || this.canRevokeControleInterne;
+  }
+
 
 
   private syncQueryParams(resetRapportDates = true): void {
@@ -474,7 +733,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
         year: this.selectedYear,
 
-        month: this.selectedMonth || null,
+        month: this.selectedMonth || 'all',
 
         service: this.selectedService || null,
 
@@ -588,12 +847,173 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
     return Math.min(this.currentPage * this.itemsPerPage, this.monthlyRows.length);
   }
 
+  get filteredNonValidesClotures(): RapportDateServiceLine[] {
+    return this.applyPanelLineFilters(this.nonValidesCloturesAll, this.nonValidesPanelFilter);
+  }
+
+  get filteredValidesClotures(): RapportDateServiceLine[] {
+    return this.applyPanelLineFilters(this.validesCloturesAll, this.validesPanelFilter);
+  }
+
+  get paginatedNonValidesClotures(): RapportDateServiceLine[] {
+    const start = (this.nonValidesPanelPage - 1) * this.panelItemsPerPage;
+    return this.filteredNonValidesClotures.slice(start, start + this.panelItemsPerPage);
+  }
+
+  get paginatedValidesClotures(): RapportDateServiceLine[] {
+    const start = (this.validesPanelPage - 1) * this.panelItemsPerPage;
+    return this.filteredValidesClotures.slice(start, start + this.panelItemsPerPage);
+  }
+
+  get nonValidesPanelTotalPages(): number {
+    const total = this.filteredNonValidesClotures.length;
+    return total ? Math.ceil(total / this.panelItemsPerPage) : 0;
+  }
+
+  get validesPanelTotalPages(): number {
+    const total = this.filteredValidesClotures.length;
+    return total ? Math.ceil(total / this.panelItemsPerPage) : 0;
+  }
+
   get nonValidesSectionTotals(): ControleInterneSectionTotals {
-    return this.sumDateServiceLines(this.nonValidesClotures);
+    return this.sumDateServiceLines(this.filteredNonValidesClotures);
   }
 
   get validesSectionTotals(): ControleInterneSectionTotals {
-    return this.sumDateServiceLines(this.validesClotures);
+    return this.sumDateServiceLines(this.filteredValidesClotures);
+  }
+
+  onPanelFilterChange(panel: 'nonValides' | 'valides'): void {
+    if (panel === 'nonValides') {
+      this.nonValidesPanelPage = 1;
+    } else {
+      this.validesPanelPage = 1;
+    }
+    this.cdr.markForCheck();
+  }
+
+  resetPanelFilters(panel: 'nonValides' | 'valides' | 'both'): void {
+    if (panel === 'nonValides' || panel === 'both') {
+      this.nonValidesPanelFilter = { date: '', service: '', statut: '' };
+      this.nonValidesPanelPage = 1;
+    }
+    if (panel === 'valides' || panel === 'both') {
+      this.validesPanelFilter = { date: '', service: '', statut: '' };
+      this.validesPanelPage = 1;
+    }
+    this.cdr.markForCheck();
+  }
+
+  hasActivePanelFilter(panel: 'nonValides' | 'valides'): boolean {
+    const filters = panel === 'nonValides' ? this.nonValidesPanelFilter : this.validesPanelFilter;
+    return !!(filters.date || filters.service || filters.statut);
+  }
+
+  goToPanelPage(panel: 'nonValides' | 'valides', page: number): void {
+    const totalPages = panel === 'nonValides' ? this.nonValidesPanelTotalPages : this.validesPanelTotalPages;
+    const currentPage = panel === 'nonValides' ? this.nonValidesPanelPage : this.validesPanelPage;
+    if (page < 1 || page > totalPages || page === currentPage) {
+      return;
+    }
+    if (panel === 'nonValides') {
+      this.nonValidesPanelPage = page;
+    } else {
+      this.validesPanelPage = page;
+    }
+    this.cdr.markForCheck();
+  }
+
+  nextPanelPage(panel: 'nonValides' | 'valides'): void {
+    const currentPage = panel === 'nonValides' ? this.nonValidesPanelPage : this.validesPanelPage;
+    this.goToPanelPage(panel, currentPage + 1);
+  }
+
+  previousPanelPage(panel: 'nonValides' | 'valides'): void {
+    const currentPage = panel === 'nonValides' ? this.nonValidesPanelPage : this.validesPanelPage;
+    this.goToPanelPage(panel, currentPage - 1);
+  }
+
+  getPanelPageNumbers(panel: 'nonValides' | 'valides'): number[] {
+    const currentPage = panel === 'nonValides' ? this.nonValidesPanelPage : this.validesPanelPage;
+    const totalPages = panel === 'nonValides' ? this.nonValidesPanelTotalPages : this.validesPanelTotalPages;
+    const pages: number[] = [];
+    const maxVisible = 5;
+    let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+    let end = Math.min(totalPages, start + maxVisible - 1);
+    if (end - start + 1 < maxVisible) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    return pages;
+  }
+
+  getPanelPaginationStartIndex(panel: 'nonValides' | 'valides'): number {
+    const filtered = panel === 'nonValides' ? this.filteredNonValidesClotures : this.filteredValidesClotures;
+    const currentPage = panel === 'nonValides' ? this.nonValidesPanelPage : this.validesPanelPage;
+    if (!filtered.length) {
+      return 0;
+    }
+    return (currentPage - 1) * this.panelItemsPerPage + 1;
+  }
+
+  getPanelPaginationEndIndex(panel: 'nonValides' | 'valides'): number {
+    const filtered = panel === 'nonValides' ? this.filteredNonValidesClotures : this.filteredValidesClotures;
+    const currentPage = panel === 'nonValides' ? this.nonValidesPanelPage : this.validesPanelPage;
+    return Math.min(currentPage * this.panelItemsPerPage, filtered.length);
+  }
+
+  getPanelDateOptions(lines: RapportDateServiceLine[]): string[] {
+    const dates = new Set<string>();
+    for (const line of lines) {
+      if (line.date) {
+        dates.add(line.date);
+      }
+    }
+    return Array.from(dates).sort((a, b) => a.localeCompare(b));
+  }
+
+  getPanelServiceOptions(lines: RapportDateServiceLine[]): string[] {
+    const services = new Set<string>();
+    for (const line of lines) {
+      if (line.service) {
+        services.add(line.service);
+      }
+    }
+    return Array.from(services).sort((a, b) => a.localeCompare(b, 'fr'));
+  }
+
+  getPanelStatutOptions(lines: RapportDateServiceLine[]): string[] {
+    const statuts = new Set<string>();
+    for (const line of lines) {
+      if (line.statutRapport) {
+        statuts.add(line.statutRapport);
+      }
+    }
+    return Array.from(statuts).sort((a, b) => a.localeCompare(b, 'fr'));
+  }
+
+  private applyPanelLineFilters(
+    lines: RapportDateServiceLine[],
+    filters: { date: string; service: string; statut: string }
+  ): RapportDateServiceLine[] {
+    return lines.filter((line) => {
+      if (filters.date && line.date !== filters.date) {
+        return false;
+      }
+      if (filters.service && !this.strEqual(line.service, filters.service)) {
+        return false;
+      }
+      if (filters.statut && !this.strEqual(line.statutRapport, filters.statut)) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  private resetPanelPagination(): void {
+    this.resetPanelFilters('both');
   }
 
   get ticketsByMonth(): { monthYyyyMm: string; monthLabel: string; ticketIds: string[] }[] {
@@ -1289,6 +1709,12 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     this.error = null;
 
+    if (!this.emptyScopeHint?.includes('Aucun pays associé')) {
+
+      this.emptyScopeHint = null;
+
+    }
+
     this.dataFromRapportCache = false;
 
 
@@ -1296,6 +1722,18 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
     const bounds = this.getPeriodBounds();
 
 
+
+    this.ensureDefaultCountry();
+
+    if (!this.selectedCountry) {
+      this.emptyScopeHint = 'Sélectionnez un pays pour charger les données.';
+      this.loading = false;
+      this.monthlyRows = [];
+      this.monthlyRowsAll = [];
+      this.paginatedMonthlyRows = [];
+      this.cdr.markForCheck();
+      return;
+    }
 
     if (!forceRefresh && this.selectedCountry) {
 
@@ -1337,86 +1775,79 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     this.monthlyRowsAll = [];
 
-    this.validesClotures = [];
+    this.validesCloturesAll = [];
 
-    this.nonValidesClotures = [];
+    this.nonValidesCloturesAll = [];
 
     const ecartStart = this.subtractCalendarDaysFromYmd(bounds.startDate, 1);
 
 
 
     const headers = new HttpHeaders({
-
       'Cache-Control': 'no-cache, no-store, must-revalidate',
-
       Pragma: 'no-cache',
-
-      Expires: '0',
-
-      'X-Permission-Module': 'Résultats'
-
+      Expires: '0'
     });
 
-    const params = new HttpParams()
-
+    let params = new HttpParams()
       .set('startDate', bounds.startDate)
-
       .set('endDate', bounds.endDate)
-
+      .set('fields', 'slim')
       .set('_t', String(Date.now()));
 
+    params = params.set('country', this.selectedCountry);
 
+    if (this.selectedEnv && this.selectedEnv !== 'ALL') {
+      params = params.set('env', this.selectedEnv);
+    }
+
+    const ecartFilter: {
+      startDate: string;
+      endDate: string;
+      pays: string;
+      platform: string;
+      env?: string;
+    } = {
+      startDate: ecartStart,
+      endDate: bounds.endDate,
+      pays: this.selectedCountry,
+      platform: 'PARTENAIRE'
+    };
+    if (this.selectedEnv && this.selectedEnv !== 'ALL') {
+      ecartFilter.env = this.selectedEnv;
+    }
 
     this.fetchSub = forkJoin({
-
       report: this.http.get<any[]>('/api/result8rec', { headers, params }),
-
       ecarts: this.ecartBoSummaryService
-
-        .getEcartBoSummaries({ startDate: ecartStart, endDate: bounds.endDate })
-
-        .pipe(catchError(() => of([] as EcartBoSummary[])))
-
+        .getEcartBoSummaries(ecartFilter)
+        .pipe(catchError(() => of([] as EcartBoSummary[]))),
+      validations: this.controleInterneService
+        .list({
+          country: this.selectedCountry,
+          env: this.selectedEnv === 'ALL' ? 'ALL' : this.selectedEnv,
+          startMonth: bounds.startMonth,
+          endMonth: bounds.endMonth
+        })
+        .pipe(catchError(() => of([] as BoPartenaireControleInterneRecord[])))
     }).subscribe({
-
-      next: ({ report, ecarts }) => {
-
+      next: ({ report, ecarts, validations }) => {
         if (seq !== this.loadSeq) {
-
           return;
-
         }
 
         this.rawReport = this.mapReportRows(report);
-
         this.ecartAll = Array.isArray(ecarts) ? ecarts : [];
-
+        this.applyValidations(validations);
         this.refreshCountries();
 
-
-
-        if (!this.selectedCountry && this.countries.length) {
-
-          this.selectedCountry = this.countries[0];
-
+        if (!this.rawReport.length) {
+          this.emptyScopeHint =
+            'Aucune ligne rapport pour cette période. Vérifiez les pays associés à votre profil '
+            + '(Profils → Pays) et les filtres année / mois / ENV.';
         }
 
-
-
-        if (!this.selectedCountry) {
-
-          this.loading = false;
-
-          this.cdr.markForCheck();
-
-          return;
-
-        }
-
-
-
-        this.loadManualAndValidations(bounds, seq);
-
+        this.loadManualRows(bounds, seq);
       },
 
       error: () => {
@@ -1455,107 +1886,45 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
 
 
-  private loadManualAndValidations(
-
+  private loadManualRows(
     bounds: { startDate: string; endDate: string; startMonth: string; endMonth: string },
-
     seq: number
-
   ): void {
-
     const envParam = this.selectedEnv === 'ALL' ? undefined : this.selectedEnv;
-
     const services = this.distinctServicesForPeriod(bounds.startDate, bounds.endDate);
 
-
-
     const manual$ =
-
       services.length > 0
-
         ? this.dashboardService.getReleveManualTrxRange(
-
             bounds.startDate,
-
             bounds.endDate,
-
             this.selectedCountry,
-
             services,
-
             envParam
-
           )
-
         : of([] as ReleveManualRangeRow[]);
 
-
-
-    this.fetchSub = forkJoin({
-
-      manual: manual$.pipe(catchError(() => of([] as ReleveManualRangeRow[]))),
-
-      validations: this.controleInterneService
-
-        .list({
-
-          country: this.selectedCountry,
-
-          env: this.selectedEnv === 'ALL' ? 'ALL' : this.selectedEnv,
-
-          startMonth: bounds.startMonth,
-
-          endMonth: bounds.endMonth
-
-        })
-
-        .pipe(catchError(() => of([] as BoPartenaireControleInterneRecord[])))
-
-    }).subscribe({
-
-      next: ({ manual, validations }) => {
-
+    this.fetchSub = manual$.pipe(catchError(() => of([] as ReleveManualRangeRow[]))).subscribe({
+      next: (manual) => {
         if (seq !== this.loadSeq) {
-
           return;
-
         }
-
         this.manualRows = Array.isArray(manual) ? manual : [];
-
-        this.applyValidations(validations);
-
         this.rebuildDisplay({ resetPage: true });
-
         this.loading = false;
-
         this.cdr.markForCheck();
-
       },
-
       error: () => {
-
         if (seq !== this.loadSeq) {
-
           return;
-
         }
-
         this.manualRows = [];
-
         this.rebuildDisplay({ resetPage: true });
-
         this.loading = false;
-
         this.cdr.markForCheck();
-
       }
-
     });
-
   }
-
-
 
   private fetchValidations(startMonth: string, endMonth: string, seq: number): void {
 
@@ -1645,9 +2014,11 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
       this.monthlyRowsAll = [];
 
-      this.validesClotures = [];
+      this.validesCloturesAll = [];
 
-      this.nonValidesClotures = [];
+      this.nonValidesCloturesAll = [];
+
+      this.resetPanelPagination();
 
       this.paginatedMonthlyRows = [];
 
@@ -1662,6 +2033,10 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
 
     const bounds = this.getPeriodBounds();
+
+    if (this.rawReport.length > 0) {
+      this.emptyScopeHint = null;
+    }
 
     const envNorm = this.selectedEnv === 'ALL' ? null : normalizeReconciliationReportEnv(this.selectedEnv);
 
@@ -1741,17 +2116,19 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     });
 
-    this.validesClotures = this.filterByService(
+    this.validesCloturesAll = this.filterByService(
 
       this.filterDateServiceLinesByMonth(lines.validesClotures)
 
     );
 
-    this.nonValidesClotures = this.filterByService(
+    this.nonValidesCloturesAll = this.filterByService(
 
       this.filterDateServiceLinesByMonth(lines.nonValidesClotures)
 
     );
+
+    this.resetPanelPagination();
 
     this.refreshAvailableServices(bounds.startDate, bounds.endDate, envNorm);
 
@@ -1794,7 +2171,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
   }
 
   enregistrerCommentaire(): void {
-    if (!this.canValidateControleInterne || !this.selectedCountry || this.savingComment) {
+    if (!this.canModifyCommentaireControleInterne || !this.selectedCountry || this.savingComment) {
       return;
     }
     this.savingComment = true;
@@ -1822,7 +2199,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
   }
 
   envoyerCommentaireParMail(): void {
-    if (!this.canValidateControleInterne || !this.selectedCountry || this.sendingCommentEmail) {
+    if (!this.canSendEmailControleInterne || !this.selectedCountry || this.sendingCommentEmail) {
       return;
     }
     const recipients = this.destinatairesEmails
@@ -1896,7 +2273,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     for (const row of this.rawReport) {
 
-      if ((row.country || '').trim() !== this.selectedCountry.trim()) {
+      if (!this.countryMatchesSelected(row.country)) {
 
         continue;
 
@@ -2082,7 +2459,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     for (const row of this.rawReport) {
 
-      if ((row.country || '').trim() !== this.selectedCountry.trim()) {
+      if (!this.countryMatchesSelected(row.country)) {
 
         continue;
 
@@ -2114,7 +2491,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   private refreshCountries(): void {
 
-    const set = new Set<string>();
+    const set = new Set<string>(this.countries);
 
     for (const row of this.rawReport) {
 
@@ -2129,6 +2506,14 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
     }
 
     this.countries = Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+
+    this.syncSelectedCountryWithList();
+
+    if (!this.selectedCountry && this.countries.length) {
+
+      this.selectedCountry = this.countries[0];
+
+    }
 
   }
 

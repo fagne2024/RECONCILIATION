@@ -1,5 +1,5 @@
 import { applyColumnProcessingRulesToRow, applyColumnProcessingRulesSync } from './column-processing.util';
-import { ColumnProcessingRule } from '../services/auto-processing.service';
+import { ColumnProcessingRule } from '../models/column-processing-rule.model';
 
 describe('column-processing.util', () => {
   it('conserve les points dans IDTransaction malgré removeSpecialChars', () => {

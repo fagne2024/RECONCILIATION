@@ -21,7 +21,10 @@ public interface Result8RecRepository extends JpaRepository<Result8RecEntity, Lo
         SELECT r FROM Result8RecEntity r
         WHERE (:startDate IS NULL OR r.date >= :startDate)
           AND (:endDate IS NULL OR r.date <= :endDate)
-          AND (:country IS NULL OR LOWER(r.country) = LOWER(:country))
+          AND (
+              :countries IS NULL
+              OR LOWER(TRIM(r.country)) IN :countries
+          )
           AND (
               :env IS NULL
               OR UPPER(COALESCE(r.env, '')) = UPPER(:env)
@@ -32,7 +35,28 @@ public interface Result8RecRepository extends JpaRepository<Result8RecEntity, Lo
     List<Result8RecEntity> findForReport(
             @Param("startDate") String startDate,
             @Param("endDate") String endDate,
-            @Param("country") String country,
+            @Param("countries") List<String> countries,
+            @Param("env") String env
+    );
+
+    @Query("""
+        SELECT COUNT(r) FROM Result8RecEntity r
+        WHERE (:startDate IS NULL OR r.date >= :startDate)
+          AND (:endDate IS NULL OR r.date <= :endDate)
+          AND (
+              :countries IS NULL
+              OR LOWER(TRIM(r.country)) IN :countries
+          )
+          AND (
+              :env IS NULL
+              OR UPPER(COALESCE(r.env, '')) = UPPER(:env)
+              OR (:env = 'T-E' AND (r.env IS NULL OR TRIM(r.env) = '' OR UPPER(r.env) = 'TOTAL'))
+          )
+    """)
+    long countForReport(
+            @Param("startDate") String startDate,
+            @Param("endDate") String endDate,
+            @Param("countries") List<String> countries,
             @Param("env") String env
     );
 

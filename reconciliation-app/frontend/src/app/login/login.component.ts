@@ -101,17 +101,17 @@ export class LoginComponent implements OnInit {
           this.appState.setUserRights({
             profil: response.profil,
             modules,
-            permissions
+            permissions,
+            pays: response.pays
           }, response.username, token);
           
           this.userLogService.logActivity('connexion', 'Authentification', response.username, 'Connexion réussie');
           
           // Rediriger vers l'URL demandée si elle est accessible, sinon vers
-          // la première page réellement autorisée pour le profil.
-          let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/reconciliation-launcher';
-
-          if (returnUrl.startsWith('/login')) {
-            returnUrl = '/reconciliation-launcher';
+          // la première page réellement autorisée pour le profil (catalogue navigation).
+          let returnUrl = this.route.snapshot.queryParams['returnUrl'] as string | undefined;
+          if (returnUrl?.startsWith('/login')) {
+            returnUrl = undefined;
           }
 
           this.router.navigateByUrl(this.appState.resolveAccessibleRoute(returnUrl));
@@ -142,10 +142,9 @@ export class LoginComponent implements OnInit {
   ngOnInit() {
     // Rediriger si déjà connecté
     if (this.appState.getUserRights() && this.appState.getUsername()) {
-      let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/reconciliation-launcher';
-
-      if (returnUrl.startsWith('/login')) {
-        returnUrl = '/reconciliation-launcher';
+      let returnUrl = this.route.snapshot.queryParams['returnUrl'] as string | undefined;
+      if (returnUrl?.startsWith('/login')) {
+        returnUrl = undefined;
       }
 
       this.router.navigateByUrl(this.appState.resolveAccessibleRoute(returnUrl));
@@ -253,15 +252,16 @@ export class LoginComponent implements OnInit {
         this.appState.setUserRights({
           profil: response.profil,
           modules,
-          permissions
+          permissions,
+          pays: response.pays
         }, response.username, token);
         
         this.userLogService.logActivity('connexion', 'Authentification', response.username, 'Connexion réussie (2FA)');
         
         // Après 2FA, appliquer la même logique de redirection sécurisée.
-        let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/reconciliation-launcher';
-        if (returnUrl.startsWith('/login')) {
-          returnUrl = '/reconciliation-launcher';
+        let returnUrl = this.route.snapshot.queryParams['returnUrl'] as string | undefined;
+        if (returnUrl?.startsWith('/login')) {
+          returnUrl = undefined;
         }
         this.router.navigateByUrl(this.appState.resolveAccessibleRoute(returnUrl));
       },

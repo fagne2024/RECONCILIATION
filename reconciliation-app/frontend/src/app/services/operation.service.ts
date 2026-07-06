@@ -1,16 +1,23 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { AppStateService } from './app-state.service';
 
 @Injectable({ providedIn: 'root' })
 export class OperationServiceApi {
   private apiUrl = '/api/reconciliation';
   static readonly RECONCILIATION_MODULE = 'Reconciliation';
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private appState: AppStateService
+  ) {}
 
   private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
-    return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+    const resolved = this.appState.resolvePermissionModuleContext(
+      moduleContext ?? OperationServiceApi.RECONCILIATION_MODULE
+    );
+    return resolved ? new HttpHeaders({ 'X-Permission-Module': resolved }) : undefined;
   }
 
   private reconciliationHeaders(): HttpHeaders {

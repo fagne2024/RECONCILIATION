@@ -182,6 +182,19 @@ public class ReconciliationJobService {
      * Récupère le résultat désérialisé d'un job (cache pour éviter de re-parser le JSON à chaque page).
      * Utilisé par getMatches, getBoOnly, getPartnerOnly, getMismatches pour des chargements paginés rapides.
      */
+    /**
+     * Cache un resultat de reconciliation synchrone (/reconcile) pour pagination HTTP.
+     */
+    public void cacheSyncResult(String sessionId, ReconciliationResponse result) {
+        if (sessionId == null || sessionId.isBlank() || result == null) {
+            return;
+        }
+        resultCache.put(sessionId, result);
+        evictResultCacheIfNeeded();
+        log.info("Resultat sync mis en cache pour pagination: session={}, matches={}",
+                sessionId, result.getMatches() != null ? result.getMatches().size() : 0);
+    }
+
     public Optional<ReconciliationResponse> getCachedResult(String jobId) {
         ReconciliationResponse cached = resultCache.get(jobId);
         if (cached != null) {

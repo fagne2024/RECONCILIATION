@@ -89,7 +89,6 @@ public class ReconciliationReportController {
                 return ResponseEntity.badRequest().body(Map.of("error", "endDate must be >= startDate"));
             }
 
-            List<ReleveManualEntity> rows = releveManualRepository.findByDateBetween(start, end);
             String country = (countryFilter == null || countryFilter.isBlank()) ? null : countryFilter.trim();
             List<String> serviceAllowList = null;
             if (servicesFilter != null && !servicesFilter.isEmpty()) {
@@ -103,6 +102,13 @@ public class ReconciliationReportController {
                 }
             }
             String envNorm = normalizeEnvForRangeFilter(envFilter);
+
+            List<ReleveManualEntity> rows;
+            if (country != null || serviceAllowList != null) {
+                rows = releveManualRepository.findForReportRange(start, end, country, serviceAllowList);
+            } else {
+                rows = releveManualRepository.findByDateBetween(start, end);
+            }
 
             List<Map<String, Object>> out = new ArrayList<>();
             for (ReleveManualEntity e : rows) {

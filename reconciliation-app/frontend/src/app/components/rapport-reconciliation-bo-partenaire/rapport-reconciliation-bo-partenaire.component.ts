@@ -7,11 +7,12 @@ import {
   ViewChild
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { FormControl } from '@angular/forms';
-import { forkJoin, of, Subscription } from 'rxjs';
-import { catchError, debounceTime } from 'rxjs/operators';
+import { forkJoin, Observable, of, Subscription, throwError } from 'rxjs';
+import { catchError, debounceTime, map, switchMap } from 'rxjs/operators';
 import { AppStateService } from '../../services/app-state.service';
+import { countriesMatch, countryNameFromCode } from '../../utils/country-codes.util';
 import { EcartBoSummary, EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
 import { DashboardService, ReleveManualRangeRow } from '../../services/dashboard.service';
 import {
@@ -128,7 +129,10 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   readonly envOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
 
   loading = false;
+  /** Relevé manuel en arrière-plan (le tableau reste visible). */
+  manualLoading = false;
   error: string | null = null;
+  emptyScopeHint: string | null = null;
 
   selectedCountry = '';
   /** Borne inclusive du filtre période (format `yyyy-MM-dd` pour `<input type="date">`). */
@@ -217,6 +221,10 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   private lastManualFetchKey = '';
   /** Dernier périmètre chargé pour result8rec + écarts (évite de charger toute la table à chaque affichage). */
   private lastReportFetchKey = '';
+  private loadSeq = 0;
+  private manualFetchSub?: Subscription;
+  /** Pays autorisés (API /api/result8rec/filters), indépendamment du pays affiché par défaut. */
+  private countriesFromFilters: string[] = [];
   /** Contexte du dernier filtre rapport (recalcul tableau sans HTTP si seule la recherche change). */
   private lastFilteredRows: Result8Row[] = [];
   private lastEnvNorm: string | null = null;
@@ -250,10 +258,29 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
         }
       })
     );
-    this.loadDonnees();
+    this.subs.add(
+      this.appState.ensureUserPaysScope().pipe(
+        switchMap(() =>
+          this.dashboardService.getReconciliationFilters().pipe(
+            catchError(() =>
+              of({ countries: [] as string[], services: [], countryServices: {} })
+            )
+          )
+        ),
+        catchError(() => of({ countries: [] as string[], services: [], countryServices: {} }))
+      ).subscribe((filters) => {
+        this.countriesFromFilters = (filters?.countries || [])
+          .map((c) => (c || '').trim())
+          .filter(Boolean);
+        this.refreshCountriesList();
+        this.ensureDefaultCountry();
+        this.loadDonnees();
+      })
+    );
   }
 
   ngOnDestroy(): void {
+    this.manualFetchSub?.unsubscribe();
     this.subs.unsubscribe();
   }
 
@@ -531,6 +558,9 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   private loadDonnees(): void {
     this.loading = true;
     this.error = null;
+    this.emptyScopeHint = null;
+    const seq = ++this.loadSeq;
+    this.ensureDefaultCountry();
     const range = this.getNormalizedDateRange();
     if (!range) {
       this.rawReport = [];
@@ -540,99 +570,251 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       this.loading = false;
       return;
     }
+
     const headers = new HttpHeaders({
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       Pragma: 'no-cache',
       Expires: '0',
       'X-Permission-Module': 'Résultats'
     });
-    let params = new HttpParams()
-      .set('startDate', range.start)
-      .set('endDate', range.end)
-      .set('_t', String(Date.now()));
+    // Pas de filtre pays côté API : tous les pays du périmètre date sont chargés, filtrage client via selectedCountry.
     const ecartStart = this.subtractCalendarDaysFromYmd(range.start, 1);
+    const ecartFilter: {
+      startDate: string;
+      endDate: string;
+      platform: string;
+      env?: string;
+    } = {
+      startDate: ecartStart,
+      endDate: range.end,
+      platform: 'PARTENAIRE'
+    };
+    if (this.selectedEnv && this.selectedEnv !== 'ALL') {
+      ecartFilter.env = this.selectedEnv;
+    }
+
+    const ecarts$ = this.ecartBoSummaryService.getEcartBoSummaries(ecartFilter).pipe(
+      catchError((err) => {
+        console.warn('Écarts BO summary indisponibles, suite sans écarts partenaire J±1', err);
+        return of([] as EcartBoSummary[]);
+      })
+    );
 
     this.subs.add(
       forkJoin({
-        report: this.http.get<any[]>('/api/result8rec', { headers, params }),
-        ecarts: this.ecartBoSummaryService.getEcartBoSummaries({
-          startDate: ecartStart,
-          endDate: range.end
-        }).pipe(
-          catchError((err) => {
-            console.warn('Écarts BO summary indisponibles, suite sans écarts partenaire J±1', err);
-            return of([] as EcartBoSummary[]);
-          })
-        )
+        report: this.fetchReportRowsForRange(range, headers),
+        ecarts: ecarts$
       }).subscribe({
         next: ({ report, ecarts }) => {
-          this.rawReport = Array.isArray(report)
-            ? report.map((r) => {
-                const anyR = r as Record<string, unknown>;
-                const usernameRaw =
-                  r.username ??
-                  anyR['user_name'] ??
-                  anyR['userName'] ??
-                  anyR['utilisateur'];
-                const traitementRaw = r.traitement ?? anyR['traitement'];
-                return {
-                  id: r.id,
-                  date: r.date,
-                  service: r.service,
-                  country: r.country,
-                  env: r.env,
-                  agency: r.agency != null ? String(r.agency) : undefined,
-                  totalTransactions: Number(r.totalTransactions || r.recordCount || 0) || 0,
-                  totalVolume: Number(r.totalVolume || 0) || 0,
-                  matches: Number(r.matches ?? anyR['matches'] ?? 0) || 0,
-                  boOnly: Number(r.boOnly ?? anyR['bo_only'] ?? 0) || 0,
-                  partnerOnly: Number(r.partnerOnly ?? anyR['partner_only'] ?? 0) || 0,
-                  mismatches: Number(r.mismatches ?? anyR['mismatches'] ?? 0) || 0,
-                  status: (r.status || '').trim(),
-                  traitement:
-                    traitementRaw != null && String(traitementRaw).trim()
-                      ? String(traitementRaw).trim()
-                      : '',
-                  username:
-                    usernameRaw != null && String(usernameRaw).trim()
-                      ? String(usernameRaw).trim()
-                      : '',
-                  glpiId: String(r.glpiId ?? anyR['glpiId'] ?? anyR['glpi_id'] ?? '').trim() || undefined
-                };
-              })
-            : [];
+          if (seq !== this.loadSeq) {
+            return;
+          }
+          this.rawReport = this.mapReportRows(report);
           this.ecartAll = Array.isArray(ecarts) ? ecarts : [];
           this.lastReportFetchKey = this.buildReportFetchKey(range.start, range.end);
-          const set = new Set<string>();
-          this.rawReport.forEach((row) => {
-            const c = (row.country || '').trim();
-            if (c) {
-              set.add(c);
-            }
-          });
-          this.countries = Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+          this.refreshCountriesList();
 
           const range0 = this.getNormalizedDateRange();
           if (range0 && !this.selectedCountry) {
             const best = this.pickCountryWithMostRowsForDateRange(range0.start, range0.end);
             if (best) {
               this.selectedCountry = best;
+              this.syncSelectedCountryWithList();
             }
           }
           if (range0) {
             this.adjustEnvIfNoRowsForCurrentSlice(range0.start, range0.end);
           }
 
+          if (
+            this.selectedCountry &&
+            !this.countRowsForCountryDateRangeEnv(
+              this.selectedCountry,
+              range.start,
+              range.end,
+              this.selectedEnv === 'ALL'
+                ? null
+                : normalizeReconciliationReportEnv(this.selectedEnv)
+            )
+          ) {
+            this.emptyScopeHint =
+              'Aucune ligne rapport pour ce pays sur la période. Essayez un autre pays, une autre date ou un autre ENV.';
+          }
+
           this.rebuildTable();
           this.loading = false;
+          this.cdr.markForCheck();
         },
         error: (e) => {
+          if (seq !== this.loadSeq) {
+            return;
+          }
           console.error(e);
-          this.error = 'Impossible de charger les données du rapport.';
+          this.error = this.resolveLoadError(e);
           this.loading = false;
+          this.cdr.markForCheck();
         }
       })
     );
+  }
+
+  private buildReportHttpParams(startDate: string, endDate: string): HttpParams {
+    return new HttpParams()
+      .set('startDate', startDate)
+      .set('endDate', endDate)
+      .set('fields', 'slim')
+      .set('_t', String(Date.now()));
+  }
+
+  /** Charge result8rec jour par jour si besoin (évite le refus 413 sans filtre pays). */
+  private fetchReportRowsForRange(
+    range: { start: string; end: string },
+    headers: HttpHeaders
+  ): Observable<any[]> {
+    const days = this.listYmdInclusive(range.start, range.end);
+    if (days.length <= 1) {
+      const day = days[0] || range.start;
+      return this.http
+        .get<any[]>('/api/result8rec', {
+          headers,
+          params: this.buildReportHttpParams(day, day)
+        })
+        .pipe(catchError((err) => throwError(() => err)));
+    }
+    return forkJoin(
+      days.map((day) =>
+        this.http
+          .get<any[]>('/api/result8rec', {
+            headers,
+            params: this.buildReportHttpParams(day, day)
+          })
+          .pipe(catchError(() => of([] as any[])))
+      )
+    ).pipe(map((chunks) => chunks.flat()));
+  }
+
+  private mapReportRows(report: any[]): Result8Row[] {
+    if (!Array.isArray(report)) {
+      return [];
+    }
+    return report.map((r) => {
+      const anyR = r as Record<string, unknown>;
+      const usernameRaw =
+        r.username ?? anyR['user_name'] ?? anyR['userName'] ?? anyR['utilisateur'];
+      const traitementRaw = r.traitement ?? anyR['traitement'];
+      return {
+        id: r.id,
+        date: r.date,
+        service: r.service,
+        country: r.country,
+        env: r.env,
+        agency: r.agency != null ? String(r.agency) : undefined,
+        totalTransactions: Number(r.totalTransactions || r.recordCount || 0) || 0,
+        totalVolume: Number(r.totalVolume || 0) || 0,
+        matches: Number(r.matches ?? anyR['matches'] ?? 0) || 0,
+        boOnly: Number(r.boOnly ?? anyR['bo_only'] ?? 0) || 0,
+        partnerOnly: Number(r.partnerOnly ?? anyR['partner_only'] ?? 0) || 0,
+        mismatches: Number(r.mismatches ?? anyR['mismatches'] ?? 0) || 0,
+        status: (r.status || '').trim(),
+        traitement:
+          traitementRaw != null && String(traitementRaw).trim()
+            ? String(traitementRaw).trim()
+            : '',
+        username:
+          usernameRaw != null && String(usernameRaw).trim() ? String(usernameRaw).trim() : '',
+        glpiId: String(r.glpiId ?? anyR['glpiId'] ?? anyR['glpi_id'] ?? '').trim() || undefined
+      };
+    });
+  }
+
+  private ensureDefaultCountry(): void {
+    if (this.selectedCountry) {
+      this.syncSelectedCountryWithList();
+      return;
+    }
+    const profileNames = this.appState.getProfileCountryNames();
+    if (profileNames.length) {
+      this.selectedCountry =
+        this.resolveCountryLabel(profileNames[0]) || profileNames[0];
+      this.syncSelectedCountryWithList();
+      return;
+    }
+    const scope = this.appState.getUserPaysScope();
+    if (scope?.codes?.length) {
+      this.selectedCountry = this.resolveCountryLabel(scope.codes[0]) || scope.codes[0];
+      this.syncSelectedCountryWithList();
+      return;
+    }
+    if (this.countries.length) {
+      const preferred = this.countries.find((c) => countriesMatch(c, 'GA'));
+      this.selectedCountry = preferred || this.countries[0];
+      this.syncSelectedCountryWithList();
+    }
+  }
+
+  private resolveCountryLabel(value: string | null | undefined): string {
+    const trimmed = (value || '').trim();
+    if (!trimmed) {
+      return '';
+    }
+    return countryNameFromCode(trimmed) || trimmed;
+  }
+
+  private syncSelectedCountryWithList(): void {
+    if (!this.selectedCountry || !this.countries.length) {
+      return;
+    }
+    const match = this.countries.find((c) => countriesMatch(c, this.selectedCountry));
+    if (match) {
+      this.selectedCountry = match;
+    }
+  }
+
+  private refreshCountriesList(): void {
+    const set = new Set<string>();
+    for (const c of this.countriesFromFilters) {
+      const t = (c || '').trim();
+      if (t) {
+        set.add(t);
+      }
+    }
+    for (const name of this.appState.getProfileCountryNames()) {
+      const label = this.resolveCountryLabel(name) || name;
+      if (label.trim()) {
+        set.add(label.trim());
+      }
+    }
+    const scope = this.appState.getUserPaysScope();
+    if (scope?.codes?.length) {
+      for (const code of scope.codes) {
+        const label = this.resolveCountryLabel(code) || code;
+        if (label.trim()) {
+          set.add(label.trim());
+        }
+      }
+    }
+    for (const row of this.rawReport) {
+      const c = (row.country || '').trim();
+      if (c) {
+        set.add(c);
+      }
+    }
+    this.countries = Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+  }
+
+  private resolveLoadError(err: unknown): string {
+    const e = err as HttpErrorResponse;
+    if (e?.status === 413) {
+      const body = e.error as { message?: string; error?: string } | null;
+      if (body?.error === 'country_required') {
+        return 'Sélectionnez un pays ou réduisez la période pour charger le rapport.';
+      }
+      return (
+        body?.message ||
+        'Trop de données pour cette période. Précisez le pays ou réduisez les dates.'
+      );
+    }
+    return 'Impossible de charger les données du rapport.';
   }
 
   private rebuildTable(): void {
@@ -697,31 +879,44 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       return;
     }
 
-    this.loading = true;
-    this.subs.add(
-      this.dashboardService
-        .getReleveManualTrxRange(
-          dateStart,
-          dateEnd,
-          this.selectedCountry,
-          servicesToFetch,
-          this.selectedEnv === 'ALL' ? undefined : this.selectedEnv
-        )
-        .subscribe({
-          next: (manual) => {
-            this.lastManualFetchKey = fetchKey;
-            this.manualRows = Array.isArray(manual) ? manual : [];
-            this.computeRows(filtered, dateStart, dateEnd, envNorm, this.getServicesToDisplay());
-            this.loading = false;
-          },
-          error: () => {
-            this.manualRows = [];
-            this.lastManualFetchKey = '';
-            this.computeRows(filtered, dateStart, dateEnd, envNorm, this.getServicesToDisplay());
-            this.loading = false;
+    this.computeRows(filtered, dateStart, dateEnd, envNorm, servicesToDisplay);
+
+    this.manualFetchSub?.unsubscribe();
+    const manualSeq = this.loadSeq;
+    this.manualLoading = true;
+    this.manualFetchSub = this.dashboardService
+      .getReleveManualTrxRange(
+        dateStart,
+        dateEnd,
+        this.selectedCountry,
+        servicesToFetch,
+        this.selectedEnv === 'ALL' ? undefined : this.selectedEnv
+      )
+      .pipe(
+        catchError(() => of([] as ReleveManualRangeRow[]))
+      )
+      .subscribe({
+        next: (manual) => {
+          if (manualSeq !== this.loadSeq) {
+            return;
           }
-        })
-    );
+          this.lastManualFetchKey = fetchKey;
+          this.manualRows = Array.isArray(manual) ? manual : [];
+          this.computeRows(filtered, dateStart, dateEnd, envNorm, this.getServicesToDisplay());
+          this.manualLoading = false;
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          if (manualSeq !== this.loadSeq) {
+            return;
+          }
+          this.manualRows = [];
+          this.lastManualFetchKey = '';
+          this.computeRows(filtered, dateStart, dateEnd, envNorm, this.getServicesToDisplay());
+          this.manualLoading = false;
+          this.cdr.markForCheck();
+        }
+      });
   }
 
   private computeRows(

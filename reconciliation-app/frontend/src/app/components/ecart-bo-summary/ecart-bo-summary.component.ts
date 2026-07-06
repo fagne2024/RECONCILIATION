@@ -376,6 +376,20 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     return { startDate: this.toYmdLocal(first), endDate: this.toYmdLocal(last) };
   }
 
+  /**
+   * Période par défaut des données sauvegardées :
+   * - mois en cours
+   * - inclut J-1 même si la veille est dans le mois précédent (début de mois)
+   */
+  private defaultSavedHistoryDateRange(): { startDate: string; endDate: string } {
+    const now = new Date();
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const start = yesterday.getTime() < firstOfMonth.getTime() ? yesterday : firstOfMonth;
+    return { startDate: this.toYmdLocal(start), endDate: this.toYmdLocal(lastOfMonth) };
+  }
+
   private normalizeStatusForApi(statut: string): string | undefined {
     if (statut === 'ok') {
       return 'OK';
@@ -416,9 +430,9 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         filter.endDate = this.selectedDateTo;
       }
     } else if (!this.showAllSavedHistory) {
-      const month = this.currentMonthDateRange();
-      filter.startDate = month.startDate;
-      filter.endDate = month.endDate;
+      const range = this.defaultSavedHistoryDateRange();
+      filter.startDate = range.startDate;
+      filter.endDate = range.endDate;
     }
 
     const key = JSON.stringify({
@@ -497,7 +511,90 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
     this.refreshUniqueEnvCodes();
     this.markAndFilterDuplicateSummaryItems(false);
-    this.linkMatchingPairs(true);
+    // Optimisation: éviter le recalcul + persistance des liaisons au chargement
+    // (très coûteux sur gros volumes, peut faire freezer le navigateur).
+    // On affiche les liens existants en base via les tokens (O(n)).
+    this.applyExistingTokenLinks();
+  }
+
+  /**
+   * Mapping chunké des données sauvegardées pour éviter de bloquer le thread UI.
+   */
+  private async applySavedDataToSummaryChunked(savedData: any[]): Promise<void> {
+    this.selectedRowKeys.clear();
+    const nextItems: EcartBoSummaryItem[] = [];
+    const chunkSize = EcartBoSummaryComponent.SUMMARY_BUILD_CHUNK_SIZE;
+
+    for (let start = 0; start < savedData.length; start += chunkSize) {
+      const end = Math.min(start + chunkSize, savedData.length);
+      for (let i = start; i < end; i++) {
+        const item = savedData[i];
+        const commentaire = item.commentaire || '';
+        const isManual = commentaire.includes('Ajout manuel') || commentaire.includes('ajout manuel');
+        const mapped: any = {
+          id: item.id,
+          selectionKey: this.createSelectionKey(`saved-${item.id ?? 'x'}`),
+          date: this.formatSummaryDate(item.dateTransaction || ''),
+          agence: item.agence || 'Non spécifié',
+          service: item.service || 'Non spécifié',
+          pays: item.pays || 'Non spécifié',
+          nombre: item.nombreTransactions || 0,
+          montant: item.montantTotal || 0,
+          statut: this.normalizeSummaryStatut(item.statut),
+          env: this.normalizeSummaryEnv(item.env),
+          envCode: item.envCode != null && String(item.envCode).trim() !== '' ? String(item.envCode).trim() : undefined,
+          originalRecords: [],
+          isManual,
+          commentaire,
+          token: item.token || undefined
+        };
+        mapped.__originalStatut = mapped.statut;
+        mapped.__originalToken = mapped.token;
+        nextItems.push(mapped as EcartBoSummaryItem);
+      }
+
+      this.loadingStep = savedData.length
+        ? `Préparation ${end.toLocaleString('fr-FR')} / ${savedData.length.toLocaleString('fr-FR')} lignes…`
+        : 'Finalisation…';
+      this.cdr.markForCheck();
+      if (end < savedData.length) {
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+      }
+    }
+
+    this.summaryItems = nextItems;
+    this.uniqueAgencies = [...new Set(this.summaryItems.map(i => i.agence).filter(Boolean))].sort();
+    this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
+    this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
+    this.refreshUniqueEnvCodes();
+    this.markAndFilterDuplicateSummaryItems(false);
+    this.applyExistingTokenLinks();
+  }
+
+  /**
+   * Applique un liage léger basé sur les tokens existants (O(n)), sans modifier les statuts
+   * et sans appeler le backend. Permet d'afficher les couples BO/Partenaire rapidement.
+   */
+  private applyExistingTokenLinks(): void {
+    const tokenGroups = new Map<string, EcartBoSummaryItem[]>();
+    for (const item of this.summaryItems) {
+      item.linkedId = undefined;
+      const token = (item.token || '').trim();
+      if (!token) continue;
+      if (!tokenGroups.has(token)) tokenGroups.set(token, []);
+      tokenGroups.get(token)!.push(item);
+    }
+
+    for (const group of tokenGroups.values()) {
+      if (group.length < 2) continue;
+      const bos = group.filter(i => this.normalizeSummaryEnv(i.env) === 'BO');
+      const partners = group.filter(i => this.normalizeSummaryEnv(i.env) === 'PARTENAIRE');
+      if (!bos.length || !partners.length) continue;
+      const bo = bos[0];
+      const partner = partners[0];
+      bo.linkedId = partner.id;
+      partner.linkedId = bo.id;
+    }
   }
 
   loadSavedSummaryData(): void {
@@ -505,6 +602,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.pendingLinesBuffer = null;
     this.prefillBuffer = null;
     this.isLoading = true;
+    this.loadingStep = 'Chargement des données sauvegardées…';
     this.cdr.markForCheck();
     const { filter, key } = this.buildSavedSummaryFilter();
 
@@ -514,22 +612,24 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         next: (savedData) => {
           this.savedDataMode = true;
           this.lastSavedFetchKey = key;
-          // Laisser Angular afficher le spinner avant le traitement lourd (linking, filtres).
+          // Laisser Angular afficher le spinner avant le traitement lourd.
           setTimeout(() => {
-            try {
-              this.applySavedDataToSummary(savedData);
-              this.applyFilters();
-            } catch (processingError) {
-              console.error('Erreur lors du traitement des données sauvegardées:', processingError);
-              this.popupService.showError('❌ Erreur lors du traitement des données sauvegardées.');
-            } finally {
-              this.isLoading = false;
-              this.cdr.markForCheck();
-            }
+            void this.applySavedDataToSummaryChunked(savedData)
+              .then(() => this.applyFilters())
+              .catch((processingError) => {
+                console.error('Erreur lors du traitement des données sauvegardées:', processingError);
+                this.popupService.showError('❌ Erreur lors du traitement des données sauvegardées.');
+              })
+              .finally(() => {
+                this.isLoading = false;
+                this.loadingStep = '';
+                this.cdr.markForCheck();
+              });
           }, 0);
         },
         error: (error) => {
           this.isLoading = false;
+          this.loadingStep = '';
           this.cdr.markForCheck();
           console.error('Erreur lors du chargement des données sauvegardées:', error);
           if (this.response) {

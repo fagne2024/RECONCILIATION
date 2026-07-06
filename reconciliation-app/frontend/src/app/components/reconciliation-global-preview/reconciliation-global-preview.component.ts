@@ -257,8 +257,12 @@ export class ReconciliationGlobalPreviewComponent implements OnInit, OnDestroy {
             'X-Permission-Module': 'Résultats'
         });
         
+        // Ne charger qu'une journee (evite GET /api/result8rec sans filtre massif)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const ymd = yesterday.toISOString().slice(0, 10);
         const cacheBuster = new Date().getTime();
-        const url = `/api/result8rec?_t=${cacheBuster}`;
+        const url = `/api/result8rec?startDate=${ymd}&endDate=${ymd}&fields=slim&_t=${cacheBuster}`;
         
         this.subscription.add(
             this.http.get<any[]>(url, { headers }).subscribe({

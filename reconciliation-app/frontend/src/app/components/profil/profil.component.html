@@ -358,7 +358,7 @@
           <div>
             <h4><i class="fas fa-sitemap"></i> Menus &amp; sous-menus</h4>
             <p class="nav-permissions-hint">
-              Cochez l'accès, puis ouvrez <strong>Actions</strong> pour les droits détaillés.
+              Cochez l'accès à un sous-menu, puis ouvrez <strong>Actions</strong> pour octroyer chaque action spécifique (lecture, création, validation, etc.).
             </p>
           </div>
           <div class="nav-permissions-toolbar">
@@ -423,12 +423,12 @@
             <div class="nav-group-body" *ngIf="isNavGroupExpanded(group.key)">
               <!-- Menu simple sans sous-menu -->
               <div class="nav-submenu-card" *ngIf="!group.children?.length && group.moduleName"
-                [class.nav-submenu-card--granted]="hasSubmenuModuleAccess(group.moduleName)">
+                [class.nav-submenu-card--granted]="getNavigationContext(group) && hasNavigationAccess(getNavigationContext(group)!)">
                 <div class="nav-submenu-head">
                   <label class="nav-submenu-access">
                     <input
                       type="checkbox"
-                      [checked]="hasSubmenuModuleAccess(group.moduleName)"
+                      [checked]="getNavigationContext(group) && hasNavigationAccess(getNavigationContext(group)!)"
                       (change)="onSingleMenuAccessChange(group, $event)">
                     <span class="nav-submenu-label">{{ group.label }}</span>
                     <span class="nav-submenu-route">{{ group.route }}</span>
@@ -436,79 +436,154 @@
                   <button
                     type="button"
                     class="nav-actions-toggle"
-                    (click)="toggleSubmenuActions(group.key, group.moduleName)">
+                    *ngIf="getNavigationContext(group) && hasNavigationAccess(getNavigationContext(group)!)"
+                    (click)="toggleSubmenuActions(group.key, getNavigationContext(group) || undefined)">
                     <i class="fas" [ngClass]="isSubmenuActionsExpanded(group.key) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
                     Actions
+                    <ng-container *ngIf="getNavigationContext(group) as navContext">
+                      <span class="nav-actions-count" *ngIf="hasSubmenuActionsToShow(navContext.accessModuleName)">
+                        {{ getSubmenuActionsSummaryLabel(navContext.accessModuleName) }}
+                      </span>
+                    </ng-container>
                   </button>
                 </div>
-                <div class="nav-submenu-actions" *ngIf="isSubmenuActionsExpanded(group.key)">
-                  <ng-container *ngTemplateOutlet="submenuActionsTpl; context: { moduleName: group.moduleName, submenuKey: group.key }"></ng-container>
-                </div>
+                <ng-container *ngIf="getNavigationContext(group) as navContext">
+                  <div class="nav-submenu-actions" *ngIf="hasNavigationAccess(navContext) && isSubmenuActionsExpanded(group.key)">
+                    <ng-container *ngTemplateOutlet="submenuActionsTpl; context: { accessContext: navContext, submenuKey: group.key }"></ng-container>
+                  </div>
+                </ng-container>
               </div>
 
               <!-- Sous-menus -->
               <div
                 class="nav-submenu-card"
                 *ngFor="let submenu of group.children; trackBy: trackNavSubmenu"
-                [class.nav-submenu-card--granted]="hasSubmenuModuleAccess(submenu.moduleName)">
+                [class.nav-submenu-card--granted]="getNavigationContext(group, submenu) && hasNavigationAccess(getNavigationContext(group, submenu)!)">
                 <div class="nav-submenu-head">
                   <label class="nav-submenu-access">
                     <input
                       type="checkbox"
-                      [checked]="hasSubmenuModuleAccess(submenu.moduleName)"
-                      (change)="onSubmenuAccessChange(submenu.moduleName, $event)">
+                      [checked]="getNavigationContext(group, submenu) && hasNavigationAccess(getNavigationContext(group, submenu)!)"
+                      (change)="onNavigationAccessChange(getNavigationContext(group, submenu)!, $event)">
                     <span class="nav-submenu-label">
                       <i class="fas" [ngClass]="submenu.icon || 'fa-angle-right'"></i>
                       {{ submenu.label }}
                     </span>
                     <span class="nav-submenu-route">{{ submenu.route }}</span>
-                    <span class="nav-submenu-module">Module : {{ submenu.moduleName }}</span>
-                    <span class="nav-shared-hint" *ngIf="getSharedModuleHint(group, submenu.moduleName) as sharedHint">{{ sharedHint }}</span>
+                    <span class="nav-submenu-module" *ngIf="getNavigationContext(group, submenu) as navContext">
+                      Module API : {{ navContext.apiModuleName }}
+                      <span *ngIf="navContext.usesGranularAccess"> · Droits : {{ navContext.accessModuleName }}</span>
+                    </span>
                   </label>
                   <button
                     type="button"
                     class="nav-actions-toggle"
-                    (click)="toggleSubmenuActions(submenu.key, submenu.moduleName)">
+                    *ngIf="getNavigationContext(group, submenu) && hasNavigationAccess(getNavigationContext(group, submenu)!)"
+                    (click)="toggleSubmenuActions(submenu.key, getNavigationContext(group, submenu) || undefined)">
                     <i class="fas" [ngClass]="isSubmenuActionsExpanded(submenu.key) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
                     Actions
+                    <ng-container *ngIf="getNavigationContext(group, submenu) as navContext">
+                      <span class="nav-actions-count" *ngIf="hasSubmenuActionsToShow(navContext.accessModuleName)">
+                        {{ getSubmenuActionsSummaryLabel(navContext.accessModuleName) }}
+                      </span>
+                    </ng-container>
                   </button>
                 </div>
-                <div class="nav-submenu-actions" *ngIf="isSubmenuActionsExpanded(submenu.key)">
-                  <ng-container *ngTemplateOutlet="submenuActionsTpl; context: { moduleName: submenu.moduleName, submenuKey: submenu.key }"></ng-container>
-                </div>
+                <ng-container *ngIf="getNavigationContext(group, submenu) as navContext">
+                  <div class="nav-submenu-actions" *ngIf="hasNavigationAccess(navContext) && isSubmenuActionsExpanded(submenu.key)">
+                    <ng-container *ngTemplateOutlet="submenuActionsTpl; context: { accessContext: navContext, submenuKey: submenu.key }"></ng-container>
+                  </div>
+                </ng-container>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <ng-template #submenuActionsTpl let-moduleName="moduleName" let-submenuKey="submenuKey">
-        <div class="nav-actions-loading" *ngIf="isSubmenuPermissionsLoading(moduleName)">
-          <i class="fas fa-spinner fa-spin"></i> Chargement des actions…
+      <ng-template #submenuActionsTpl let-accessContext="accessContext" let-submenuKey="submenuKey">
+        <div class="nav-actions-loading" *ngIf="isSubmenuPermissionsLoading(accessContext.accessModuleName)">
+          <i class="fas fa-spinner fa-spin"></i> Chargement des actions détaillées…
         </div>
-        <div class="nav-actions-empty" *ngIf="!isSubmenuPermissionsLoading(moduleName) && getSubmenuActionPermissions(moduleName).length === 0">
-          <i class="fas fa-info-circle"></i>
-          Aucune action enregistrée pour ce module. Générez les permissions depuis la page Permission.
-        </div>
-        <div class="nav-actions-toolbar" *ngIf="!isSubmenuPermissionsLoading(moduleName) && getSubmenuActionPermissions(moduleName).length > 0">
-          <button type="button" class="btn-action" (click)="selectAllSubmenuActions(moduleName)">
-            <i class="fas fa-check-double"></i> Tout cocher
-          </button>
-          <button type="button" class="btn-action" (click)="deselectAllSubmenuActions(moduleName)">
-            <i class="fas fa-times"></i> Tout décocher
-          </button>
-        </div>
-        <div class="nav-actions-list" *ngIf="!isSubmenuPermissionsLoading(moduleName) && getSubmenuActionPermissions(moduleName).length > 0">
-          <label class="permission-checkbox nav-action-item" *ngFor="let permission of getSubmenuActionPermissions(moduleName)">
-            <input
-              type="checkbox"
-              [checked]="hasPermissionForModuleName(moduleName, permission)"
-              (change)="togglePermissionForModuleName(moduleName, permission, $event)"
-              [id]="'nav-perm-' + submenuKey + '-' + permission.id">
-            <span class="checkmark"></span>
-            <span class="permission-label">{{ permission.nom }}</span>
-          </label>
-        </div>
+
+        <ng-container *ngIf="!isSubmenuPermissionsLoading(accessContext.accessModuleName)">
+          <div class="nav-actions-empty" *ngIf="getSubmenuActionDetails(accessContext.accessModuleName).length === 0">
+            <i class="fas fa-info-circle"></i>
+            Aucune action détectée pour ce sous-menu.
+            <button type="button" class="btn-action btn-sync" (click)="syncModuleActions(accessContext.accessModuleName, accessContext)" [disabled]="isModuleActionsSyncing(accessContext.accessModuleName)">
+              <i class="fas" [ngClass]="isModuleActionsSyncing(accessContext.accessModuleName) ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i>
+              Synchroniser les actions
+            </button>
+          </div>
+
+          <div class="nav-actions-panel" *ngIf="getSubmenuActionDetails(accessContext.accessModuleName).length > 0">
+            <div class="nav-actions-search">
+              <i class="fas fa-search"></i>
+              <input
+                type="search"
+                [value]="getActionSearchTerm(accessContext.accessModuleName)"
+                (input)="setActionSearchTerm(accessContext.accessModuleName, $any($event.target).value)"
+                placeholder="Filtrer par nom, libellé ou endpoint…">
+              <button type="button" class="nav-actions-search-clear" *ngIf="getActionSearchTerm(accessContext.accessModuleName)" (click)="clearActionSearch(accessContext.accessModuleName)">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+
+            <div class="nav-actions-toolbar">
+              <button type="button" class="btn-action" (click)="selectAllSubmenuActions(accessContext.accessModuleName)" [disabled]="isModuleActionsSyncing(accessContext.accessModuleName)">
+                <i class="fas fa-check-double"></i> Tout cocher
+              </button>
+              <button type="button" class="btn-action" (click)="deselectAllSubmenuActions(accessContext.accessModuleName)">
+                <i class="fas fa-times"></i> Tout décocher
+              </button>
+              <button type="button" class="btn-action btn-sync" (click)="syncModuleActions(accessContext.accessModuleName, accessContext)" [disabled]="isModuleActionsSyncing(accessContext.accessModuleName)">
+                <i class="fas" [ngClass]="isModuleActionsSyncing(accessContext.accessModuleName) ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i>
+                Synchroniser
+              </button>
+              <span class="nav-actions-unsynced" *ngIf="hasUnsyncedActions(accessContext.accessModuleName)">
+                <i class="fas fa-exclamation-triangle"></i> Certaines actions doivent être synchronisées avant attribution
+              </span>
+            </div>
+
+            <div class="nav-actions-no-match" *ngIf="getFilteredSubmenuActionDetails(accessContext.accessModuleName).length === 0">
+              Aucune action ne correspond au filtre.
+            </div>
+
+            <div class="nav-actions-categories" *ngIf="getFilteredSubmenuActionDetails(accessContext.accessModuleName).length > 0">
+              <div class="nav-action-category" *ngFor="let category of getGroupedSubmenuActions(accessContext.accessModuleName)">
+                <div class="nav-action-category-head">
+                  <i class="fas" [ngClass]="category.icon"></i>
+                  <span>{{ category.label }}</span>
+                  <span class="nav-action-category-count">{{ category.actions.length }}</span>
+                </div>
+                <div class="nav-actions-list">
+                  <label
+                    class="permission-checkbox nav-action-item"
+                    *ngFor="let action of category.actions"
+                    [class.nav-action-item--disabled]="!isActionAssignable(accessContext.accessModuleName, action.action)">
+                    <input
+                      type="checkbox"
+                      [checked]="hasActionForModuleName(accessContext.accessModuleName, action.action)"
+                      (change)="toggleActionForModuleName(accessContext.accessModuleName, action.action, $event)"
+                      [id]="'nav-perm-' + submenuKey + '-' + action.action">
+                    <span class="checkmark"></span>
+                    <span class="nav-action-content">
+                      <span class="nav-action-title">
+                        <span class="permission-label">{{ getActionLabel(action.action) }}</span>
+                        <span class="http-method-badge" *ngIf="action.httpMethod" [ngClass]="getHttpMethodClass(action.httpMethod)">
+                          {{ action.httpMethod }}
+                        </span>
+                      </span>
+                      <span class="nav-action-meta">
+                        <code class="nav-action-code">{{ action.action }}</code>
+                        <span class="nav-action-path" *ngIf="action.path">{{ action.path }}</span>
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </ng-container>
       </ng-template>
 
       <div class="permissions-overview">

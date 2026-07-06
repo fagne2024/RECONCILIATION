@@ -165,6 +165,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
     reconciliationSummaryService: string = '';
     reconciliationSummaryServices: string[] = [];
     readonly reconciliationEnvOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
+    readonly recoValidatedStatusLabel = 'Réconcilié & Validé';
+    readonly recoValidatedStatusLabelPlural = 'Réconciliés & Validés';
+    readonly recoValidatedRateLabel = 'Taux réconcilié & validé';
     reconciliationSummaryLoading: boolean = false;
     reconciliationSummaryLoadingMore = false;
     private recoSummaryLoadToken = 0;
@@ -218,6 +221,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     recoViewServiceOptions: string[] = [];
     recoViewSelectedDay: string = ''; // YYYY-MM-DD (vide = tous les jours)
     recoViewLoading: boolean = false;
+    recoViewLoadingMore = false;
+    private recoViewLoadToken = 0;
     recoViewError: string | null = null;
     recoViewStats = {
         total: 0,
@@ -246,6 +251,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     transactStatsEnvSelectOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
     transactStatsServiceOptions: string[] = [];
     transactStatsLoading = false;
+    transactStatsLoadingMore = false;
+    private transactStatsLoadToken = 0;
     transactStatsError: string | null = null;
     /** Total sur le périmètre filtré (toujours renseigné). */
     transactStats: TransactStatsSnapshot = {
@@ -563,7 +570,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
     getStatusPillLabel(day: RecoDayCell): string {
         if (day.status === 'RECONCILIE') {
-            return 'Réconcilié';
+            return this.recoValidatedStatusLabel;
         }
         if (day.status === 'NON_RECONCILIE') {
             return 'Non réconcilié';
@@ -770,7 +777,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         const coverage = s.reconcilie + s.enCours;
         this.recoDonutChartData = {
             labels: [
-                'Réconcilié',
+                this.recoValidatedStatusLabel,
                 'En cours de traitement',
                 'En cours de validation',
                 'En cours de clôture',
@@ -798,7 +805,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.recoEvolutionChartData = {
             labels: evolution.labels,
             datasets: [
-                { label: 'Réconcilié', data: evolution.reconcilie, backgroundColor: c.reconcilie, stack: 'stack1' },
+                { label: this.recoValidatedStatusLabel, data: evolution.reconcilie, backgroundColor: c.reconcilie, stack: 'stack1' },
                 { label: 'En cours de traitement', data: evolution.enCoursSupport, backgroundColor: c.enCoursSupport, stack: 'stack1' },
                 { label: 'En cours de validation', data: evolution.enCoursCdo, backgroundColor: c.enCoursCdo, stack: 'stack1' },
                 { label: 'En cours de clôture', data: evolution.enCoursGroup, backgroundColor: c.enCoursGroup, stack: 'stack1' },
@@ -2388,6 +2395,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     loadReconciliationSummaryForView(): void {
         this.recoViewError = null;
         this.recoViewLoading = true;
+        this.recoViewLoadingMore = false;
         this.recoViewRows = [];
         this.recoViewWeekDays = [];
 
@@ -2400,124 +2408,138 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.recoViewPeriodStart = periodCheck.start;
         this.recoViewPeriodEnd = periodCheck.end;
 
-        this.dashboardReconciliationService.getResult8RecDataScoped(
+        const token = ++this.recoViewLoadToken;
+
+        this.dashboardReconciliationService.loadResult8RecProgressive(
             this.recoViewPeriodStart,
             this.recoViewPeriodEnd,
-            'Dashboard'
-        )
-            .pipe(take(1))
-            .subscribe({
-                next: (data: Result8RecData[]) => {
-                    try {
-                        this.recoViewEnvSelectOptions = this.buildRecoViewEnvSelectOptions(data);
-                        if (!this.recoViewEnvSelectOptions.includes(this.recoViewEnv)) {
-                            this.recoViewEnv = 'ALL';
-                        }
-
-                        const targetEnv = (this.recoViewEnv || 'ALL').trim() || 'ALL';
-                        const targetCountry = (this.recoViewCountry || '').trim();
-
-                        this.recoViewWeekDays = this.buildCalendarDaysInclusive(
-                            this.recoViewPeriodStart,
-                            this.recoViewPeriodEnd
-                        );
-                        const weekDates = new Set(this.recoViewWeekDays.map(w => w.date));
-                        const servicesSet = new Set<string>();
-                        data.forEach(item => {
-                            if (!item.service) return;
-                            if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return;
-                            if (targetCountry && item.country !== targetCountry) return;
-                            const dateOnly = this.extractResult8DateOnly(item.date);
-                            if (!dateOnly || !weekDates.has(dateOnly)) return;
-                            if (this.recoViewSelectedDay && dateOnly !== this.recoViewSelectedDay) return;
-                            servicesSet.add(item.service);
-                        });
-                        const allServices = Array.from(servicesSet).sort();
-                        this.recoViewServiceOptions = allServices;
-                        const sel = (this.recoViewSelectedServices || [])
-                            .map(s => (s || '').trim())
-                            .filter(s => s.length > 0);
-                        this.recoViewSelectedServices = sel.filter(s => allServices.includes(s));
-                        const effectiveServices = this.recoViewSelectedServices.length
-                            ? allServices.filter(s => this.recoViewSelectedServices.includes(s))
-                            : allServices;
-
-                        const rows: {
-                            service: string;
-                            label?: string;
-                            country?: string;
-                            days: {
-                                date: string;
-                                status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
-                                ticketId: string;
-                                env: string;
-                            }[];
-                        }[] = [];
-
-                        // Si pays = Tous, on sépare par (service, pays) pour éviter de mélanger
-                        type RowKey = { service: string; country: string; label: string };
-                        const rowKeys: RowKey[] = [];
-                        if (targetCountry) {
-                            effectiveServices.forEach(s => rowKeys.push({ service: s, country: targetCountry, label: s }));
-                        } else {
-                            const byServiceCountry = new Map<string, Set<string>>();
-                            data.forEach(item => {
-                                if (!item.service) return;
-                                if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return;
-                                const dateOnly = this.extractResult8DateOnly(item.date);
-                                if (!dateOnly || !weekDates.has(dateOnly)) return;
-                                if (this.recoViewSelectedDay && dateOnly !== this.recoViewSelectedDay) return;
-                                const c = (item.country || '').trim();
-                                if (!c) return;
-                                if (this.recoViewSelectedServices.length && !this.recoViewSelectedServices.includes(item.service)) return;
-                                if (!byServiceCountry.has(item.service)) byServiceCountry.set(item.service, new Set<string>());
-                                byServiceCountry.get(item.service)!.add(c);
-                            });
-                            Array.from(byServiceCountry.entries())
-                                .sort((a, b) => a[0].localeCompare(b[0]))
-                                .forEach(([service, countries]) => {
-                                    Array.from(countries).sort().forEach(c => {
-                                        rowKeys.push({ service, country: c, label: `${service} (${c})` });
-                                    });
-                                });
-                        }
-
-                        rowKeys.forEach(({ service: serviceName, country: rowCountry, label }) => {
-                            const dayStatuses = this.recoViewWeekDays.map(dayInfo => {
-                                const matchingForDay = data.filter(item => {
-                                    if (!item.service || item.service !== serviceName) return false;
-                                    if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return false;
-                                    if (!item.date) return false;
-                                    if (rowCountry && item.country !== rowCountry) return false;
-                                    const dateOnly = this.extractResult8DateOnly(item.date);
-                                    return dateOnly === dayInfo.date;
-                                });
-                                return this.buildRecoDayCellStatus(
-                                    matchingForDay,
-                                    dayInfo.date,
-                                    targetEnv === 'ALL'
-                                        ? (matchingForDay[0] ? this.getResult8RecItemEnv(matchingForDay[0]) : '')
-                                        : targetEnv
-                                );
-                            });
-                            rows.push({ service: serviceName, label, country: rowCountry, days: dayStatuses });
-                        });
-
-                        this.recoViewRows = rows;
-                        this.recoViewStats = this.computeReconciliationStatsFromRows(rows);
-                        this.recoViewLoading = false;
-                    } catch (e: any) {
-                        console.error('Erreur vue semaine réconciliations:', e);
-                        this.recoViewError = 'Erreur lors du chargement de la vue semaine.';
+            (data, isFirst, isComplete) => {
+                if (token !== this.recoViewLoadToken) {
+                    return;
+                }
+                try {
+                    this.processRecoViewData(data);
+                    if (isFirst) {
                         this.recoViewLoading = false;
                     }
-                },
-                error: (err) => {
-                    console.error('Erreur chargement result8rec pour vue semaine:', err);
-                    this.recoViewError = 'Erreur lors du chargement des données.';
+                    this.recoViewLoadingMore = !isComplete;
+                } catch (e: unknown) {
+                    console.error('Erreur vue semaine réconciliations:', e);
+                    this.recoViewError = 'Erreur lors du chargement de la vue semaine.';
                     this.recoViewLoading = false;
+                    this.recoViewLoadingMore = false;
                 }
+            },
+            'Dashboard',
+            () => token !== this.recoViewLoadToken
+        ).catch(err => {
+            if (token !== this.recoViewLoadToken) {
+                return;
+            }
+            console.error('Erreur chargement result8rec pour vue semaine:', err);
+            this.recoViewError = 'Erreur lors du chargement des données.';
+            this.recoViewLoading = false;
+            this.recoViewLoadingMore = false;
+        });
+    }
+
+    /** Construit le tableau de la modale « Vue semaine » à partir des lignes result8rec accumulées. */
+    private processRecoViewData(data: Result8RecData[]): void {
+        this.recoViewEnvSelectOptions = this.buildRecoViewEnvSelectOptions(data);
+        if (!this.recoViewEnvSelectOptions.includes(this.recoViewEnv)) {
+            this.recoViewEnv = 'ALL';
+        }
+
+        const targetEnv = (this.recoViewEnv || 'ALL').trim() || 'ALL';
+        const targetCountry = (this.recoViewCountry || '').trim();
+
+        this.recoViewWeekDays = this.buildCalendarDaysInclusive(
+            this.recoViewPeriodStart,
+            this.recoViewPeriodEnd
+        );
+        const weekDates = new Set(this.recoViewWeekDays.map(w => w.date));
+        const servicesSet = new Set<string>();
+        data.forEach(item => {
+            if (!item.service) return;
+            if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return;
+            if (targetCountry && item.country !== targetCountry) return;
+            const dateOnly = this.extractResult8DateOnly(item.date);
+            if (!dateOnly || !weekDates.has(dateOnly)) return;
+            if (this.recoViewSelectedDay && dateOnly !== this.recoViewSelectedDay) return;
+            servicesSet.add(item.service);
+        });
+        const allServices = Array.from(servicesSet).sort();
+        this.recoViewServiceOptions = allServices;
+        const sel = (this.recoViewSelectedServices || [])
+            .map(s => (s || '').trim())
+            .filter(s => s.length > 0);
+        this.recoViewSelectedServices = sel.filter(s => allServices.includes(s));
+        const effectiveServices = this.recoViewSelectedServices.length
+            ? allServices.filter(s => this.recoViewSelectedServices.includes(s))
+            : allServices;
+
+        const rows: {
+            service: string;
+            label?: string;
+            country?: string;
+            days: {
+                date: string;
+                status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
+                ticketId: string;
+                env: string;
+            }[];
+        }[] = [];
+
+        type RowKey = { service: string; country: string; label: string };
+        const rowKeys: RowKey[] = [];
+        if (targetCountry) {
+            effectiveServices.forEach(s => rowKeys.push({ service: s, country: targetCountry, label: s }));
+        } else {
+            const byServiceCountry = new Map<string, Set<string>>();
+            data.forEach(item => {
+                if (!item.service) return;
+                if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return;
+                const dateOnly = this.extractResult8DateOnly(item.date);
+                if (!dateOnly || !weekDates.has(dateOnly)) return;
+                if (this.recoViewSelectedDay && dateOnly !== this.recoViewSelectedDay) return;
+                const c = (item.country || '').trim();
+                if (!c) return;
+                if (this.recoViewSelectedServices.length && !this.recoViewSelectedServices.includes(item.service)) return;
+                if (!byServiceCountry.has(item.service)) byServiceCountry.set(item.service, new Set<string>());
+                byServiceCountry.get(item.service)!.add(c);
             });
+            Array.from(byServiceCountry.entries())
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .forEach(([service, countries]) => {
+                    Array.from(countries).sort().forEach(c => {
+                        rowKeys.push({ service, country: c, label: `${service} (${c})` });
+                    });
+                });
+        }
+
+        rowKeys.forEach(({ service: serviceName, country: rowCountry, label }) => {
+            const dayStatuses = this.recoViewWeekDays.map(dayInfo => {
+                const matchingForDay = data.filter(item => {
+                    if (!item.service || item.service !== serviceName) return false;
+                    if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return false;
+                    if (!item.date) return false;
+                    if (rowCountry && item.country !== rowCountry) return false;
+                    const dateOnly = this.extractResult8DateOnly(item.date);
+                    return dateOnly === dayInfo.date;
+                });
+                return this.buildRecoDayCellStatus(
+                    matchingForDay,
+                    dayInfo.date,
+                    targetEnv === 'ALL'
+                        ? (matchingForDay[0] ? this.getResult8RecItemEnv(matchingForDay[0]) : '')
+                        : targetEnv
+                );
+            });
+            rows.push({ service: serviceName, label, country: rowCountry, days: dayStatuses });
+        });
+
+        this.recoViewRows = rows;
+        this.recoViewStats = this.computeReconciliationStatsFromRows(rows);
     }
 
     openTransactStatsModal(): void {
@@ -2594,6 +2616,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     loadTransactStats(): void {
         this.transactStatsError = null;
         this.transactStatsLoading = true;
+        this.transactStatsLoadingMore = false;
         this.transactStatsPerService = [];
 
         const periodCheck = this.validatePopupPeriod(this.transactStatsPeriodStart, this.transactStatsPeriodEnd);
@@ -2623,101 +2646,163 @@ export class DashboardComponent implements OnInit, OnDestroy {
             )
         ];
 
-        forkJoin({
-            recData: this.dashboardReconciliationService.getResult8RecDataScoped(
+        const token = ++this.transactStatsLoadToken;
+        let manualRows: ReleveManualRangeRow[] = [];
+        let manualLoadFailed = false;
+
+        this.dashboardService
+            .getReleveManualTrxRange(
                 rangeStart,
                 rangeEnd,
-                'Dashboard'
-            ).pipe(take(1)),
-            manualRows: this.dashboardService
-                .getReleveManualTrxRange(
-                    rangeStart,
-                    rangeEnd,
-                    targetCountry || undefined,
-                    servicesForApi.length ? servicesForApi : undefined,
-                    targetEnv !== 'ALL' ? targetEnv : undefined
-                )
-                .pipe(take(1))
-        }).subscribe({
-            next: ({ recData, manualRows }) => {
-                try {
-                    this.transactStatsEnvSelectOptions = this.buildRecoViewEnvSelectOptions(recData);
-                    if (!this.transactStatsEnvSelectOptions.includes(this.transactStatsEnv)) {
-                        this.transactStatsEnv = 'ALL';
+                targetCountry || undefined,
+                servicesForApi.length ? servicesForApi : undefined,
+                targetEnv !== 'ALL' ? targetEnv : undefined
+            )
+            .pipe(take(1))
+            .subscribe({
+                next: (rows) => {
+                    if (token !== this.transactStatsLoadToken) {
+                        return;
                     }
-
-                    const envEff = (this.transactStatsEnv || 'ALL').trim() || 'ALL';
-                    const countryEff = (this.transactStatsCountry || '').trim();
-
-                    const servicesSet = new Set<string>();
-                    recData.forEach(item => {
-                        if (!item.service) {
-                            return;
-                        }
-                        if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), envEff)) {
-                            return;
-                        }
-                        if (countryEff && item.country !== countryEff) {
-                            return;
-                        }
-                        const dateOnly = this.extractResult8DateOnly(item.date);
-                        if (!dateOnly || !weekDates.has(dateOnly)) {
-                            return;
-                        }
-                        if (this.transactStatsSelectedDay && dateOnly !== this.transactStatsSelectedDay) {
-                            return;
-                        }
-                        servicesSet.add(item.service);
-                    });
-                    const allServices = Array.from(servicesSet).sort();
-                    this.transactStatsServiceOptions = allServices;
-                    this.transactStatsSelectedServices = servicesForApi.filter(s => allServices.includes(s));
-
-                    const sel = this.transactStatsSelectedServices;
-                    const dayEff = this.transactStatsSelectedDay;
-
-                    if (sel.length >= 2) {
-                        this.transactStatsPerService = sel.map(service => ({
-                            service,
-                            stats: this.computeTransactStatsSlice(
-                                recData,
-                                manualRows || [],
+                    manualRows = rows || [];
+                    if (this.transactStatsLatestRecData.length) {
+                        try {
+                            this.processTransactStatsData(
+                                this.transactStatsLatestRecData,
+                                manualRows,
                                 weekDates,
-                                envEff,
-                                countryEff,
-                                dayEff,
-                                [service]
-                            )
-                        }));
-                    } else {
-                        this.transactStatsPerService = [];
+                                servicesForApi
+                            );
+                        } catch (e: unknown) {
+                            console.error('Erreur statistiques réconciliation (relevé manuel):', e);
+                            this.transactStatsError = 'Erreur lors du calcul des statistiques.';
+                            this.transactStatsLoading = false;
+                            this.transactStatsLoadingMore = false;
+                            this.transactStatsPerService = [];
+                        }
                     }
-
-                    const filterForTotal = sel.length > 0 ? sel : null;
-                    this.transactStats = this.computeTransactStatsSlice(
-                        recData,
-                        manualRows || [],
-                        weekDates,
-                        envEff,
-                        countryEff,
-                        dayEff,
-                        filterForTotal
-                    );
+                },
+                error: (err) => {
+                    if (token !== this.transactStatsLoadToken) {
+                        return;
+                    }
+                    manualLoadFailed = true;
+                    console.error('Erreur chargement relevé manuel statistiques réconciliation:', err);
+                    this.transactStatsError = 'Erreur lors du chargement des données (rapport ou relevé manuel).';
                     this.transactStatsLoading = false;
-                } catch (e: any) {
+                    this.transactStatsLoadingMore = false;
+                    this.transactStatsPerService = [];
+                }
+            });
+
+        this.transactStatsLatestRecData = [];
+
+        this.dashboardReconciliationService.loadResult8RecProgressive(
+            rangeStart,
+            rangeEnd,
+            (data, isFirst, isComplete) => {
+                if (token !== this.transactStatsLoadToken || manualLoadFailed) {
+                    return;
+                }
+                try {
+                    this.transactStatsLatestRecData = data;
+                    this.processTransactStatsData(data, manualRows, weekDates, servicesForApi);
+                    if (isFirst) {
+                        this.transactStatsLoading = false;
+                    }
+                    this.transactStatsLoadingMore = !isComplete;
+                } catch (e: unknown) {
                     console.error('Erreur statistiques réconciliation:', e);
                     this.transactStatsError = 'Erreur lors du calcul des statistiques.';
                     this.transactStatsLoading = false;
+                    this.transactStatsLoadingMore = false;
                     this.transactStatsPerService = [];
                 }
             },
-            error: (err) => {
-                console.error('Erreur chargement données statistiques réconciliation:', err);
-                this.transactStatsError = 'Erreur lors du chargement des données (rapport ou relevé manuel).';
-                this.transactStatsLoading = false;
-                this.transactStatsPerService = [];
+            'Dashboard',
+            () => token !== this.transactStatsLoadToken
+        ).catch(err => {
+            if (token !== this.transactStatsLoadToken) {
+                return;
             }
+            console.error('Erreur chargement result8rec statistiques réconciliation:', err);
+            this.transactStatsError = 'Erreur lors du chargement des données (rapport ou relevé manuel).';
+            this.transactStatsLoading = false;
+            this.transactStatsLoadingMore = false;
+            this.transactStatsPerService = [];
         });
+    }
+
+    private transactStatsLatestRecData: Result8RecData[] = [];
+
+    private processTransactStatsData(
+        recData: Result8RecData[],
+        manualRows: ReleveManualRangeRow[],
+        weekDates: Set<string>,
+        servicesForApi: string[]
+    ): void {
+        this.transactStatsEnvSelectOptions = this.buildRecoViewEnvSelectOptions(recData);
+        if (!this.transactStatsEnvSelectOptions.includes(this.transactStatsEnv)) {
+            this.transactStatsEnv = 'ALL';
+        }
+
+        const envEff = (this.transactStatsEnv || 'ALL').trim() || 'ALL';
+        const countryEff = (this.transactStatsCountry || '').trim();
+
+        const servicesSet = new Set<string>();
+        recData.forEach(item => {
+            if (!item.service) {
+                return;
+            }
+            if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), envEff)) {
+                return;
+            }
+            if (countryEff && item.country !== countryEff) {
+                return;
+            }
+            const dateOnly = this.extractResult8DateOnly(item.date);
+            if (!dateOnly || !weekDates.has(dateOnly)) {
+                return;
+            }
+            if (this.transactStatsSelectedDay && dateOnly !== this.transactStatsSelectedDay) {
+                return;
+            }
+            servicesSet.add(item.service);
+        });
+        const allServices = Array.from(servicesSet).sort();
+        this.transactStatsServiceOptions = allServices;
+        this.transactStatsSelectedServices = servicesForApi.filter(s => allServices.includes(s));
+
+        const sel = this.transactStatsSelectedServices;
+        const dayEff = this.transactStatsSelectedDay;
+
+        if (sel.length >= 2) {
+            this.transactStatsPerService = sel.map(service => ({
+                service,
+                stats: this.computeTransactStatsSlice(
+                    recData,
+                    manualRows || [],
+                    weekDates,
+                    envEff,
+                    countryEff,
+                    dayEff,
+                    [service]
+                )
+            }));
+        } else {
+            this.transactStatsPerService = [];
+        }
+
+        const filterForTotal = sel.length > 0 ? sel : null;
+        this.transactStats = this.computeTransactStatsSlice(
+            recData,
+            manualRows || [],
+            weekDates,
+            envEff,
+            countryEff,
+            dayEff,
+            filterForTotal
+        );
     }
 
     /**

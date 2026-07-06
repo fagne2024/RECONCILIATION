@@ -14,6 +14,8 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
@@ -23,6 +25,8 @@ import java.io.IOException;
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     @Autowired
     private JwtService jwtService;
@@ -44,18 +48,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         final String authHeader = request.getHeader("Authorization");
-        String path = request.getRequestURI();
-        
-        // Log pour débogage
-        if (path.contains("result8rec")) {
-            System.out.println("🔍 JwtAuthenticationFilter - Path: " + path + ", AuthHeader: " + (authHeader != null ? "présent" : "absent"));
-        }
-        
+
         // Si pas d'Authorization header ou ne commence pas par "Bearer ", continuer sans authentification
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            if (path.contains("result8rec")) {
-                System.out.println("⚠️ JwtAuthenticationFilter - Pas de token JWT pour " + path);
-            }
             filterChain.doFilter(request, response);
             return;
         }
@@ -63,20 +58,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             // Extraire le token (enlever "Bearer ")
             final String jwt = authHeader.substring(7);
-            
+
             // Extraire le username du token
             final String username = jwtService.extractUsername(jwt);
-            
-            if (path.contains("result8rec")) {
-                System.out.println("🔍 JwtAuthenticationFilter - Username extrait: " + username);
-            }
-            
+
             // Si username extrait et pas d'authentification dans le contexte actuel
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                
+
                 // Charger les détails de l'utilisateur
                 UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
-                
+
                 // Valider le token
                 if (jwtService.validateToken(jwt, username)) {
                     if (!userDetails.isEnabled()) {
@@ -91,32 +82,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             userDetails.getAuthorities()
                     );
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    
+
                     // Mettre à jour le contexte de sécurité
                     SecurityContextHolder.getContext().setAuthentication(authToken);
-                    
-                    if (path.contains("result8rec")) {
-                        System.out.println("✅ JwtAuthenticationFilter - Authentification réussie pour " + username);
-                    }
                 } else {
-                    if (path.contains("result8rec")) {
-                        System.out.println("❌ JwtAuthenticationFilter - Token invalide pour " + username);
-                    }
                     // IMPORTANT: un token présent mais invalide/expiré doit être rejeté
                     SecurityContextHolder.clearContext();
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                     return;
                 }
-            } else if (path.contains("result8rec")) {
-                System.out.println("⚠️ JwtAuthenticationFilter - Username null ou authentification déjà présente");
             }
         } catch (Exception e) {
-            // En cas d'erreur (token invalide, expiré, etc.), REJETER la requête si un token a été fourni
-            if (path.contains("result8rec")) {
-                System.err.println("❌ JwtAuthenticationFilter - Erreur lors de la validation du token JWT: " + e.getMessage());
-                e.printStackTrace();
-            }
-            logger.debug("Erreur lors de la validation du token JWT: " + e.getMessage());
+            log.debug("Erreur validation JWT: {}", e.getMessage());
             SecurityContextHolder.clearContext();
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return;

@@ -136,14 +136,6 @@
             <version>3.5.2</version>
         </dependency>
         
-        <!-- Spring Boot DevTools pour le redémarrage automatique -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-devtools</artifactId>
-            <scope>runtime</scope>
-            <optional>true</optional>
-        </dependency>
-        
         <!-- Spring Boot Mail pour l'envoi d'emails -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -177,11 +169,9 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
-                    <!-- Configuration pour le rechargement automatique -->
-                    <fork>true</fork>
-                    <addResources>true</addResources>
-                    <!-- Limite heap explicite (une seule ligne — requis pour que Maven applique les arguments) -->
-                    <jvmArguments>-Xms256m -Xmx3072m -XX:MaxMetaspaceSize=384m -XX:MaxDirectMemorySize=256m -XX:+UseG1GC -XX:+UseStringDeduplication -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./logs/heap-dump.hprof</jvmArguments>
+                    <!-- Spring Boot 3 : toujours fork ; jvmArguments pour le processus applicatif -->
+                    <!-- ExitOnOutOfMemoryError retire : tue le JVM sans hook ni heap dump visible -->
+                    <jvmArguments>-Xms512m -Xmx4096m -Xss512k -XX:MaxMetaspaceSize=512m -XX:MaxDirectMemorySize=512m -XX:+UseG1GC -XX:+UseStringDeduplication -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./logs/heap-dump.hprof -XX:ErrorFile=./logs/hs_err_jvm.log -Djava.awt.headless=true</jvmArguments>
                 </configuration>
             </plugin>
         </plugins>

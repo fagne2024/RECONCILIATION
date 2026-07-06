@@ -31,6 +31,7 @@ import { ReconciliationResultsComponent } from './components/reconciliation-resu
 import { ReconciliationComponent } from './components/reconciliation/reconciliation.component';
 import { StatsComponent } from './components/stats/stats.component';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
+import { EtatReconciliationsComponent } from './components/etat-reconciliations/etat-reconciliations.component';
 import { ColumnSelectionComponent } from './components/column-selection/column-selection.component';
 import { AgencySummaryComponent } from './components/stats/agency-summary/agency-summary.component';
 import { ComptesComponent } from './components/comptes/comptes.component';
@@ -110,6 +111,7 @@ import { StatsReportGraphComponent } from './components/stats-report-graph/stats
         ReconciliationComponent,
         StatsComponent,
         DashboardComponent,
+        EtatReconciliationsComponent,
         ComptesComponent,
         OperationsComponent,
         FraisComponent,

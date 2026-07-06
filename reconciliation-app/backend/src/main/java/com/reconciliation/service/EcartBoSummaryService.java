@@ -5,6 +5,7 @@ import com.reconciliation.model.EcartBoSummary;
 import com.reconciliation.model.EcartBoSummaryDTO;
 import com.reconciliation.model.EcartBoSummaryStatusLinkUpdateDTO;
 import com.reconciliation.repository.EcartBoSummaryRepository;
+import com.reconciliation.util.CountryNormalizationUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,7 +59,7 @@ public class EcartBoSummaryService {
             entities = ecartBoSummaryRepository.findByFilters(
                     blankToNull(agence),
                     blankToNull(service),
-                    blankToNull(pays),
+                    CountryNormalizationUtil.expandCountryFilterValues(pays),
                     blankToNull(statut),
                     normalizePlatformForQuery(platform),
                     parseDateStart(startDate),

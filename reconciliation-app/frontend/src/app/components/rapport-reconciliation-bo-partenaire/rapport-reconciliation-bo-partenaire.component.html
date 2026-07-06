@@ -181,9 +181,14 @@
         Choisissez un <strong>pays</strong>. Laissez <strong>Services</strong> vide pour tous les services du périmètre.
       </p>
 
+      <p class="rrbp-hint" *ngIf="emptyScopeHint && !error">{{ emptyScopeHint }}</p>
+
       <p class="rrbp-error" *ngIf="error">{{ error }}</p>
 
-      <div class="rrbp-loading" *ngIf="loading">Chargement…</div>
+      <div class="rrbp-loading" *ngIf="loading">Chargement du rapport…</div>
+      <p class="rrbp-hint rrbp-manual-loading" *ngIf="!loading && manualLoading && selectedCountry">
+        Mise à jour des saisies manuelles relevé…
+      </p>
 
       <p class="rrbp-group-hint" *ngIf="!loading && selectedCountry && !error && hasServiceGroups">
         Regroupement par <strong>famille</strong> (libellé fixe : CASHINOM, CASHINMTN, …) pour le pays et l’ENV sélectionnés

@@ -480,6 +480,7 @@ public class UserLoggingInterceptor implements HandlerInterceptor {
         if (path.startsWith("/api/dashboard")) return "Dashboard";
         if (path.startsWith("/api/traitement")) return "Traitement";
         if (path.startsWith("/api/results")) return "Résultats";
+        if (path.startsWith("/api/reco-j1-blocking-comments")) return "Résultats";
         if (path.startsWith("/api/result8rec")) return "Résultats";
         if (path.startsWith("/api/pays")) return "Pays";
         if (path.startsWith("/api/modules")) return "Module";

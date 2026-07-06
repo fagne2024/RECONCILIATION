@@ -45,8 +45,13 @@ export class PermissionService {
   /**
    * Récupère toutes les actions disponibles pour un module spécifique
    */
-  getActionsForModule(moduleName: string): Observable<any[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/actions/module/${encodeURIComponent(moduleName)}`);
+  getActionsForModule(moduleName: string, actionPathPrefixes?: string[]): Observable<any[]> {
+    let url = `${this.baseUrl}/actions/module/${encodeURIComponent(moduleName)}`;
+    if (actionPathPrefixes?.length) {
+      const prefixes = actionPathPrefixes.map(prefix => encodeURIComponent(prefix)).join(',');
+      url += `?prefixes=${prefixes}`;
+    }
+    return this.http.get<any[]>(url);
   }
 
   /**

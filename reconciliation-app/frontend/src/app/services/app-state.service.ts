@@ -1,9 +1,22 @@
 ﻿import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, Observable, of } from 'rxjs';
+import { catchError, map, tap } from 'rxjs/operators';
 import { HttpClient } from '@angular/common/http';
+import { Router } from '@angular/router';
 import { DataNormalizationService } from './data-normalization.service';
+import { PaysService } from './pays.service';
+import { countryNamesFromCodes } from '../utils/country-codes.util';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
 import { MagicServiceSummary } from './magic-reconciliation.service';
+import {
+  APP_NAVIGATION_CATALOG,
+  NavigationAccessContext,
+  buildNavigationAccessContext,
+  findNavigationAccessContextByModuleName,
+  findNavigationAccessContextByRoute,
+  getAllNavigationAccessContexts,
+  groupUsesGranularSubmenuAccess
+} from '../constants/app-navigation-catalog';
 
 export type ReconciliationLaunchMode = 'manual' | 'assisted' | 'magic';
 
@@ -16,10 +29,17 @@ export interface ReconciliationState {
     needsRefresh: boolean;
 }
 
+export interface UserPaysScope {
+  isGlobal: boolean;
+  codes: string[] | null;
+  names: string[] | null;
+}
+
 export interface UserRights {
   profil: string;
   modules: string[];
   permissions: { [module: string]: string[] };
+  pays?: UserPaysScope;
 }
 
 @Injectable({
@@ -105,7 +125,9 @@ export class AppStateService {
 
     constructor(
         private http: HttpClient,
-        private dataNormalizationService: DataNormalizationService
+        private dataNormalizationService: DataNormalizationService,
+        private router: Router,
+        private paysService: PaysService
     ) {
         // Charger l'utilisateur et le token depuis le localStorage au démarrage
         this.loadUserFromStorage();
@@ -376,9 +398,11 @@ export class AppStateService {
     }
 
     setUserRights(rights: UserRights, username?: string, token?: string) {
+        const permissionModules = Object.keys(rights.permissions ?? {});
+        const mergedModules = Array.from(new Set([...(rights.modules ?? []), ...permissionModules]));
         const deduplicatedModules: string[] = [];
         const seen = new Set<string>();
-        (rights.modules ?? []).forEach(moduleName => {
+        mergedModules.forEach(moduleName => {
             const normalized = this.normalizeModuleName(moduleName);
             if (!normalized || seen.has(normalized)) {
                 return;
@@ -389,7 +413,8 @@ export class AppStateService {
 
         this.userRights = {
             ...rights,
-            modules: deduplicatedModules
+            modules: deduplicatedModules,
+            pays: rights.pays ? this.normalizePaysScope(rights.pays) : rights.pays
         };
         this.rebuildNormalizedModuleSet(deduplicatedModules);
         if (username) this.username = username;
@@ -398,6 +423,88 @@ export class AppStateService {
         localStorage.setItem('userRights', JSON.stringify(this.userRights));
         if (username) localStorage.setItem('username', username);
         if (token) localStorage.setItem('auth_token', token);
+    }
+
+    setUserPaysScope(scope: UserPaysScope): void {
+        if (!this.userRights) {
+            return;
+        }
+        this.userRights = { ...this.userRights, pays: scope };
+        localStorage.setItem('userRights', JSON.stringify(this.userRights));
+    }
+
+    getUserPaysScope(): UserPaysScope | null {
+        return this.userRights?.pays ?? null;
+    }
+
+    getProfileCountryNames(): string[] {
+        const scope = this.getUserPaysScope();
+        if (!scope || scope.isGlobal) {
+            return [];
+        }
+        const fromScope = (scope.names ?? []).filter((name) => !!name && name.trim().length > 0);
+        if (fromScope.length) {
+            return fromScope;
+        }
+        return countryNamesFromCodes(scope.codes);
+    }
+
+    private isPaysScopeComplete(scope: UserPaysScope | null): boolean {
+        if (!scope) {
+            return false;
+        }
+        if (scope.isGlobal) {
+            return true;
+        }
+        return !!(scope.codes && scope.codes.length > 0);
+    }
+
+    private normalizePaysScope(scope: UserPaysScope): UserPaysScope {
+        if (scope.isGlobal) {
+            return scope;
+        }
+        const codes = scope.codes ?? [];
+        const namesFromScope = (scope.names ?? []).filter((name) => !!name && name.trim().length > 0);
+        const names = namesFromScope.length ? namesFromScope : countryNamesFromCodes(codes);
+        return { isGlobal: false, codes, names };
+    }
+
+    /**
+     * Charge le périmètre pays du profil (login ou API) avant d'afficher les écrans filtrés par pays.
+     */
+    ensureUserPaysScope(forceRefresh = false): Observable<UserPaysScope> {
+        const cached = !forceRefresh ? this.getUserPaysScope() : null;
+        if (cached && this.isPaysScopeComplete(cached)) {
+            const normalized = this.normalizePaysScope(cached);
+            if (normalized !== cached) {
+                this.setUserPaysScope(normalized);
+            }
+            return of(normalized);
+        }
+
+        const username = this.getUsername();
+        if (!username || username === 'admin') {
+            const globalScope: UserPaysScope = { isGlobal: true, codes: null, names: null };
+            this.setUserPaysScope(globalScope);
+            return of(globalScope);
+        }
+
+        return this.paysService.getAllowedPaysCodesForCurrentUser().pipe(
+            map((response) => {
+                if (response.isGlobal) {
+                    return { isGlobal: true, codes: null, names: null } as UserPaysScope;
+                }
+                const codes = response.codes ?? [];
+                const namesFromApi = (response.names ?? []).filter((name) => !!name && name.trim().length > 0);
+                const names = namesFromApi.length ? namesFromApi : countryNamesFromCodes(codes);
+                return { isGlobal: false, codes, names } as UserPaysScope;
+            }),
+            catchError(() => {
+                const fallback: UserPaysScope = { isGlobal: false, codes: [], names: [] };
+                return of(fallback);
+            }),
+            tap((scope) => this.setUserPaysScope(scope))
+        );
     }
 
     setToken(token: string) {
@@ -475,14 +582,46 @@ export class AppStateService {
             || (token.includes('CONTROLE') && token.includes('INTERNE'));
     }
 
-    /** Validation contrôle interne BO vs Partenaire : admin ou profil Contrôle Interne. */
-    canValidateControleInterneBoPartenaire(): boolean {
-        return this.isAdmin() || this.isControleInterneProfil();
+    private readonly controleInterneAccessModule =
+        'Résultats · Contrôle interne BO vs Partenaire';
+
+    /** Action cochée sur un sous-menu navigation (module d'accès granulaire). */
+    hasCheckedAction(accessModuleName: string, action: string): boolean {
+        return this.hasGranularModulePermission(accessModuleName, action);
     }
 
-    /** Annulation d'une validation : administrateur uniquement. */
+    /** Action cochée pour une route de navigation. */
+    hasRouteAction(route: string, action: string): boolean {
+        const context = findNavigationAccessContextByRoute(route);
+        if (!context) {
+            return false;
+        }
+        if (context.usesGranularAccess) {
+            return this.hasGranularModulePermission(context.accessModuleName, action);
+        }
+        return this.hasModulePermission(context.apiModuleName, action);
+    }
+
+    /** Validation contrôle interne BO vs Partenaire : action « valider_controle_interne » cochée. */
+    canValidateControleInterneBoPartenaire(): boolean {
+        return this.hasCheckedAction(this.controleInterneAccessModule, 'valider_controle_interne');
+    }
+
+    /** Annulation validation : réservée aux administrateurs uniquement. */
     canRevokeControleInterneBoPartenaire(): boolean {
         return this.isAdmin();
+    }
+
+    canConsultCommentaireControleInterneBoPartenaire(): boolean {
+        return this.hasCheckedAction(this.controleInterneAccessModule, 'consulter_commentaire_controle_interne');
+    }
+
+    canModifyCommentaireControleInterneBoPartenaire(): boolean {
+        return this.hasCheckedAction(this.controleInterneAccessModule, 'modifier_commentaire_controle_interne');
+    }
+
+    canSendEmailControleInterneBoPartenaire(): boolean {
+        return this.hasCheckedAction(this.controleInterneAccessModule, 'envoyer_email_controle_interne');
     }
 
     private normalizeProfilToken(profil?: string | null): string {
@@ -512,24 +651,252 @@ export class AppStateService {
             return false;
         }
 
+        if (this.isAdmin()) {
+            return true;
+        }
+
+        const navContext = findNavigationAccessContextByModuleName(module);
+        if (navContext?.usesGranularAccess) {
+            return this.hasGranularModulePermission(navContext.accessModuleName, permission);
+        }
+
+        if (this.hasGrantedSubmenuForParentModule(module, permission)) {
+            return true;
+        }
+
+        const granted = this.getGrantedPermissionsForModule(normalizedModule);
+        if (!granted.length) {
+            if (this.isModuleAllowed(module) && this.isReadPermission(normalizedPermission)) {
+                return true;
+            }
+            return false;
+        }
+
+        if (granted.includes(normalizedPermission)) {
+            return true;
+        }
+
+        return this.isPermissionSatisfiedByGrantedActions(normalizedPermission, granted, normalizedModule);
+    }
+
+    /** Permission d'action sur un sous-menu (nom d'accès navigation). */
+    hasGranularModulePermission(accessModuleName: string, permission: string): boolean {
+        if (this.isAdmin()) {
+            return true;
+        }
+        if (!this.hasSubmenuNavigationGrant(accessModuleName)) {
+            return false;
+        }
+        const normalizedPermission = this.normalizePermissionName(permission);
+        if (!normalizedPermission) {
+            return false;
+        }
+        const granted = this.getGrantedPermissionsForModule(this.normalizeModuleName(accessModuleName) ?? '');
+        if (!granted.length) {
+            return this.isReadPermission(normalizedPermission);
+        }
+        if (granted.includes(normalizedPermission)) {
+            return true;
+        }
+        return this.isPermissionSatisfiedByGrantedActions(
+            normalizedPermission,
+            granted,
+            this.normalizeModuleName(accessModuleName) ?? ''
+        );
+    }
+
+    /** Sous-menu coché dans le profil (au moins une permission enregistrée). */
+    hasSubmenuNavigationGrant(accessModuleName: string): boolean {
+        if (this.isAdmin()) {
+            return true;
+        }
+        if (!accessModuleName?.trim()) {
+            return false;
+        }
+        const direct = (this.userRights?.permissions?.[accessModuleName] ?? []).filter(Boolean);
+        if (direct.length > 0) {
+            return true;
+        }
+        const normalizedTarget = this.normalizeModuleName(accessModuleName);
+        if (!normalizedTarget) {
+            return false;
+        }
+        for (const [moduleName, perms] of Object.entries(this.userRights?.permissions ?? {})) {
+            if (this.normalizeModuleName(moduleName) === normalizedTarget && (perms?.length ?? 0) > 0) {
+                return true;
+            }
+        }
+        return this.isModuleAllowed(accessModuleName);
+    }
+
+    private getGrantedPermissionsForModule(normalizedModule: string): string[] {
         const permissions = this.userRights?.permissions ?? {};
         for (const [moduleName, modulePermissions] of Object.entries(permissions)) {
             if (this.normalizeModuleName(moduleName) !== normalizedModule) {
                 continue;
             }
+            return (modulePermissions || [])
+                .map(candidate => this.normalizePermissionName(candidate))
+                .filter((candidate): candidate is string => !!candidate && candidate !== 'module_associe');
+        }
+        return [];
+    }
 
-            if ((modulePermissions || []).some(candidate =>
-                this.normalizePermissionName(candidate) === normalizedPermission
-            )) {
+    private isPermissionSatisfiedByGrantedActions(
+        requiredPermission: string,
+        grantedPermissions: string[],
+        normalizedModule: string
+    ): boolean {
+        if (this.isReadPermission(requiredPermission)) {
+            if (grantedPermissions.some(permission => this.isReadPermission(permission))) {
+                return true;
+            }
+            if (normalizedModule === 'reconciliation'
+                && grantedPermissions.some(permission => this.isReconciliationReadEquivalent(permission))) {
                 return true;
             }
         }
 
+        if (normalizedModule === 'reconciliation'
+            && grantedPermissions.some(permission => this.isReconciliationWriteEquivalent(permission))) {
+            if (requiredPermission.startsWith('lancer_')
+                || requiredPermission.startsWith('executer_')
+                || requiredPermission.startsWith('modifier')
+                || requiredPermission.startsWith('marquer_ok')
+                || requiredPermission.startsWith('enregistrer_statut')
+                || requiredPermission === 'creer'
+                || requiredPermission.startsWith('creer_')) {
+                return true;
+            }
+        }
+
+        if (requiredPermission.startsWith('marquer_ok')) {
+            return grantedPermissions.some(permission => permission.startsWith('marquer_ok'));
+        }
+
+        if (requiredPermission.startsWith('modifier')) {
+            return grantedPermissions.some(permission => permission.startsWith('modifier'));
+        }
+
+        if (requiredPermission.startsWith('creer')) {
+            return grantedPermissions.some(permission => permission === 'creer' || permission.startsWith('creer_'));
+        }
+
+        const requiredBase = requiredPermission.split('_')[0];
+        return grantedPermissions.some(granted =>
+            granted === requiredBase
+            || granted.startsWith(`${requiredBase}_`)
+            || requiredPermission.startsWith(`${granted}_`)
+        );
+    }
+
+    private hasGrantedSubmenuForParentModule(parentModule: string, permission: string): boolean {
+        const normalizedParent = this.normalizeModuleName(parentModule);
+        if (!normalizedParent) {
+            return false;
+        }
+        for (const context of getAllNavigationAccessContexts()) {
+            if (!context.usesGranularAccess) {
+                continue;
+            }
+            if (this.normalizeModuleName(context.apiModuleName) !== normalizedParent) {
+                continue;
+            }
+            if (!this.hasSubmenuNavigationGrant(context.accessModuleName)) {
+                continue;
+            }
+            if (this.hasGranularModulePermission(context.accessModuleName, permission)) {
+                return true;
+            }
+        }
         return false;
+    }
+
+    private isReadPermission(permission: string): boolean {
+        return permission === 'consulter'
+            || permission.startsWith('consulter_')
+            || permission === 'filtrer'
+            || permission.startsWith('filtrer_');
+    }
+
+    private isReconciliationReadEquivalent(permission: string): boolean {
+        return permission === 'lancer_reconciliation'
+            || permission === 'executer_reconciliation_magique'
+            || permission.startsWith('consulter_')
+            || permission === 'consulter';
+    }
+
+    private isReconciliationWriteEquivalent(permission: string): boolean {
+        return permission === 'lancer_reconciliation'
+            || permission === 'executer_reconciliation_magique'
+            || permission === 'modifier'
+            || permission.startsWith('modifier_')
+            || permission.startsWith('marquer_ok')
+            || permission.startsWith('enregistrer_statut');
     }
 
     hasAllModulePermissions(module: string, permissions: string[]): boolean {
         return (permissions || []).every(permission => this.hasModulePermission(module, permission));
+    }
+
+    hasGranularNavigationAccessForGroup(groupKey: string): boolean {
+        const group = APP_NAVIGATION_CATALOG.find(item => item.key === groupKey);
+        if (!group || !groupUsesGranularSubmenuAccess(group) || !group.children?.length) {
+            return false;
+        }
+        return group.children.some(sub => {
+            const context = buildNavigationAccessContext(group, sub);
+            return context ? this.hasNavigationAccess(context) : false;
+        });
+    }
+
+    hasNavigationAccess(context: NavigationAccessContext): boolean {
+        if (this.isAdmin()) {
+            return true;
+        }
+
+        if (context.usesGranularAccess) {
+            return this.hasSubmenuNavigationGrant(context.accessModuleName);
+        }
+
+        return this.isModuleAllowed(context.accessModuleName);
+    }
+
+    canAccessNavigationRoute(route: string | null | undefined): boolean {
+        if (!route) {
+            return false;
+        }
+        if (this.isAdmin()) {
+            return true;
+        }
+
+        const navContext = findNavigationAccessContextByRoute(route);
+        if (!navContext) {
+            return true;
+        }
+
+        return this.hasNavigationAccess(navContext);
+    }
+
+    isNavigationGroupVisible(groupKey: string): boolean {
+        if (this.isAdmin()) {
+            return true;
+        }
+
+        const group = APP_NAVIGATION_CATALOG.find(item => item.key === groupKey);
+        if (!group) {
+            return false;
+        }
+
+        if (group.children?.length) {
+            return group.children.some(sub => {
+                const context = buildNavigationAccessContext(group, sub);
+                return context ? this.hasNavigationAccess(context) : false;
+            });
+        }
+
+        const context = buildNavigationAccessContext(group);
+        return context ? this.hasNavigationAccess(context) : !!group.moduleName && this.isModuleAllowed(group.moduleName);
     }
 
     canAccessRoute(route: string | null | undefined): boolean {
@@ -542,9 +909,13 @@ export class AppStateService {
         }
 
         const normalizedRoute = this.normalizeRoutePath(route);
-        const candidate = this.postLoginRouteCandidates.find(item => item.path === normalizedRoute);
+        const navContext = findNavigationAccessContextByRoute(normalizedRoute);
+        if (navContext) {
+            return this.hasNavigationAccess(navContext);
+        }
 
-        if (!candidate || !candidate.module) {
+        const candidate = this.postLoginRouteCandidates.find(item => item.path === normalizedRoute);
+        if (!candidate?.module) {
             return true;
         }
 
@@ -552,18 +923,43 @@ export class AppStateService {
             && this.hasAllModulePermissions(candidate.module, candidate.permissions ?? []);
     }
 
+    getNavigationAccessModuleForRoute(route?: string | null): string | null {
+        const normalizedRoute = this.normalizeRoutePath(route ?? this.router.url);
+        const navContext = findNavigationAccessContextByRoute(normalizedRoute);
+        if (!navContext || !this.hasNavigationAccess(navContext)) {
+            return null;
+        }
+        return navContext.accessModuleName;
+    }
+
+    resolvePermissionModuleContext(fallbackModule?: string): string | undefined {
+        const navigationModule = this.getNavigationAccessModuleForRoute();
+        if (navigationModule) {
+            return navigationModule;
+        }
+        return fallbackModule || undefined;
+    }
+
     resolveAccessibleRoute(preferredRoute?: string | null): string {
         const normalizedPreferredRoute = this.normalizeRoutePath(preferredRoute);
         if (normalizedPreferredRoute && this.canAccessRoute(normalizedPreferredRoute)) {
-            return preferredRoute!.trim();
+            const trimmed = (preferredRoute ?? '').trim();
+            return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
         }
 
-        const fallback = this.postLoginRouteCandidates.find(candidate => this.canAccessRoute(candidate.path));
-        return fallback?.path ?? '/aide';
+        for (const context of getAllNavigationAccessContexts()) {
+            if (this.canAccessRoute(context.route)) {
+                return context.route;
+            }
+        }
+
+        return '/aide';
     }
 
     private rebuildNormalizedModuleSet(modules?: string[]) {
-        const source = modules ?? this.userRights?.modules ?? [];
+        const fromRights = modules ?? this.userRights?.modules ?? [];
+        const fromPermissions = Object.keys(this.userRights?.permissions ?? {});
+        const source = [...fromRights, ...fromPermissions];
         this.normalizedModuleSet = new Set(
             source
                 .map(name => this.normalizeModuleName(name))

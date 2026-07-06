@@ -24,5 +24,20 @@ public interface ReleveManualRepository extends JpaRepository<ReleveManualEntity
             @Param("env") String env);
 
     List<ReleveManualEntity> findByDateBetween(LocalDate startInclusive, LocalDate endInclusive);
+
+    @Query("""
+        SELECT e FROM ReleveManualEntity e
+        WHERE e.date >= :start AND e.date <= :end
+          AND (:country IS NULL OR e.country = :country)
+          AND (
+              :services IS NULL
+              OR e.service IN :services
+          )
+        """)
+    List<ReleveManualEntity> findForReportRange(
+            @Param("start") LocalDate start,
+            @Param("end") LocalDate end,
+            @Param("country") String country,
+            @Param("services") List<String> services);
 }
 

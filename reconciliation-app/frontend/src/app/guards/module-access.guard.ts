@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivate, Router, RouterStateSnapshot } from '@angular/router';
 import { AppStateService } from '../services/app-state.service';
 import { PopupService } from '../services/popup.service';
+import { findNavigationAccessContextByRoute } from '../constants/app-navigation-catalog';
 
 @Injectable({
   providedIn: 'root'
@@ -18,6 +19,19 @@ export class ModuleAccessGuard implements CanActivate {
       return true;
     }
 
+    const navContext = findNavigationAccessContextByRoute(state.url);
+    if (navContext) {
+      if (this.appState.hasNavigationAccess(navContext)) {
+        return true;
+      }
+      this.popupService.showWarning(
+        `Vous n'avez pas accès au sous-menu « ${navContext.label} ».`,
+        'Accès refusé'
+      );
+      this.redirectToFallback();
+      return false;
+    }
+
     const requiredModule = route.data['module'] as string | undefined;
     const requiredPermissions = (route.data['permissions'] as string[] | undefined) ?? [];
 
@@ -25,34 +39,33 @@ export class ModuleAccessGuard implements CanActivate {
       return true;
     }
 
-    if (!this.appState.isModuleAllowed(requiredModule)) {
-      this.popupService.showWarning(
-        `Vous n'avez pas acces au module '${requiredModule}'.`,
-        'Acces refuse'
-      );
-      this.redirectToFallback(state.url);
-      return false;
+    if (
+      this.appState.isModuleAllowed(requiredModule)
+      && this.appState.hasAllModulePermissions(requiredModule, requiredPermissions)
+    ) {
+      return true;
     }
 
-    if (!this.appState.hasAllModulePermissions(requiredModule, requiredPermissions)) {
+    if (!this.appState.isModuleAllowed(requiredModule)) {
+      this.popupService.showWarning(
+        `Vous n'avez pas accès au module « ${requiredModule} ».`,
+        'Accès refusé'
+      );
+    } else {
       const missing = requiredPermissions.filter(permission =>
         !this.appState.hasModulePermission(requiredModule, permission)
       );
-
       const message = missing.length === 1
-        ? `Vous n'avez pas la permission '${missing[0]}' dans le module '${requiredModule}'.`
-        : `Il vous manque les permissions ${missing.map(permission => `'${permission}'`).join(', ')} dans le module '${requiredModule}'.`;
-
-      this.popupService.showWarning(message, 'Permission refusee');
-      this.redirectToFallback(state.url);
-      return false;
+        ? `Vous n'avez pas la permission « ${missing[0]} » pour accéder à cette page.`
+        : `Il vous manque les permissions ${missing.map(permission => `« ${permission} »`).join(', ')} pour accéder à cette page.`;
+      this.popupService.showWarning(message, 'Permission refusée');
     }
 
-    return true;
+    this.redirectToFallback();
+    return false;
   }
 
-  private redirectToFallback(blockedUrl: string): void {
-    const preferredFallback = blockedUrl === '/dashboard' ? '/reconciliation-launcher' : '/dashboard';
-    this.router.navigateByUrl(this.appState.resolveAccessibleRoute(preferredFallback));
+  private redirectToFallback(): void {
+    this.router.navigateByUrl(this.appState.resolveAccessibleRoute());
   }
 }

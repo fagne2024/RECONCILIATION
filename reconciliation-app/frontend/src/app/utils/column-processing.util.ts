@@ -1,4 +1,4 @@
-import { ColumnProcessingRule } from '../services/auto-processing.service';
+import { ColumnProcessingRule } from '../models/column-processing-rule.model';
 import { getOrangeMoneyAliasHeadersForColumn } from './bilingual-column.util';
 import { resolveColumnKeyInRow } from './row-column.util';
 import {
@@ -10,8 +10,25 @@ import {
   DEFAULT_MSISDN_DIGIT_LENGTH
 } from './text-cell.util';
 
-/** Seuil : en dessous, traitement synchrone sans yield (fichiers type ORANGEML ~5k lignes). */
-export const COLUMN_RULES_SYNC_THRESHOLD = 20000;
+/** Seuil : en dessous, traitement synchrone sans yield (petits fichiers). */
+export const COLUMN_RULES_SYNC_THRESHOLD = 8000;
+
+/** Taille de lot adaptée au volume pour garder l'UI réactive. */
+export function resolveColumnRulesBatchSize(totalRows: number): number {
+  if (totalRows > 100000) {
+    return 350;
+  }
+  if (totalRows > 50000) {
+    return 500;
+  }
+  if (totalRows > 20000) {
+    return 800;
+  }
+  if (totalRows > 8000) {
+    return 1200;
+  }
+  return totalRows;
+}
 
 interface CompiledColumnRule {
   sourceKey: string;
@@ -19,13 +36,38 @@ interface CompiledColumnRule {
   apply: (value: unknown) => string;
 }
 
-function findColumnKey(data: Record<string, unknown>, sourceColumn: string): string | null {
+interface ColumnKeyIndex {
+  normalized: Map<string, string>;
+  keys: string[];
+}
+
+function buildColumnKeyIndex(row: Record<string, string>): ColumnKeyIndex {
+  const normalized = new Map<string, string>();
+  const keys = Object.keys(row);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const norm = normalizeColumnName(key);
+    if (!normalized.has(norm)) {
+      normalized.set(norm, key);
+    }
+  }
+  return { normalized, keys };
+}
+
+function findColumnKey(data: Record<string, unknown>, sourceColumn: string, index?: ColumnKeyIndex): string | null {
+  if (data[sourceColumn] !== undefined) {
+    return sourceColumn;
+  }
+
   const resolved = resolveColumnKeyInRow(data as Record<string, string>, sourceColumn);
   if (resolved) {
     return resolved;
   }
 
   for (const alias of getOrangeMoneyAliasHeadersForColumn(sourceColumn)) {
+    if (data[alias] !== undefined) {
+      return alias;
+    }
     const aliasKey = resolveColumnKeyInRow(data as Record<string, string>, alias);
     if (aliasKey) {
       return aliasKey;
@@ -33,6 +75,26 @@ function findColumnKey(data: Record<string, unknown>, sourceColumn: string): str
   }
 
   const normalizedSource = normalizeColumnName(sourceColumn);
+  if (index) {
+    const fromIndex = index.normalized.get(normalizedSource);
+    if (fromIndex) {
+      return fromIndex;
+    }
+    for (let i = 0; i < index.keys.length; i++) {
+      const key = index.keys[i];
+      if (key.includes(normalizedSource) || normalizedSource.includes(normalizeColumnName(key))) {
+        return key;
+      }
+    }
+    return null;
+  }
+
+  for (const key of Object.keys(data)) {
+    if (normalizeColumnName(key) === normalizedSource) {
+      return key;
+    }
+  }
+
   for (const key of Object.keys(data)) {
     if (key.includes(normalizedSource) || normalizedSource.includes(normalizeColumnName(key))) {
       return key;
@@ -68,6 +130,21 @@ function applyFormatType(value: string, formatType?: string): string {
   }
 }
 
+function ruleHasTransformations(rule: ColumnProcessingRule): boolean {
+  return !!(
+    rule.formatType
+    || rule.trimSpaces
+    || rule.toUpperCase
+    || rule.toLowerCase
+    || rule.removeAccents
+    || rule.removeSpecialChars
+    || rule.padZeros
+    || rule.stringToRemove?.trim()
+    || rule.regexReplace?.trim()
+    || (rule.specialCharReplacementMap && Object.keys(rule.specialCharReplacementMap).length)
+  );
+}
+
 function createRuleApplier(rule: ColumnProcessingRule): (value: unknown) => string {
   const outColumn = rule.targetColumn?.trim() || rule.sourceColumn;
   const preserveTransactionId = isTransactionIdPreserveColumn(outColumn)
@@ -82,6 +159,7 @@ function createRuleApplier(rule: ColumnProcessingRule): (value: unknown) => stri
     ?? (isMsisdnPreserveColumn(outColumn) ? DEFAULT_MSISDN_DIGIT_LENGTH : 8);
   const formatType = rule.formatType;
   const msisdnOut = isMsisdnPreserveColumn(outColumn);
+  const hasTransformations = ruleHasTransformations(rule);
 
   const stringToRemoveRe = rule.stringToRemove?.trim()
     ? new RegExp(rule.stringToRemove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
@@ -106,6 +184,10 @@ function createRuleApplier(rule: ColumnProcessingRule): (value: unknown) => stri
   return (value: unknown): string => {
     if (value === null || value === undefined) {
       return '';
+    }
+
+    if (!hasTransformations) {
+      return preserveLeadingZeroString(value);
     }
 
     let stringValue = preserveLeadingZeroString(value);
@@ -136,7 +218,8 @@ function createRuleApplier(rule: ColumnProcessingRule): (value: unknown) => stri
       stringValue = stringValue.replace(stringToRemoveRe, '');
     }
 
-    for (const [from, to] of replacementEntries) {
+    for (let i = 0; i < replacementEntries.length; i++) {
+      const [from, to] = replacementEntries[i];
       stringValue = stringValue.split(from).join(to);
     }
 
@@ -175,7 +258,8 @@ function createRuleApplier(rule: ColumnProcessingRule): (value: unknown) => stri
 }
 
 function findSampleRow(data: Record<string, string>[]): Record<string, string> {
-  for (let i = 0; i < Math.min(data.length, 20); i++) {
+  const limit = Math.min(data.length, 20);
+  for (let i = 0; i < limit; i++) {
     if (Object.keys(data[i]).length > 0) {
       return data[i];
     }
@@ -192,11 +276,13 @@ export function compileColumnProcessingPlan(
   }
 
   const sampleRow = findSampleRow(data);
+  const keyIndex = buildColumnKeyIndex(sampleRow);
   const sortedRules = [...rules].sort((a, b) => (a.ruleOrder ?? 0) - (b.ruleOrder ?? 0));
   const plan: CompiledColumnRule[] = [];
 
-  for (const rule of sortedRules) {
-    const sourceKey = findColumnKey(sampleRow, rule.sourceColumn);
+  for (let i = 0; i < sortedRules.length; i++) {
+    const rule = sortedRules[i];
+    const sourceKey = findColumnKey(sampleRow, rule.sourceColumn, keyIndex);
     if (!sourceKey) {
       continue;
     }
@@ -262,7 +348,7 @@ export function applyColumnProcessingRulesToRow(
 export async function applyColumnProcessingRulesAsync(
   data: Record<string, string>[],
   rules: ColumnProcessingRule[],
-  batchSize = 2500,
+  batchSize?: number,
   onProgress?: (processed: number, total: number) => void | Promise<void>,
   yieldFn?: () => Promise<void>
 ): Promise<Record<string, string>[]> {
@@ -281,7 +367,7 @@ export async function applyColumnProcessingRulesAsync(
     return data;
   }
 
-  const effectiveBatch = data.length > 50000 ? batchSize : Math.min(batchSize, 5000);
+  const effectiveBatch = batchSize ?? resolveColumnRulesBatchSize(data.length);
 
   for (let start = 0; start < data.length; start += effectiveBatch) {
     const end = Math.min(start + effectiveBatch, data.length);

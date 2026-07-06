@@ -121,7 +121,7 @@
                             [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'RECONCILIE' }"
                             (click)="setReconciliationStatusFilter('RECONCILIE')"
                         >
-                            <span class="legend-dot legend-ok"></span>Réconcilié
+                            <span class="legend-dot legend-ok"></span>{{ recoValidatedStatusLabel }}
                         </div>
                         <div
                             class="legend-item"
@@ -227,7 +227,7 @@
                     <span class="reco-stat-value total">{{ recoStats.total }}</span>
                 </div>
                 <div class="reco-stat-item">
-                    <span class="reco-stat-label">Réconciliés</span>
+                    <span class="reco-stat-label">{{ recoValidatedStatusLabelPlural }}</span>
                     <span class="reco-stat-value ok">{{ recoCoverageCount }}</span>
                 </div>
                 <div class="reco-stat-item">
@@ -243,7 +243,7 @@
                     <span class="reco-stat-value failed">{{ recoStats.nonReco }}</span>
                 </div>
                 <div class="reco-stat-item">
-                    <span class="reco-stat-label">Taux réconcilié</span>
+                    <span class="reco-stat-label">{{ recoValidatedRateLabel }}</span>
                     <span class="reco-stat-value ok">
                         {{ recoCoverageRatePercent | number:'1.0-1' }} %
                     </span>
@@ -333,7 +333,7 @@
             <div *ngIf="(!reconciliationSummaryLoading || reconciliationSummaryRows.length) && !reconciliationSummaryError && reconciliationSummaryRows.length && recoStats.total > 0" class="reco-charts-row">
                 <div class="reco-chart-block reco-chart-donut">
                     <div class="reco-chart-legend-top">
-                        <span class="reco-legend-dot ok"></span> Réconcilié
+                        <span class="reco-legend-dot ok"></span> {{ recoValidatedStatusLabel }}
                         <span class="reco-legend-dot pending-cdo"></span> En cours de validation
                         <span class="reco-legend-dot pending-group"></span> En cours de clôture
                         <span class="reco-legend-dot failed"></span> Non réconcilié
@@ -346,7 +346,7 @@
                         </canvas>
                     </div>
                     <div class="reco-chart-legend-detail">
-                        <div><span class="reco-legend-dot ok"></span> Réconcilié : {{ recoCoverageCount }} ({{ recoCoverageRatePercent | number:'1.0-0' }} %)</div>
+                        <div><span class="reco-legend-dot ok"></span> {{ recoValidatedStatusLabel }} : {{ recoCoverageCount }} ({{ recoCoverageRatePercent | number:'1.0-0' }} %)</div>
                         <div><span class="reco-legend-dot pending-support"></span> En cours de traitement : {{ recoStats.enCoursSupport }} ({{ (recoStats.total > 0 ? (recoStats.enCoursSupport / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
                         <div><span class="reco-legend-dot pending-cdo"></span> En cours de validation : {{ recoStats.enCoursCdo }} ({{ (recoStats.total > 0 ? (recoStats.enCoursCdo / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
                         <div><span class="reco-legend-dot pending-group"></span> En cours de clôture : {{ recoStats.enCoursGroup }} ({{ (recoStats.total > 0 ? (recoStats.enCoursGroup / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
@@ -1013,9 +1013,10 @@
                         </mat-form-field>
                     </div>
                 </div>
-                <div *ngIf="transactStatsLoading" class="reco-loading">Chargement...</div>
+                <div *ngIf="transactStatsLoading && !transactStats.totalReference && !transactStatsPerService.length" class="reco-loading">Chargement...</div>
+                <div *ngIf="transactStatsLoadingMore" class="reco-loading-more">Chargement des dates précédentes...</div>
                 <div *ngIf="!transactStatsLoading && transactStatsError" class="reco-error">{{ transactStatsError }}</div>
-                <div *ngIf="!transactStatsLoading && !transactStatsError" class="transact-stats-content">
+                <div *ngIf="(!transactStatsLoading || transactStats.totalReference || transactStatsPerService.length) && !transactStatsError" class="transact-stats-content">
                     <div *ngFor="let block of transactStatsDisplayBlocks; let isLast = last" class="transact-stats-display-block">
                         <h4 *ngIf="block.title" class="transact-stats-section-title">{{ block.title }}</h4>
                         <div class="transact-stats-grid">
@@ -1142,9 +1143,10 @@
                         </mat-form-field>
                     </div>
                 </div>
-                <div *ngIf="recoViewLoading" class="reco-loading">Chargement...</div>
+                <div *ngIf="recoViewLoading && !recoViewRows.length" class="reco-loading">Chargement...</div>
+                <div *ngIf="recoViewLoadingMore" class="reco-loading-more">Chargement des dates précédentes...</div>
                 <div *ngIf="!recoViewLoading && recoViewError" class="reco-error">{{ recoViewError }}</div>
-                <div *ngIf="!recoViewLoading && !recoViewError" class="reco-view-table-wrapper">
+                <div *ngIf="(!recoViewLoading || recoViewRows.length) && !recoViewError" class="reco-view-table-wrapper">
                     <table class="reco-table reco-view-table">
                         <thead>
                             <tr>
@@ -1174,13 +1176,13 @@
                         </tbody>
                     </table>
                 </div>
-                <div *ngIf="!recoViewLoading && !recoViewError && recoViewRows.length" class="reco-stats-row">
+                <div *ngIf="(!recoViewLoading || recoViewRows.length) && !recoViewError && recoViewRows.length" class="reco-stats-row">
                     <div class="reco-stat-item">
                         <span class="reco-stat-label">Total période</span>
                         <span class="reco-stat-value total">{{ recoViewStats.total }}</span>
                     </div>
                     <div class="reco-stat-item">
-                        <span class="reco-stat-label">Réconciliés</span>
+                        <span class="reco-stat-label">{{ recoValidatedStatusLabelPlural }}</span>
                         <span class="reco-stat-value ok">{{ getRecoViewCoverageCount() }}</span>
                     </div>
                     <div class="reco-stat-item">
@@ -1196,7 +1198,7 @@
                         <span class="reco-stat-value failed">{{ recoViewStats.nonReco }}</span>
                     </div>
                     <div class="reco-stat-item">
-                        <span class="reco-stat-label">Taux réconcilié</span>
+                        <span class="reco-stat-label">{{ recoValidatedRateLabel }}</span>
                         <span class="reco-stat-value ok">{{ getRecoViewCoverageRatePercent() | number:'1.0-1' }} %</span>
                     </div>
                 </div>

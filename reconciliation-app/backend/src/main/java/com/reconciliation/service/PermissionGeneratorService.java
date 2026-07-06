@@ -11,6 +11,10 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
+import org.springframework.web.util.pattern.PathPattern;
 
 import java.lang.reflect.Method;
 import java.util.*;
@@ -250,6 +254,27 @@ public class PermissionGeneratorService {
      * Extrait une action spécifique basée sur des patterns connus
      */
     private String extractSpecificAction(String lowerPath, String lowerMethodName, String defaultAction) {
+        if (lowerPath.contains("bo-partenaire-controle-interne")) {
+            if (lowerPath.contains("/validate") || "validate".equals(lowerMethodName)) {
+                return "valider_controle_interne";
+            }
+            if (lowerPath.contains("/revoke") || "revoke".equals(lowerMethodName)) {
+                return "annuler_validation_controle_interne";
+            }
+            if (lowerPath.contains("/send-email") || lowerMethodName.contains("sendcommentemail")) {
+                return "envoyer_email_controle_interne";
+            }
+            if (lowerPath.contains("/comment")) {
+                if ("read".equals(defaultAction) || "get".equals(defaultAction) || lowerMethodName.startsWith("get")) {
+                    return "consulter_commentaire_controle_interne";
+                }
+                return "modifier_commentaire_controle_interne";
+            }
+            if ("read".equals(defaultAction)) {
+                return "consulter";
+            }
+        }
+
         // Les endpoints de filtre doivent exposer explicitement la permission "filtrer",
         // y compris lorsqu'ils alimentent le Dashboard.
         if (lowerPath.contains("filter") || lowerMethodName.contains("filter")) {
@@ -525,7 +550,17 @@ public class PermissionGeneratorService {
         mapping.put("/api/traitement", "Traitement");
         mapping.put("/api/results", "Résultats");
         mapping.put("/api/reconciliation-report", "Résultats");
+        mapping.put("/api/bo-partenaire-controle-interne", "Résultats");
         mapping.put("/api/aide", "AIDE");
+        mapping.put("/api/guide-nodes", "AIDE");
+        mapping.put("/api/guide-documents", "AIDE");
+        mapping.put("/api/sop-nodes", "AIDE");
+        mapping.put("/api/sop-documents", "AIDE");
+        mapping.put("/api/agency-summary", "Statistiques");
+        mapping.put("/api/compte-solde-bo", "Réconciliation");
+        mapping.put("/api/compte-solde-cloture", "Réconciliation");
+        mapping.put("/api/suivi-ecart", "TSOP");
+        mapping.put("/api/frais-transaction", "Frais");
         
         return mapping;
     }
@@ -540,49 +575,21 @@ public class PermissionGeneratorService {
         
         // Cartographie des chemins d'API vers les noms de modules
         Map<String, String> apiToModuleMap = createApiToModuleMapping();
-        
-        // Obtenir tous les contrôleurs
-        Map<String, Object> controllers = applicationContext.getBeansWithAnnotation(RestController.class);
-        
-        for (Object controller : controllers.values()) {
-            Class<?> controllerClass = controller.getClass();
-            
-            // Ignorer les classes proxy Spring
-            if (controllerClass.getName().contains("$")) {
-                controllerClass = controllerClass.getSuperclass();
+
+        List<PermissionInfo> discovered = discoverAllPermissionInfos(apiToModuleMap);
+
+        for (PermissionInfo permInfo : discovered) {
+            if (permInfo.moduleName == null || permInfo.permissionName == null) {
+                continue;
             }
-            
-            // Obtenir le RequestMapping de la classe
-            RequestMapping classMapping = controllerClass.getAnnotation(RequestMapping.class);
-            String basePath = classMapping != null && classMapping.value().length > 0 
-                ? classMapping.value()[0] 
-                : "";
-            
-            // Analyser toutes les méthodes avec des annotations de mapping
-            Method[] methods = controllerClass.getDeclaredMethods();
-            for (Method method : methods) {
-                try {
-                    List<PermissionInfo> permissions = extractPermissionsFromMethod(method, basePath, apiToModuleMap);
-                    
-                    for (PermissionInfo permInfo : permissions) {
-                        if (permInfo.moduleName == null || permInfo.permissionName == null) {
-                            continue;
-                        }
-                        
-                        // Ajouter l'action au module correspondant
-                        moduleActions.computeIfAbsent(permInfo.moduleName, k -> new ArrayList<>())
-                            .add(Map.of(
-                                "action", permInfo.permissionName,
-                                "httpMethod", permInfo.httpMethod,
-                                "path", permInfo.path,
-                                "controller", controllerClass.getSimpleName(),
-                                "method", method.getName()
-                            ));
-                    }
-                } catch (Exception e) {
-                    System.err.println("Erreur lors de l'analyse de la méthode " + method.getName() + ": " + e.getMessage());
-                }
-            }
+            moduleActions.computeIfAbsent(permInfo.moduleName, k -> new ArrayList<>())
+                .add(Map.of(
+                    "action", permInfo.permissionName,
+                    "httpMethod", permInfo.httpMethod,
+                    "path", permInfo.path,
+                    "controller", permInfo.controllerName != null ? permInfo.controllerName : "",
+                    "method", permInfo.methodName != null ? permInfo.methodName : ""
+                ));
         }
         
         // Compter les actions par module
@@ -603,11 +610,270 @@ public class PermissionGeneratorService {
      * Retourne toutes les actions disponibles pour un module spécifique
      */
     public List<Map<String, Object>> getActionsForModule(String moduleName) {
+        return getActionsForModule(moduleName, null);
+    }
+
+    public List<Map<String, Object>> getActionsForModule(String moduleName, List<String> fallbackPrefixes) {
+        Optional<com.reconciliation.config.NavigationSubmenuRegistry.SubmenuAccessDefinition> submenuDefinition =
+            com.reconciliation.config.NavigationSubmenuRegistry.findByAccessModuleName(moduleName);
+
+        if (submenuDefinition.isPresent()) {
+            List<String> prefixes = com.reconciliation.config.NavigationSubmenuRegistry.resolveActionPathPrefixes(submenuDefinition.get());
+            List<Map<String, Object>> actions = filterActionsByPrefixes(collectAllDiscoveredActions(), prefixes);
+            if (actions.isEmpty()) {
+                actions = com.reconciliation.config.NavigationSubmenuRegistry.buildFallbackActions(submenuDefinition.get());
+            }
+            return excludeAdminOnlyControleInterneActions(actions);
+        }
+
+        if (moduleName != null && moduleName.contains(com.reconciliation.config.NavigationSubmenuRegistry.SEPARATOR)) {
+            List<String> prefixes = fallbackPrefixes != null && !fallbackPrefixes.isEmpty()
+                ? fallbackPrefixes
+                : List.of();
+            if (!prefixes.isEmpty()) {
+                return filterActionsByPrefixes(collectAllDiscoveredActions(), prefixes);
+            }
+        }
+
         Map<String, Object> allActions = analyzeAllModuleActions();
         @SuppressWarnings("unchecked")
         Map<String, List<Map<String, Object>>> modules = (Map<String, List<Map<String, Object>>>) allActions.get("modules");
-        
         return modules.getOrDefault(moduleName, new ArrayList<>());
+    }
+
+    /**
+     * Retourne les actions d'un sous-menu filtrées par préfixes API (tous modules confondus).
+     */
+    public List<Map<String, Object>> getActionsForSubmenuModule(String parentModuleName, List<String> apiPathPrefixes) {
+        return filterActionsByPrefixes(collectAllDiscoveredActions(), apiPathPrefixes);
+    }
+
+    private List<Map<String, Object>> collectAllDiscoveredActions() {
+        Map<String, Object> allActions = analyzeAllModuleActions();
+        @SuppressWarnings("unchecked")
+        Map<String, List<Map<String, Object>>> modules = (Map<String, List<Map<String, Object>>>) allActions.get("modules");
+        List<Map<String, Object>> combined = new ArrayList<>();
+        for (List<Map<String, Object>> moduleActionList : modules.values()) {
+            combined.addAll(moduleActionList);
+        }
+        return combined;
+    }
+
+    private List<PermissionInfo> discoverAllPermissionInfos(Map<String, String> apiToModuleMap) {
+        List<PermissionInfo> fromHandlerMapping = discoverPermissionInfosFromHandlerMapping(apiToModuleMap);
+        if (!fromHandlerMapping.isEmpty()) {
+            return fromHandlerMapping;
+        }
+        return discoverPermissionInfosFromReflection(apiToModuleMap);
+    }
+
+    private List<PermissionInfo> discoverPermissionInfosFromHandlerMapping(Map<String, String> apiToModuleMap) {
+        RequestMappingHandlerMapping handlerMapping;
+        try {
+            handlerMapping = applicationContext.getBean(RequestMappingHandlerMapping.class);
+        } catch (Exception ex) {
+            return List.of();
+        }
+
+        List<PermissionInfo> permissions = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+
+        for (Map.Entry<RequestMappingInfo, HandlerMethod> entry : handlerMapping.getHandlerMethods().entrySet()) {
+            RequestMappingInfo mappingInfo = entry.getKey();
+            HandlerMethod handlerMethod = entry.getValue();
+            if (mappingInfo.getPathPatternsCondition() == null) {
+                continue;
+            }
+
+            Set<RequestMethod> requestMethods = mappingInfo.getMethodsCondition().getMethods();
+            if (requestMethods == null || requestMethods.isEmpty()) {
+                requestMethods = EnumSet.of(RequestMethod.GET);
+            }
+
+            for (PathPattern pattern : mappingInfo.getPathPatternsCondition().getPatterns()) {
+                String fullPath = pattern.getPatternString();
+                if (!fullPath.startsWith("/api/")) {
+                    continue;
+                }
+                String cleanPath = fullPath.replaceAll("\\{[^}]+\\}", "");
+                String moduleName = findModuleForPath(cleanPath, apiToModuleMap);
+                if (moduleName == null) {
+                    continue;
+                }
+
+                for (RequestMethod requestMethod : requestMethods) {
+                    String httpMethod = requestMethod.name();
+                    String defaultAction = mapHttpMethodToDefaultAction(httpMethod);
+                    String actionType = determineActionType(
+                        cleanPath,
+                        handlerMethod.getMethod().getName(),
+                        defaultAction
+                    );
+                    if (actionType == null || actionType.isBlank()) {
+                        continue;
+                    }
+
+                    String dedupeKey = actionType + "|" + cleanPath + "|" + httpMethod;
+                    if (!seen.add(dedupeKey)) {
+                        continue;
+                    }
+
+                    PermissionInfo permInfo = new PermissionInfo();
+                    permInfo.moduleName = moduleName;
+                    permInfo.permissionName = actionType;
+                    permInfo.httpMethod = httpMethod;
+                    permInfo.path = cleanPath;
+                    permInfo.controllerName = handlerMethod.getBeanType().getSimpleName();
+                    permInfo.methodName = handlerMethod.getMethod().getName();
+                    permissions.add(permInfo);
+                }
+            }
+        }
+
+        return permissions;
+    }
+
+    private List<PermissionInfo> discoverPermissionInfosFromReflection(Map<String, String> apiToModuleMap) {
+        List<PermissionInfo> permissions = new ArrayList<>();
+        Map<String, Object> controllers = applicationContext.getBeansWithAnnotation(RestController.class);
+
+        for (Object controller : controllers.values()) {
+            Class<?> controllerClass = controller.getClass();
+            if (controllerClass.getName().contains("$")) {
+                controllerClass = controllerClass.getSuperclass();
+            }
+
+            RequestMapping classMapping = controllerClass.getAnnotation(RequestMapping.class);
+            String basePath = classMapping != null && classMapping.value().length > 0
+                ? classMapping.value()[0]
+                : "";
+
+            for (Method method : controllerClass.getDeclaredMethods()) {
+                try {
+                    permissions.addAll(extractPermissionsFromMethod(method, basePath, apiToModuleMap));
+                } catch (Exception e) {
+                    System.err.println("Erreur lors de l'analyse de la méthode " + method.getName() + ": " + e.getMessage());
+                }
+            }
+        }
+
+        return permissions;
+    }
+
+    private String mapHttpMethodToDefaultAction(String httpMethod) {
+        if (httpMethod == null) {
+            return "read";
+        }
+        return switch (httpMethod.toUpperCase(Locale.ROOT)) {
+            case "POST" -> "create";
+            case "PUT", "PATCH" -> "update";
+            case "DELETE" -> "delete";
+            default -> "read";
+        };
+    }
+
+    /**
+     * Synchronise les permissions d'un module à partir des actions détectées dans les contrôleurs.
+     */
+    @Transactional
+    public Map<String, Object> syncModuleActions(String moduleName) {
+        if (moduleName == null || moduleName.isBlank()) {
+            throw new IllegalArgumentException("Le nom du module est obligatoire.");
+        }
+
+        List<Map<String, Object>> actions = getActionsForModule(moduleName);
+        int permissionsCreated = 0;
+        for (Map<String, Object> action : actions) {
+            Object actionName = action.get("action");
+            if (actionName != null && ensureModulePermissionAssociation(moduleName, String.valueOf(actionName))) {
+                permissionsCreated++;
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("moduleName", moduleName);
+        result.put("actionsCount", actions.size());
+        result.put("permissionsCreated", permissionsCreated);
+        result.put("message", actions.size() + " action(s) synchronisée(s) pour le module « " + moduleName + " ».");
+        return result;
+    }
+
+    /**
+     * Synchronise les permissions d'un sous-menu à partir du module parent et des préfixes API.
+     */
+    @Transactional
+    public Map<String, Object> syncSubmenuModuleActions(String accessModuleName, String parentModuleName, List<String> apiPathPrefixes) {
+        if (accessModuleName == null || accessModuleName.isBlank()) {
+            throw new IllegalArgumentException("Le module de navigation est obligatoire.");
+        }
+        if (parentModuleName == null || parentModuleName.isBlank()) {
+            throw new IllegalArgumentException("Le module parent est obligatoire.");
+        }
+
+        List<String> actionPrefixes = com.reconciliation.config.NavigationSubmenuRegistry.findByAccessModuleName(accessModuleName)
+            .map(com.reconciliation.config.NavigationSubmenuRegistry::resolveActionPathPrefixes)
+            .orElse(apiPathPrefixes != null ? apiPathPrefixes : List.of());
+
+        List<Map<String, Object>> actions = getActionsForModule(accessModuleName, actionPrefixes);
+        int permissionsCreated = 0;
+        for (Map<String, Object> action : actions) {
+            Object actionName = action.get("action");
+            if (actionName != null && ensureModulePermissionAssociation(accessModuleName, String.valueOf(actionName))) {
+                permissionsCreated++;
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("moduleName", accessModuleName);
+        result.put("parentModuleName", parentModuleName);
+        result.put("actionsCount", actions.size());
+        result.put("permissionsCreated", permissionsCreated);
+        result.put("message", actions.size() + " action(s) synchronisée(s) pour le sous-menu « " + accessModuleName + " ».");
+        return result;
+    }
+
+    private List<Map<String, Object>> filterActionsByPrefixes(List<Map<String, Object>> actions, List<String> apiPathPrefixes) {
+        if (actions == null || actions.isEmpty()) {
+            return new ArrayList<>();
+        }
+        if (apiPathPrefixes == null || apiPathPrefixes.isEmpty()) {
+            return new ArrayList<>(actions);
+        }
+
+        List<Map<String, Object>> filtered = new ArrayList<>();
+        Set<String> seenActions = new LinkedHashSet<>();
+        for (Map<String, Object> action : actions) {
+            Object pathValue = action.get("path");
+            String path = pathValue != null ? String.valueOf(pathValue) : "";
+            if (!com.reconciliation.config.NavigationSubmenuRegistry.matchesApiPath(path, apiPathPrefixes)) {
+                continue;
+            }
+            Object actionName = action.get("action");
+            if (actionName == null) {
+                continue;
+            }
+            String actionKey = String.valueOf(actionName);
+            if (seenActions.add(actionKey)) {
+                filtered.add(action);
+            }
+        }
+        return filtered;
+    }
+
+    /** L'annulation de validation est réservée aux administrateurs (hors profils). */
+    private List<Map<String, Object>> excludeAdminOnlyControleInterneActions(List<Map<String, Object>> actions) {
+        if (actions == null || actions.isEmpty()) {
+            return actions != null ? actions : new ArrayList<>();
+        }
+        List<Map<String, Object>> filtered = new ArrayList<>();
+        for (Map<String, Object> action : actions) {
+            Object actionName = action.get("action");
+            if (actionName != null && "annuler_validation_controle_interne".equals(String.valueOf(actionName))) {
+                continue;
+            }
+            filtered.add(action);
+        }
+        return filtered;
     }
 
     /**
@@ -618,6 +884,8 @@ public class PermissionGeneratorService {
         String permissionName;
         String httpMethod;
         String path;
+        String controllerName;
+        String methodName;
     }
 }
 

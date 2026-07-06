@@ -149,7 +149,7 @@ public class BoPartenaireControleInterneService {
         BoPartenaireControleInterneCommentSaveRequest request,
         String username
     ) {
-        assertCanValidate(username);
+        assertCanModifyComment(username);
         if (request == null) {
             throw new IllegalArgumentException("Corps de requête manquant");
         }
@@ -176,7 +176,7 @@ public class BoPartenaireControleInterneService {
         BoPartenaireControleInterneSendEmailRequest request,
         String username
     ) {
-        assertCanValidate(username);
+        assertCanSendEmail(username);
         if (request == null) {
             throw new IllegalArgumentException("Corps de requête manquant");
         }
@@ -303,7 +303,7 @@ public class BoPartenaireControleInterneService {
     private void assertCanValidate(String username) {
         if (!permissionCheckService.canValidateBoPartenaireControleInterne(username)) {
             throw new ControleInterneAccessDeniedException(
-                "Seuls un administrateur ou un profil Contrôle Interne peuvent valider."
+                "Vous n'avez pas la permission « valider_controle_interne » pour ce sous-menu."
             );
         }
     }
@@ -311,7 +311,31 @@ public class BoPartenaireControleInterneService {
     private void assertCanRevoke(String username) {
         if (!permissionCheckService.canRevokeBoPartenaireControleInterne(username)) {
             throw new ControleInterneAccessDeniedException(
-                "Seul un administrateur peut annuler une validation."
+                "Seul un administrateur peut annuler une validation de contrôle interne."
+            );
+        }
+    }
+
+    private void assertCanModifyComment(String username) {
+        if (!permissionCheckService.hasSubmenuActionPermission(
+            username,
+            "Résultats · Contrôle interne BO vs Partenaire",
+            "modifier_commentaire_controle_interne"
+        )) {
+            throw new ControleInterneAccessDeniedException(
+                "Vous n'avez pas la permission « modifier_commentaire_controle_interne » pour ce sous-menu."
+            );
+        }
+    }
+
+    private void assertCanSendEmail(String username) {
+        if (!permissionCheckService.hasSubmenuActionPermission(
+            username,
+            "Résultats · Contrôle interne BO vs Partenaire",
+            "envoyer_email_controle_interne"
+        )) {
+            throw new ControleInterneAccessDeniedException(
+                "Vous n'avez pas la permission « envoyer_email_controle_interne » pour ce sous-menu."
             );
         }
     }

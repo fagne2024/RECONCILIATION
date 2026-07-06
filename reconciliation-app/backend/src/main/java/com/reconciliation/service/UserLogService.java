@@ -5,6 +5,8 @@ import com.reconciliation.repository.UserLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -12,6 +14,8 @@ import java.util.List;
 
 @Service
 public class UserLogService {
+
+    private static final Logger log = LoggerFactory.getLogger(UserLogService.class);
 
     @Autowired
     private UserLogRepository userLogRepository;
@@ -32,16 +36,11 @@ public class UserLogService {
     @Transactional
     public UserLogEntity saveLog(String permission, String module, String username, String details) {
         try {
-            System.out.println("💾 UserLogService.saveLog - Tentative d'enregistrement: " + 
-                "Permission=" + permission + ", Module=" + module + ", Username=" + username + 
-                (details != null ? ", Details=" + details : ""));
-            UserLogEntity log = new UserLogEntity(permission, module, username, LocalDateTime.now(), details);
-            UserLogEntity savedLog = userLogRepository.save(log);
-            System.out.println("✅ UserLogService.saveLog - Log enregistré avec succès, ID: " + savedLog.getId());
-            return savedLog;
+            log.trace("UserLog save permission={} module={} user={}", permission, module, username);
+            UserLogEntity logEntity = new UserLogEntity(permission, module, username, LocalDateTime.now(), details);
+            return userLogRepository.save(logEntity);
         } catch (Exception e) {
-            System.err.println("❌ UserLogService.saveLog - Erreur lors de l'enregistrement: " + e.getMessage());
-            e.printStackTrace();
+            log.error("UserLog save error: {}", e.getMessage());
             throw e; // Re-lancer l'exception pour que l'intercepteur puisse la gérer
         }
     }

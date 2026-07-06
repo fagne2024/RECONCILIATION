@@ -50,6 +50,9 @@ import com.reconciliation.service.ReconciliationLockService;
 @RequiredArgsConstructor
 public class ReconciliationController {
 
+    /** Au-dela de ce seuil, les listes detaillees ne sont pas serialisees dans la reponse HTTP. */
+    private static final int MAX_INLINE_RESULT_ROWS = 5_000;
+
     private final CsvReconciliationService reconciliationService;
     @Autowired
     private ReconciliationProgressService progressService;
@@ -234,6 +237,59 @@ public class ReconciliationController {
         return ResponseEntity.ok(map);
     }
 
+    /**
+     * Evite de serialiser des dizaines de milliers de lignes en JSON (freeze JVM / Tomcat).
+     * Le detail reste en cache memoire et est charge par pages via /results/*.
+     */
+    private ReconciliationResponse prepareHttpResponse(ReconciliationResponse full, String progressSessionId) {
+        int detailRows = countDetailRows(full);
+        if (detailRows <= MAX_INLINE_RESULT_ROWS) {
+            full.setProgressSessionId(progressSessionId);
+            full.setResultsPaginated(false);
+            return full;
+        }
+
+        jobService.cacheSyncResult(progressSessionId, full);
+
+        ReconciliationResponse slim = new ReconciliationResponse();
+        slim.setTotalBoRecords(full.getTotalBoRecords());
+        slim.setTotalPartnerRecords(full.getTotalPartnerRecords());
+        slim.setTotalMatches(full.getTotalMatches());
+        slim.setTotalMismatches(full.getTotalMismatches());
+        slim.setTotalBoOnly(full.getTotalBoOnly());
+        slim.setTotalPartnerOnly(full.getTotalPartnerOnly());
+        slim.setExecutionTimeMs(full.getExecutionTimeMs());
+        slim.setProcessedRecords(full.getProcessedRecords());
+        slim.setProgressPercentage(full.getProgressPercentage());
+        slim.setProgressSessionId(progressSessionId);
+        slim.setResultsPaginated(true);
+        slim.setMatches(new ArrayList<>());
+        slim.setBoOnly(new ArrayList<>());
+        slim.setPartnerOnly(new ArrayList<>());
+        slim.setMismatches(new ArrayList<>());
+
+        log.warn("Reponse HTTP tronquee ({} lignes detail) — pagination session={}",
+                detailRows, progressSessionId);
+        return slim;
+    }
+
+    private static int countDetailRows(ReconciliationResponse response) {
+        int n = 0;
+        if (response.getMatches() != null) {
+            n += response.getMatches().size();
+        }
+        if (response.getBoOnly() != null) {
+            n += response.getBoOnly().size();
+        }
+        if (response.getPartnerOnly() != null) {
+            n += response.getPartnerOnly().size();
+        }
+        if (response.getMismatches() != null) {
+            n += response.getMismatches().size();
+        }
+        return n;
+    }
+
     @PostMapping("/reconcile")
     public ResponseEntity<ReconciliationResponse> reconcile(@RequestBody ReconciliationRequest request, HttpServletRequest httpRequest) {
         long startTime = System.currentTimeMillis();
@@ -299,8 +355,9 @@ public class ReconciliationController {
                     response.getMatches() != null ? response.getMatches().size() : 0,
                     response.getBoOnly() != null ? response.getBoOnly().size() : 0,
                     response.getPartnerOnly() != null ? response.getPartnerOnly().size() : 0);
-                
-                return ResponseEntity.ok(response);
+
+                ReconciliationResponse httpResponse = prepareHttpResponse(response, progressSessionId);
+                return ResponseEntity.ok(httpResponse);
             } finally {
                 // Libérer le verrou après le traitement
                 if (lockAcquired) {

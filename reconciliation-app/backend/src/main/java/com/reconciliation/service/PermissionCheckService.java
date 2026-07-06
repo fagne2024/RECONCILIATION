@@ -13,7 +13,9 @@ import org.springframework.stereotype.Service;
 
 import java.text.Normalizer;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -43,59 +45,298 @@ public class PermissionCheckService {
      * @return true si l'utilisateur a la permission, false sinon
      */
     public boolean hasPermission(String username, String moduleName, String permissionName) {
-        // Si l'utilisateur est admin, il a toutes les permissions
+        return hasFlexibleModulePermission(username, moduleName, permissionName, null);
+    }
+
+    /**
+     * Vérifie si un utilisateur dispose d'une permission sur un module.
+     * Accepte une correspondance exacte (insensible à la casse) ou une permission
+     * compatible lorsque le module est activé pour le profil.
+     */
+    public boolean hasFlexibleModulePermission(String username, String moduleName, String permissionName, String httpMethod) {
         if ("admin".equals(username)) {
             return true;
         }
 
-        // Trouver l'utilisateur
         Optional<UserEntity> userOpt = userRepository.findByUsername(username);
         if (userOpt.isEmpty()) {
             return false;
         }
 
         UserEntity user = userOpt.get();
-        
-        // Vérifier si le profil est administrateur
-        if (user.getProfil() != null && user.getProfil().getNom() != null) {
-            String profilNom = user.getProfil().getNom().toUpperCase();
-            if (profilNom.equals("ADMIN") || profilNom.equals("ADMINISTRATEUR")) {
+        if (isAdminProfilName(user.getProfil() != null ? user.getProfil().getNom() : null)) {
+            return true;
+        }
+
+        if (user.getProfil() == null || user.getProfil().getId() == null || moduleName == null || permissionName == null) {
+            return false;
+        }
+
+        List<String> grantedPermissions = getGrantedPermissionNamesForModule(user.getProfil().getId(), moduleName);
+        if (grantedPermissions.isEmpty()) {
+            if (isReadPermission(normalizePermissionName(permissionName))
+                && hasModuleAssociation(user.getProfil().getId(), moduleName)) {
+                return true;
+            }
+            return false;
+        }
+
+        String required = normalizePermissionName(permissionName);
+        if (grantedPermissions.contains(required)) {
+            return true;
+        }
+
+        return isPermissionSatisfiedByGrantedActions(required, grantedPermissions, moduleName, httpMethod);
+    }
+
+    private List<String> getGrantedPermissionNamesForModule(Long profilId, String moduleName) {
+        ModuleEntity module = findModuleByName(moduleName);
+        if (module == null || module.getId() == null || profilId == null) {
+            return List.of();
+        }
+
+        return profilPermissionRepository.findByProfilIdAndModuleId(profilId, module.getId()).stream()
+            .map(ProfilPermissionEntity::getPermission)
+            .filter(permission -> permission != null && permission.getNom() != null)
+            .map(permission -> normalizePermissionName(permission.getNom()))
+            .filter(name -> !name.isBlank() && !"module_associe".equals(name))
+            .distinct()
+            .toList();
+    }
+
+    private boolean hasModuleAssociation(Long profilId, String moduleName) {
+        ModuleEntity module = findModuleByName(moduleName);
+        if (module == null || module.getId() == null || profilId == null) {
+            return false;
+        }
+
+        return profilPermissionRepository.findByProfilIdAndModuleId(profilId, module.getId()).stream()
+            .map(ProfilPermissionEntity::getPermission)
+            .filter(permission -> permission != null && permission.getNom() != null)
+            .map(permission -> normalizePermissionName(permission.getNom()))
+            .anyMatch("module_associe"::equals);
+    }
+
+    private boolean hasAnyModulePermissionAssignment(Long profilId, String moduleName) {
+        ModuleEntity module = findModuleByName(moduleName);
+        if (module == null || module.getId() == null || profilId == null) {
+            return false;
+        }
+        return !profilPermissionRepository.findByProfilIdAndModuleId(profilId, module.getId()).isEmpty();
+    }
+
+    private ModuleEntity findModuleByName(String moduleName) {
+        if (moduleName == null || moduleName.isBlank()) {
+            return null;
+        }
+        ModuleEntity module = moduleRepository.findByNomIgnoreCase(moduleName.trim());
+        if (module != null) {
+            return module;
+        }
+        return moduleRepository.findByNom(moduleName.trim());
+    }
+
+    private String normalizePermissionName(String permissionName) {
+        if (permissionName == null) {
+            return "";
+        }
+        return Normalizer.normalize(permissionName.trim(), Normalizer.Form.NFD)
+            .replaceAll("\\p{M}+", "")
+            .toLowerCase(Locale.ROOT);
+    }
+
+    private boolean isPermissionSatisfiedByGrantedActions(
+        String requiredPermission,
+        List<String> grantedPermissions,
+        String moduleName,
+        String httpMethod
+    ) {
+        if (requiredPermission == null || requiredPermission.isBlank() || grantedPermissions.isEmpty()) {
+            return false;
+        }
+
+        if (isReadPermission(requiredPermission)) {
+            if (grantedPermissions.stream().anyMatch(this::isReadPermission)) {
+                return true;
+            }
+            if (isReconciliationModule(moduleName)
+                && grantedPermissions.stream().anyMatch(this::isReconciliationReadEquivalent)) {
                 return true;
             }
         }
-        
-        if (user.getProfil() == null || user.getProfil().getId() == null) {
-            return false;
+
+        if (isReconciliationModule(moduleName) && isReconciliationWorkflowWritePermission(requiredPermission, httpMethod)) {
+            if (grantedPermissions.stream().anyMatch(this::isReconciliationWriteEquivalent)) {
+                return true;
+            }
         }
 
-        Long profilId = user.getProfil().getId();
-
-        // Trouver le module
-        ModuleEntity module = moduleRepository.findByNom(moduleName);
-        if (module == null || module.getId() == null) {
-            return false;
+        if (isImporterPermission(requiredPermission)) {
+            return grantedPermissions.stream().anyMatch(this::isImporterPermission);
         }
 
-        // Trouver la permission
-        PermissionEntity permission = permissionRepository.findByNom(permissionName);
-        if (permission == null || permission.getId() == null) {
-            return false;
+        if (isExporterPermission(requiredPermission)) {
+            return grantedPermissions.stream().anyMatch(this::isExporterPermission);
         }
 
-        // Vérifier si l'association profil-module-permission existe
-        List<ProfilPermissionEntity> allPermissions = profilPermissionRepository.findAll();
-        return allPermissions.stream()
-            .anyMatch(pp -> 
-                pp.getProfil() != null && 
-                pp.getProfil().getId() != null &&
-                pp.getProfil().getId().equals(profilId) &&
-                pp.getModule() != null && 
-                pp.getModule().getId() != null &&
-                pp.getModule().getId().equals(module.getId()) &&
-                pp.getPermission() != null && 
-                pp.getPermission().getId() != null &&
-                pp.getPermission().getId().equals(permission.getId())
-            );
+        if (requiredPermission.startsWith("marquer_ok")) {
+            return grantedPermissions.stream().anyMatch(permission -> permission.startsWith("marquer_ok"));
+        }
+
+        if (requiredPermission.startsWith("modifier")) {
+            return grantedPermissions.stream().anyMatch(permission -> permission.startsWith("modifier"));
+        }
+
+        if (requiredPermission.startsWith("creer")) {
+            return grantedPermissions.stream().anyMatch(permission -> permission.startsWith("creer") || "creer".equals(permission));
+        }
+
+        String requiredBase = extractPermissionBase(requiredPermission);
+        return grantedPermissions.stream().anyMatch(granted ->
+            granted.equals(requiredBase)
+                || granted.startsWith(requiredBase + "_")
+                || requiredPermission.startsWith(granted + "_")
+        );
+    }
+
+    private boolean isReadPermission(String permissionName) {
+        return "consulter".equals(permissionName)
+            || permissionName.startsWith("consulter_")
+            || "filtrer".equals(permissionName)
+            || permissionName.startsWith("filtrer_");
+    }
+
+    private boolean isImporterPermission(String permissionName) {
+        return "importer".equals(permissionName) || permissionName.startsWith("importer_");
+    }
+
+    private boolean isExporterPermission(String permissionName) {
+        return "exporter".equals(permissionName)
+            || permissionName.startsWith("exporter_")
+            || permissionName.startsWith("telecharger_");
+    }
+
+    private boolean isReconciliationReadEquivalent(String permissionName) {
+        return "lancer_reconciliation".equals(permissionName)
+            || "executer_reconciliation_magique".equals(permissionName)
+            || permissionName.startsWith("consulter_")
+            || "consulter".equals(permissionName);
+    }
+
+    private boolean isReconciliationWriteEquivalent(String permissionName) {
+        return "lancer_reconciliation".equals(permissionName)
+            || "executer_reconciliation_magique".equals(permissionName)
+            || "modifier".equals(permissionName)
+            || permissionName.startsWith("modifier_")
+            || permissionName.startsWith("marquer_ok")
+            || permissionName.startsWith("enregistrer_statut");
+    }
+
+    private boolean isReconciliationWorkflowWritePermission(String requiredPermission, String httpMethod) {
+        if (httpMethod == null) {
+            return false;
+        }
+        String method = httpMethod.toUpperCase(Locale.ROOT);
+        if (!"POST".equals(method) && !"PUT".equals(method) && !"PATCH".equals(method) && !"DELETE".equals(method)) {
+            return false;
+        }
+        return requiredPermission.startsWith("lancer_")
+            || requiredPermission.startsWith("executer_")
+            || requiredPermission.startsWith("modifier")
+            || requiredPermission.startsWith("marquer_ok")
+            || requiredPermission.startsWith("enregistrer_statut")
+            || "creer".equals(requiredPermission)
+            || requiredPermission.startsWith("creer_");
+    }
+
+    private String extractPermissionBase(String permissionName) {
+        int separator = permissionName.indexOf('_');
+        if (separator <= 0) {
+            return permissionName;
+        }
+        return permissionName.substring(0, separator);
+    }
+
+    private boolean isReconciliationModule(String moduleName) {
+        return "reconciliation".equals(normalizePermissionName(moduleName));
+    }
+
+    private boolean checkPermissionAcrossModules(
+        String username,
+        String apiPath,
+        String httpMethod,
+        String moduleOverride,
+        String permissionOverride,
+        String requiredPermission
+    ) {
+        if (moduleOverride != null && !moduleOverride.isBlank()) {
+            String canonicalOverride = canonicalizeModuleOverride(moduleOverride);
+            if (com.reconciliation.config.NavigationSubmenuRegistry.isSubmenuAccessModule(canonicalOverride)) {
+                String effectivePermission = permissionOverride != null && !permissionOverride.isBlank()
+                    ? permissionOverride
+                    : requiredPermission;
+                if (effectivePermission == null || effectivePermission.isBlank()) {
+                    return false;
+                }
+                if (hasFlexibleModulePermission(username, canonicalOverride, effectivePermission, httpMethod)) {
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        LinkedHashSet<String> modulesToCheck = new LinkedHashSet<>();
+
+        String intrinsicModule = resolveIntrinsicModuleForApiPath(apiPath, httpMethod);
+        if (intrinsicModule != null && !intrinsicModule.isBlank()) {
+            modulesToCheck.add(intrinsicModule);
+        }
+
+        if (moduleOverride != null && !moduleOverride.isBlank()) {
+            modulesToCheck.add(canonicalizeModuleOverride(moduleOverride));
+        }
+
+        if (isReconciliationWorkflowPath(apiPath, httpMethod)) {
+            modulesToCheck.add("Réconciliation");
+            modulesToCheck.add("Résultats");
+        }
+
+        if (isReconciliationModelConsumptionPath(apiPath, httpMethod) && !isModelesModuleOverride(moduleOverride)) {
+            modulesToCheck.add("Réconciliation");
+        }
+
+        for (String submenuModule : com.reconciliation.config.NavigationSubmenuRegistry.resolveAccessModulesForApiPath(apiPath)) {
+            modulesToCheck.add(submenuModule);
+        }
+
+        for (String moduleName : modulesToCheck) {
+            if (permissionOverride != null && !permissionOverride.isBlank()
+                && hasFlexibleModulePermission(username, moduleName, permissionOverride, httpMethod)) {
+                return true;
+            }
+            if (requiredPermission != null && !requiredPermission.isBlank()
+                && hasFlexibleModulePermission(username, moduleName, requiredPermission, httpMethod)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private String resolveIntrinsicModuleForApiPath(String apiPath, String httpMethod) {
+        if (isReconciliationModelConsumptionPath(apiPath, httpMethod)) {
+            return "Réconciliation";
+        }
+        if (isReconciliationWorkflowPath(apiPath, httpMethod)) {
+            return "Réconciliation";
+        }
+
+        String dashboardModule = mapDashboardReadApiPathToModule(apiPath, httpMethod);
+        if (dashboardModule != null) {
+            return dashboardModule;
+        }
+
+        return mapApiPathToModule(apiPath);
     }
 
     /**
@@ -128,48 +369,47 @@ public class PermissionCheckService {
         }
 
         String normalizedPath = normalizeApiPath(apiPath);
-        if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/validate")) {
-            return canValidateBoPartenaireControleInterne(username);
-        }
         if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/revoke")) {
-            return canRevokeBoPartenaireControleInterne(username);
+            return false;
         }
-        if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/comment")
-            || normalizedPath.startsWith("/api/bo-partenaire-controle-interne/send-email")) {
-            return canValidateBoPartenaireControleInterne(username);
+        if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne")) {
+            String action = resolveControleInterneAction(normalizedPath, httpMethod);
+            if (action != null) {
+                return checkPermissionAcrossModules(username, apiPath, httpMethod, moduleOverride, permissionOverride, action);
+            }
         }
 
         // Consultation / utilisation des modèles dans le flux réconciliation :
         // permissions du module Réconciliation, pas du module Modèles (sauf override explicite Modèles).
         if (isReconciliationModelConsumptionPath(apiPath, httpMethod) && !isModelesModuleOverride(moduleOverride)) {
-            return hasReconciliationModelConsumptionPermission(username, apiPath, httpMethod, permissionOverride);
+            String requiredPermission = permissionOverride != null && !permissionOverride.isBlank()
+                ? permissionOverride
+                : resolveReconciliationModelConsumptionPermission(apiPath, httpMethod);
+            return checkPermissionAcrossModules(username, apiPath, httpMethod, moduleOverride, permissionOverride, requiredPermission);
         }
 
         // Actions résultats / statuts / écarts BO dans le flux réconciliation :
-        // accepter les permissions Réconciliation même si le frontend envoie le contexte Résultats.
+        // accepter les permissions du module concerné même si l'appel provient d'un autre écran.
         if (isReconciliationWorkflowPath(apiPath, httpMethod)) {
-            if (hasReconciliationWorkflowPermission(username, httpMethod, permissionOverride)) {
-                return true;
-            }
+            String requiredPermission = permissionOverride != null && !permissionOverride.isBlank()
+                ? permissionOverride
+                : resolveReconciliationWorkflowPermission(apiPath, httpMethod);
+            return checkPermissionAcrossModules(username, apiPath, httpMethod, moduleOverride, permissionOverride, requiredPermission);
         }
 
-        // Mapper le chemin API vers le module
         String moduleName = resolveModuleForApiPath(apiPath, httpMethod, moduleOverride);
         if (moduleName == null) {
-            // Si le module n'est pas mappé, autoriser par défaut (pour éviter de bloquer les nouvelles routes)
             System.out.println("⚠️ Module non mappé pour le chemin: " + apiPath + " - Autorisation par défaut");
             return true;
         }
 
-        // Mapper la méthode HTTP vers la permission
         String permissionName = resolvePermissionForApiPath(apiPath, httpMethod, moduleOverride, permissionOverride);
         if (permissionName == null) {
-            // Si la permission n'est pas mappée, autoriser par défaut
             System.out.println("⚠️ Permission non mappée pour " + httpMethod + " sur " + apiPath + " - Autorisation par défaut");
             return true;
         }
 
-        return hasPermission(username, moduleName, permissionName);
+        return checkPermissionAcrossModules(username, apiPath, httpMethod, moduleOverride, permissionOverride, permissionName);
     }
 
     public String resolveModuleForApiPath(String apiPath) {
@@ -181,6 +421,12 @@ public class PermissionCheckService {
     }
 
     public String resolveModuleForApiPath(String apiPath, String httpMethod, String moduleOverride) {
+        if (moduleOverride != null && !moduleOverride.isBlank()) {
+            String canonicalOverride = canonicalizeModuleOverride(moduleOverride);
+            if (com.reconciliation.config.NavigationSubmenuRegistry.isSubmenuAccessModule(canonicalOverride)) {
+                return canonicalOverride;
+            }
+        }
         if (isReconciliationModelConsumptionPath(apiPath, httpMethod) && !isModelesModuleOverride(moduleOverride)) {
             return "Réconciliation";
         }
@@ -309,6 +555,7 @@ public class PermissionCheckService {
         if (apiPath.startsWith("/api/traitement")) return "Traitement";
         if (apiPath.startsWith("/api/results")) return "Résultats";
         if (apiPath.startsWith("/api/reconciliation-report")) return "Résultats";
+        if (apiPath.startsWith("/api/reco-j1-blocking-comments")) return "Résultats";
         if (apiPath.startsWith("/api/result8rec")) return "Résultats";
         if (apiPath.startsWith("/api/ecart-bo-summary")) return "Résultats";
         if (apiPath.startsWith("/api/bo-partenaire-controle-interne")) return "Résultats";
@@ -469,29 +716,6 @@ public class PermissionCheckService {
         return "Modèles".equals(canonicalizeModuleOverride(moduleOverride));
     }
 
-    private boolean hasReconciliationModelConsumptionPermission(String username, String apiPath, String httpMethod, String permissionOverride) {
-        if (permissionOverride != null && !permissionOverride.isBlank()) {
-            return hasPermission(username, "Réconciliation", permissionOverride);
-        }
-
-        if (hasPermission(username, "Réconciliation", "consulter")) {
-            return true;
-        }
-
-        // Lecture des modèles pendant une réconciliation : tout profil pouvant lancer
-        // une réconciliation doit pouvoir consulter les modèles, même sans module Modèles.
-        if ("GET".equalsIgnoreCase(httpMethod)
-            && hasPermission(username, "Réconciliation", "lancer_reconciliation")) {
-            return true;
-        }
-
-        if ("POST".equalsIgnoreCase(httpMethod)) {
-            return hasPermission(username, "Réconciliation", "lancer_reconciliation");
-        }
-
-        return false;
-    }
-
     private String resolveReconciliationModelConsumptionPermission(String apiPath, String httpMethod) {
         if ("POST".equalsIgnoreCase(httpMethod)) {
             return "lancer_reconciliation";
@@ -514,29 +738,10 @@ public class PermissionCheckService {
         if (path.startsWith("/api/ecart-bo-summary")) return true;
 
         if (path.startsWith("/api/result8rec")) {
+            if (path.contains("/j1-blocking-comments")) {
+                return false;
+            }
             return !path.contains("/add-traitement-column");
-        }
-
-        return false;
-    }
-
-    private boolean hasReconciliationWorkflowPermission(String username, String httpMethod, String permissionOverride) {
-        if (permissionOverride != null && !permissionOverride.isBlank()) {
-            return hasPermission(username, "Réconciliation", permissionOverride);
-        }
-
-        if (hasPermission(username, "Réconciliation", "consulter")) {
-            return true;
-        }
-
-        String method = httpMethod != null ? httpMethod.toUpperCase() : "";
-        if ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method) || "DELETE".equals(method)) {
-            if (hasPermission(username, "Réconciliation", "lancer_reconciliation")) {
-                return true;
-            }
-            if (hasPermission(username, "Réconciliation", "modifier")) {
-                return true;
-            }
         }
 
         return false;
@@ -558,39 +763,73 @@ public class PermissionCheckService {
         return "consulter";
     }
 
-    /** Admin ou profil « Contrôle Interne ». */
+    /** Admin ou permission « valider_controle_interne » cochée sur le sous-menu. */
     public boolean canValidateBoPartenaireControleInterne(String username) {
-        if (username == null || username.isBlank()) {
-            return false;
-        }
-        if ("admin".equalsIgnoreCase(username.trim())) {
-            return true;
-        }
-        Optional<UserEntity> userOpt = userRepository.findByUsername(username);
-        if (userOpt.isEmpty()) {
-            return false;
-        }
-        UserEntity user = userOpt.get();
-        if (isAdminProfilName(user.getProfil() != null ? user.getProfil().getNom() : null)) {
-            return true;
-        }
-        return isControleInterneProfilName(user.getProfil() != null ? user.getProfil().getNom() : null);
+        return hasSubmenuActionPermission(username, controleInterneAccessModuleName(), "valider_controle_interne");
     }
 
-    /** Réservé aux administrateurs. */
+    /** Annulation validation : réservée aux administrateurs uniquement. */
     public boolean canRevokeBoPartenaireControleInterne(String username) {
-        if (username == null || username.isBlank()) {
+        return isAdministrateur(username);
+    }
+
+    /** Vérifie qu'une action cochée dans le profil est bien accordée (module sous-menu navigation). */
+    public boolean hasSubmenuActionPermission(String username, String accessModuleName, String actionName) {
+        if (username == null || username.isBlank() || accessModuleName == null || actionName == null) {
             return false;
         }
         if ("admin".equalsIgnoreCase(username.trim())) {
             return true;
         }
         Optional<UserEntity> userOpt = userRepository.findByUsername(username);
-        if (userOpt.isEmpty()) {
+        if (userOpt.isPresent()) {
+            UserEntity user = userOpt.get();
+            if (isAdminProfilName(user.getProfil() != null ? user.getProfil().getNom() : null)) {
+                return true;
+            }
+        }
+        return hasFlexibleModulePermission(username, accessModuleName, actionName, null);
+    }
+
+    private String controleInterneAccessModuleName() {
+        return com.reconciliation.config.NavigationSubmenuRegistry.findByAccessModuleName(
+            "Résultats · Contrôle interne BO vs Partenaire"
+        ).map(com.reconciliation.config.NavigationSubmenuRegistry.SubmenuAccessDefinition::accessModuleName)
+            .orElse("Résultats · Contrôle interne BO vs Partenaire");
+    }
+
+    private String resolveControleInterneAction(String normalizedPath, String httpMethod) {
+        String method = httpMethod != null ? httpMethod.toUpperCase(Locale.ROOT) : "GET";
+        if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/validate")) {
+            return "valider_controle_interne";
+        }
+        if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/revoke")) {
+            return "annuler_validation_controle_interne";
+        }
+        if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/send-email")) {
+            return "envoyer_email_controle_interne";
+        }
+        if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/comment")) {
+            return "GET".equals(method) || "HEAD".equals(method)
+                ? "consulter_commentaire_controle_interne"
+                : "modifier_commentaire_controle_interne";
+        }
+        if (normalizedPath.equals("/api/bo-partenaire-controle-interne")) {
+            return "consulter";
+        }
+        return null;
+    }
+
+    private boolean isAdministrateur(String username) {
+        if (username == null || username.isBlank()) {
             return false;
         }
-        UserEntity user = userOpt.get();
-        return isAdminProfilName(user.getProfil() != null ? user.getProfil().getNom() : null);
+        if ("admin".equalsIgnoreCase(username.trim())) {
+            return true;
+        }
+        return userRepository.findByUsername(username)
+            .map(user -> isAdminProfilName(user.getProfil() != null ? user.getProfil().getNom() : null))
+            .orElse(false);
     }
 
     private boolean isAdminProfilName(String profilNom) {

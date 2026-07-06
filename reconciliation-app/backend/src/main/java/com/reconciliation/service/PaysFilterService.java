@@ -7,6 +7,8 @@ import com.reconciliation.repository.PaysRepository;
 import com.reconciliation.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,7 +16,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class PaysFilterService {
-    
+
+    private static final Logger log = LoggerFactory.getLogger(PaysFilterService.class);
+
     @Autowired
     private UserRepository userRepository;
     
@@ -23,6 +27,9 @@ public class PaysFilterService {
     
     @Autowired
     private PaysRepository paysRepository;
+
+    @Autowired
+    private PermissionCheckService permissionCheckService;
     
     /**
      * Récupère les codes de pays autorisés pour un utilisateur
@@ -32,67 +39,64 @@ public class PaysFilterService {
     public List<String> getAllowedPaysCodes(String username) {
         try {
             if (username == null || username.isEmpty()) {
-                System.out.println("⚠️ Username null ou vide, retour d'une liste vide");
+                log.debug("PaysFilter: username vide");
                 return new ArrayList<>();
             }
-            
-            // Vérifier si c'est l'admin (accès à tout)
+
             if ("admin".equalsIgnoreCase(username)) {
-                System.out.println("✅ Admin détecté, accès à tous les pays");
-                return null; // null signifie tous les pays
+                log.debug("PaysFilter: admin, tous les pays");
+                return null;
             }
-            
-            // Récupérer l'utilisateur
+
             UserEntity user = userRepository.findByUsername(username).orElse(null);
             if (user == null) {
-                System.out.println("⚠️ Utilisateur non trouvé: " + username);
+                log.debug("PaysFilter: utilisateur inconnu {}", username);
                 return new ArrayList<>();
             }
-            
-            // Vérifier si le profil est administrateur
+
             if (user.getProfil() != null && user.getProfil().getNom() != null) {
                 String profilNom = user.getProfil().getNom().toUpperCase();
                 if (profilNom.equals("ADMIN") || profilNom.equals("ADMINISTRATEUR")) {
-                    System.out.println("✅ Profil administrateur détecté pour " + username + ", accès à tous les pays");
-                    return null; // null signifie tous les pays
+                    log.debug("PaysFilter: profil admin pour {}", username);
+                    return null;
                 }
             }
-            
+
+            if (hasGlobalAccessForControleInterneModule(username)) {
+                log.debug("PaysFilter: contrôle interne BO vs Partenaire, tous les pays pour {}", username);
+                return null;
+            }
+
             if (user.getProfil() == null || user.getProfil().getId() == null) {
-                System.out.println("⚠️ Utilisateur sans profil: " + username);
+                log.debug("PaysFilter: sans profil {}", username);
                 return new ArrayList<>();
             }
-            
+
             Long profilId = user.getProfil().getId();
-            
-            // Récupérer tous les pays associés au profil
             List<ProfilPaysEntity> profilPays = profilPaysRepository.findByProfilId(profilId);
-            
+
             if (profilPays == null || profilPays.isEmpty()) {
-                System.out.println("⚠️ Aucun pays associé au profil " + profilId);
+                log.debug("PaysFilter: aucun pays pour profil {}", profilId);
                 return new ArrayList<>();
             }
-            
-            // Vérifier si GNL est présent
+
             boolean hasGNL = profilPays.stream()
                 .anyMatch(pp -> pp != null && pp.getPays() != null && "GNL".equals(pp.getPays().getCode()));
-            
+
             if (hasGNL) {
-                System.out.println("✅ Utilisateur " + username + " a accès à GNL (tous les pays)");
-                return null; // null signifie tous les pays
+                log.debug("PaysFilter: GNL pour {}", username);
+                return null;
             }
-            
-            // Extraire les codes de pays
+
             List<String> paysCodes = profilPays.stream()
                 .filter(pp -> pp != null && pp.getPays() != null && pp.getPays().getCode() != null)
                 .map(pp -> pp.getPays().getCode())
                 .collect(Collectors.toList());
-            
-            System.out.println("✅ Utilisateur " + username + " a accès aux pays: " + paysCodes);
+
+            log.debug("PaysFilter: {} -> {}", username, paysCodes);
             return paysCodes;
         } catch (Exception e) {
-            System.err.println("❌ Erreur dans getAllowedPaysCodes pour username: " + username);
-            e.printStackTrace();
+            log.error("PaysFilter erreur pour {}: {}", username, e.getMessage());
             // En cas d'erreur, retourner une liste vide pour sécurité
             return new ArrayList<>();
         }
@@ -136,6 +140,30 @@ public class PaysFilterService {
             .filter(opt -> opt.isPresent())
             .map(opt -> opt.get().getNom())
             .collect(Collectors.toList());
+    }
+
+    /**
+     * Écran contrôle interne BO vs Partenaire : accès à tous les pays du rapport
+     * (le cloisonnement profil ne s'applique pas sur ce sous-menu).
+     */
+    private boolean hasGlobalAccessForControleInterneModule(String username) {
+        String moduleHeader = com.reconciliation.util.RequestContextUtil.getPermissionModuleFromRequest();
+        if (moduleHeader == null || moduleHeader.isBlank()) {
+            return false;
+        }
+        String normalized = moduleHeader
+            .trim()
+            .toLowerCase()
+            .replace('·', ' ')
+            .replaceAll("\\s+", " ");
+        if (!normalized.contains("controle interne bo vs partenaire")) {
+            return false;
+        }
+        return permissionCheckService.hasSubmenuActionPermission(
+            username,
+            moduleHeader.trim(),
+            "consulter"
+        ) || permissionCheckService.canValidateBoPartenaireControleInterne(username);
     }
 }
 

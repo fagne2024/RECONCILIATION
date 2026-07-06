@@ -5,25 +5,10 @@ import { ReconciliationService } from './reconciliation.service';
 import { FieldTypeDetectionService } from './field-type-detection.service';
 import { ExcelTypeDetectionService } from './excel-type-detection.service';
 import { SpecialFileDetectionService } from './special-file-detection.service';
+import { AppStateService } from './app-state.service';
+import { ColumnProcessingRule } from '../models/column-processing-rule.model';
 
-export interface ColumnProcessingRule {
-  id?: number;
-  sourceColumn: string;
-  targetColumn: string;
-  formatType?: string;
-  toUpperCase?: boolean;
-  toLowerCase?: boolean;
-  trimSpaces?: boolean;
-  removeSpecialChars?: boolean;
-  removeAccents?: boolean;
-  stringToRemove?: string;
-  padZeros?: boolean;
-  /** Longueur cible si padZeros (défaut : 10 pour To/MSISDN, sinon 8). */
-  padZeroLength?: number;
-  regexReplace?: string;
-  specialCharReplacementMap?: { [key: string]: string };
-  ruleOrder?: number;
-}
+export type { ColumnProcessingRule } from '../models/column-processing-rule.model';
 
 export interface ModelRowFilter {
   id: string;
@@ -317,7 +302,17 @@ export class AutoProcessingService {
   private isLoading = false;
 
   private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
-    return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+    const resolved = this.resolveModuleContext(moduleContext);
+    return resolved ? new HttpHeaders({ 'X-Permission-Module': resolved }) : undefined;
+  }
+
+  private resolveModuleContext(moduleContext?: string): string | undefined {
+    if (moduleContext === AutoProcessingService.MODELES_MODULE) {
+      return moduleContext;
+    }
+    return this.appState.resolvePermissionModuleContext(
+      moduleContext ?? AutoProcessingService.RECONCILIATION_MODULE
+    );
   }
 
   constructor(
@@ -326,7 +321,8 @@ export class AutoProcessingService {
     private fieldTypeDetectionService: FieldTypeDetectionService,
     private excelTypeDetectionService: ExcelTypeDetectionService,
     private specialFileDetectionService: SpecialFileDetectionService,
-    private http: HttpClient
+    private http: HttpClient,
+    private appState: AppStateService
   ) {
     this.loadDefaultModels();
   }

@@ -81,10 +81,10 @@ export class PermissionsComponent implements OnInit {
         if (error.status === 0) {
           this.popupService.showError(
             'Impossible de se connecter au serveur backend.\n\n' +
-            'Veuillez vérifier que le backend est démarré sur le port 8080.\n\n' +
+            'Veuillez vérifier que le backend est démarré (port 8443).\n\n' +
             'Pour démarrer le backend:\n' +
-            'cd reconciliation-app/backend\n' +
-            'mvn spring-boot:run',
+            'cd backend\n' +
+            'mvn spring-boot:run -DskipTests',
             'Erreur de connexion'
           );
         } else if (error.status === 404) {

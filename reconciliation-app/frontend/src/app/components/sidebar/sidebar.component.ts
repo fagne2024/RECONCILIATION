@@ -37,6 +37,7 @@ export class SidebarComponent implements OnInit {
   ];
   readonly resultatsRoutes = [
     '/results',
+    '/etat-reconciliations',
     '/matches',
     '/ecart-bo',
     '/ecart-partner',
@@ -122,6 +123,16 @@ export class SidebarComponent implements OnInit {
   isMenuAllowed(menu: string): boolean {
     if (this.appState.isAdmin()) return true;
     return this.appState.isModuleAllowed(menu);
+  }
+
+  isNavigationGroupVisible(groupKey: string): boolean {
+    if (this.appState.isAdmin()) return true;
+    return this.appState.isNavigationGroupVisible(groupKey);
+  }
+
+  canShowNavigationRoute(route: string, fallbackModule?: string): boolean {
+    if (this.appState.isAdmin()) return true;
+    return this.appState.canAccessRoute(route);
   }
 
   get isAdmin(): boolean {

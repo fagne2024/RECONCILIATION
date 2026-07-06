@@ -12,6 +12,18 @@ public class ColumnProcessingService {
     @Autowired
     private ColumnProcessingRuleService columnProcessingRuleService;
 
+    private static final class CompiledColumnRule {
+        private final String sourceKey;
+        private final String targetKey;
+        private final ColumnProcessingRule rule;
+
+        private CompiledColumnRule(String sourceKey, String targetKey, ColumnProcessingRule rule) {
+            this.sourceKey = sourceKey;
+            this.targetKey = targetKey;
+            this.rule = rule;
+        }
+    }
+
     /**
      * Applique les règles de traitement des colonnes à une ligne de données
      * @param rules Les règles de traitement (chargées une seule fois)
@@ -19,27 +31,9 @@ public class ColumnProcessingService {
      * @return La ligne de données traitée
      */
     public Map<String, Object> processDataRow(List<ColumnProcessingRule> rules, Map<String, Object> data) {
-        Map<String, Object> processedData = new HashMap<>(data);
-        
-        for (ColumnProcessingRule rule : rules) {
-            String sourceColumn = rule.getSourceColumn();
-            String targetColumn = rule.getTargetColumn();
-            
-            String actualColumnKey = findColumnKey(processedData, sourceColumn);
-            
-            if (actualColumnKey != null) {
-                Object value = processedData.get(actualColumnKey);
-                Object processedValue = applyRule(value, rule);
-                
-                if (targetColumn == null || targetColumn.trim().isEmpty()) {
-                    processedData.put(actualColumnKey, processedValue);
-                } else {
-                    processedData.put(targetColumn, processedValue);
-                }
-            }
-        }
-        
-        return processedData;
+        List<CompiledColumnRule> plan = compileColumnProcessingPlan(data, rules);
+        applyCompiledPlanInPlace(data, plan);
+        return data;
     }
     
     /**
@@ -116,21 +110,62 @@ public class ColumnProcessingService {
      */
     public List<Map<String, Object>> processDataList(String modelId, List<Map<String, Object>> dataList) {
         List<ColumnProcessingRule> rules = columnProcessingRuleService.getRulesByModelId(modelId);
-        if (dataList.isEmpty()) {
-            return new ArrayList<>();
+        if (dataList.isEmpty() || rules.isEmpty()) {
+            return dataList == null ? new ArrayList<>() : dataList;
+        }
+
+        Map<String, Object> sampleRow = dataList.get(0);
+        List<CompiledColumnRule> plan = compileColumnProcessingPlan(sampleRow, rules);
+        if (plan.isEmpty()) {
+            return dataList;
         }
 
         if (dataList.size() >= 5000) {
-            return dataList.parallelStream()
-                .map(row -> processDataRow(rules, row))
-                .collect(java.util.stream.Collectors.toCollection(() -> new ArrayList<>(dataList.size())));
+            dataList.parallelStream().forEach(row -> applyCompiledPlanInPlace(row, plan));
+            return dataList;
         }
 
-        List<Map<String, Object>> processedDataList = new ArrayList<>(dataList.size());
         for (Map<String, Object> dataRow : dataList) {
-            processedDataList.add(processDataRow(rules, dataRow));
+            applyCompiledPlanInPlace(dataRow, plan);
         }
-        return processedDataList;
+        return dataList;
+    }
+
+    private List<CompiledColumnRule> compileColumnProcessingPlan(
+        Map<String, Object> sampleRow,
+        List<ColumnProcessingRule> rules
+    ) {
+        List<ColumnProcessingRule> sortedRules = new ArrayList<>(rules);
+        sortedRules.sort(Comparator.comparingInt(rule -> rule.getRuleOrder() != null ? rule.getRuleOrder() : 0));
+
+        List<CompiledColumnRule> plan = new ArrayList<>();
+        for (ColumnProcessingRule rule : sortedRules) {
+            String sourceKey = findColumnKey(sampleRow, rule.getSourceColumn());
+            if (sourceKey == null) {
+                continue;
+            }
+            String targetColumn = rule.getTargetColumn();
+            String targetKey = (targetColumn == null || targetColumn.trim().isEmpty()
+                || targetColumn.equals(sourceKey))
+                ? null
+                : targetColumn.trim();
+            plan.add(new CompiledColumnRule(sourceKey, targetKey, rule));
+        }
+        return plan;
+    }
+
+    private void applyCompiledPlanInPlace(Map<String, Object> row, List<CompiledColumnRule> plan) {
+        for (CompiledColumnRule compiledRule : plan) {
+            if (!row.containsKey(compiledRule.sourceKey)) {
+                continue;
+            }
+            Object processedValue = applyRule(row.get(compiledRule.sourceKey), compiledRule.rule);
+            if (compiledRule.targetKey == null) {
+                row.put(compiledRule.sourceKey, processedValue);
+            } else {
+                row.put(compiledRule.targetKey, processedValue);
+            }
+        }
     }
 
     /**

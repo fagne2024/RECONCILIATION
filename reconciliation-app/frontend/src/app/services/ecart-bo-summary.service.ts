@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable, throwError, timer, firstValueFrom } from 'rxjs';
 import { catchError, switchMap } from 'rxjs/operators';
+import { AppStateService } from './app-state.service';
 
 export interface EcartBoSummary {
   id?: number;
@@ -61,7 +62,6 @@ export interface EcartBoSummaryPendingLine {
 })
 export class EcartBoSummaryService {
   private apiUrl = '/api/ecart-bo-summary';
-  private readonly resultsHeaders = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
   /** Retries après 429 (rate limit backend / proxy) — backoff exponentiel */
   private static readonly MAX_429_RETRIES = 6;
   private prefillFromMatches: EcartBoSummaryPrefill | null = null;
@@ -70,7 +70,15 @@ export class EcartBoSummaryService {
   /** ENV par défaut dans le formulaire "Ajouter" : BO si on vient des écarts BO, PARTENAIRE si on vient des correspondances. */
   private defaultEnvForAddModal: 'BO' | 'PARTENAIRE' = 'PARTENAIRE';
 
-  constructor(private http: HttpClient) { }
+  constructor(
+    private http: HttpClient,
+    private appState: AppStateService
+  ) { }
+
+  private getPermissionHeaders(): HttpHeaders | undefined {
+    const moduleContext = this.appState.resolvePermissionModuleContext('Résultats');
+    return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+  }
 
   /**
    * Réessaie automatiquement sur 429 (Too Many Requests) avec délai croissant.
@@ -161,12 +169,12 @@ export class EcartBoSummaryService {
     }
 
     return this.with429Retry(() =>
-      this.http.get<EcartBoSummary[]>(this.apiUrl, { params, headers: this.resultsHeaders })
+      this.http.get<EcartBoSummary[]>(this.apiUrl, { params, headers: this.getPermissionHeaders() })
     );
   }
 
   getEcartBoSummaryById(id: number): Observable<EcartBoSummary> {
-    return this.http.get<EcartBoSummary>(`${this.apiUrl}/${id}`, { headers: this.resultsHeaders });
+    return this.http.get<EcartBoSummary>(`${this.apiUrl}/${id}`, { headers: this.getPermissionHeaders() });
   }
 
   saveEcartBoSummary(summaryData: Array<{
@@ -197,7 +205,7 @@ export class EcartBoSummaryService {
     }>;
   }> {
     return new Promise((resolve, reject) => {
-      this.http.post<any>(this.apiUrl, summaryData, { headers: this.resultsHeaders }).subscribe({
+      this.http.post<any>(this.apiUrl, summaryData, { headers: this.getPermissionHeaders() }).subscribe({
         next: (response) => {
           console.log('=== RÉPONSE saveEcartBoSummary ===');
           console.log('DEBUG: Réponse complète:', response);
@@ -220,7 +228,7 @@ export class EcartBoSummaryService {
 
   updateEcartBoSummary(id: number, summary: Partial<EcartBoSummary>): Observable<EcartBoSummary> {
     return this.with429Retry(() =>
-      this.http.put<EcartBoSummary>(`${this.apiUrl}/${id}`, summary, { headers: this.resultsHeaders })
+      this.http.put<EcartBoSummary>(`${this.apiUrl}/${id}`, summary, { headers: this.getPermissionHeaders() })
     );
   }
 
@@ -232,25 +240,25 @@ export class EcartBoSummaryService {
       this.http.post<{ updated: number; skipped: number }>(
         `${this.apiUrl}/batch/status-links/apply`,
         updates,
-        { headers: this.resultsHeaders }
+        { headers: this.getPermissionHeaders() }
       )
     );
   }
 
   deleteEcartBoSummary(id: number): Observable<void> {
-    return this.with429Retry(() => this.http.delete<void>(`${this.apiUrl}/${id}`, { headers: this.resultsHeaders }));
+    return this.with429Retry(() => this.http.delete<void>(`${this.apiUrl}/${id}`, { headers: this.getPermissionHeaders() }));
   }
 
   getDistinctAgences(): Observable<string[]> {
-    return this.http.get<string[]>(`${this.apiUrl}/agences`, { headers: this.resultsHeaders });
+    return this.http.get<string[]>(`${this.apiUrl}/agences`, { headers: this.getPermissionHeaders() });
   }
 
   getDistinctServices(): Observable<string[]> {
-    return this.http.get<string[]>(`${this.apiUrl}/services`, { headers: this.resultsHeaders });
+    return this.http.get<string[]>(`${this.apiUrl}/services`, { headers: this.getPermissionHeaders() });
   }
 
   getDistinctPays(): Observable<string[]> {
-    return this.http.get<string[]>(`${this.apiUrl}/pays`, { headers: this.resultsHeaders });
+    return this.http.get<string[]>(`${this.apiUrl}/pays`, { headers: this.getPermissionHeaders() });
   }
 
   createEcartBoSummary(summary: EcartBoSummary): Promise<{
@@ -288,7 +296,7 @@ export class EcartBoSummaryService {
     if (summary.envCode != null && String(summary.envCode).trim() !== '') {
       dto.envCode = String(summary.envCode).trim();
     }
-    return firstValueFrom(this.http.post<any>(this.apiUrl, [dto], { headers: this.resultsHeaders }))
+    return firstValueFrom(this.http.post<any>(this.apiUrl, [dto], { headers: this.getPermissionHeaders() }))
       .then(response => ({
         count: response.count ?? 0,
         duplicates: response.duplicates ?? 0,

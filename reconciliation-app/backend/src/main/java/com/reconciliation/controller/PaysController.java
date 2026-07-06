@@ -119,17 +119,18 @@ public class PaysController {
     public ResponseEntity<Map<String, Object>> getAllowedPaysCodesForCurrentUser() {
         String username = RequestContextUtil.getUsernameFromRequest();
         List<String> allowedCodes = paysFilterService.getAllowedPaysCodes(username);
-        
+
         Map<String, Object> response = new java.util.HashMap<>();
         if (allowedCodes == null) {
-            // GNL ou admin
             response.put("isGlobal", true);
             response.put("codes", null);
+            response.put("names", null);
         } else {
             response.put("isGlobal", false);
             response.put("codes", allowedCodes);
+            response.put("names", paysFilterService.getAllowedPaysNames(username));
         }
-        
+
         return ResponseEntity.ok(response);
     }
 }

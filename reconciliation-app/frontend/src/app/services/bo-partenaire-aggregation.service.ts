@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { EcartBoSummary } from './ecart-bo-summary.service';
 import { ReleveManualRangeRow } from './dashboard.service';
 import { normalizeReconciliationReportEnv } from '../constants/reconciliation-env-options';
+import { countriesMatch } from '../utils/country-codes.util';
 import {
   resolveTraitementKind,
   statutFromTraitementDisplayLabel,
@@ -60,7 +61,7 @@ export class BoPartenaireAggregationService {
     const { rawReport, manualRows, ecartAll, country, envNorm, startDate, endDate, monthFilter } =
       params;
     const filtered = rawReport.filter((row) => {
-      if ((row.country || '').trim() !== country.trim()) {
+      if (!countriesMatch(row.country, country)) {
         return false;
       }
       if (envNorm != null && normalizeReconciliationReportEnv(row.env) !== envNorm) {
@@ -152,7 +153,7 @@ export class BoPartenaireAggregationService {
     >();
 
     for (const row of rawReport) {
-      if ((row.country || '').trim() !== country.trim()) {
+      if (!countriesMatch(row.country, country)) {
         continue;
       }
       if (envNorm != null && normalizeReconciliationReportEnv(row.env) !== envNorm) {
@@ -345,7 +346,7 @@ export class BoPartenaireAggregationService {
       if (!this.isYmdInRangeInclusive(m.date, dateStart, dateEnd)) {
         continue;
       }
-      if (cty && (m.country || '').trim() && !this.strEqual(m.country, cty)) {
+      if (cty && (m.country || '').trim() && !countriesMatch(m.country, cty)) {
         continue;
       }
       if (envNorm != null) {
@@ -420,7 +421,7 @@ export class BoPartenaireAggregationService {
     if (!rep || !ep) {
       return true;
     }
-    return this.strEqual(ep, rep);
+    return countriesMatch(ep, rep);
   }
 
   private dominantTraitementRawValue(values: (string | undefined | null)[]): string {

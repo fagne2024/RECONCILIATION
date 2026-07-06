@@ -12,6 +12,8 @@ export interface ReconciliationResponse {
     executionTimeMs?: number;
     processedRecords?: number;
     progressPercentage?: number;
+    progressSessionId?: string;
+    resultsPaginated?: boolean;
 }
 
 export interface Match {

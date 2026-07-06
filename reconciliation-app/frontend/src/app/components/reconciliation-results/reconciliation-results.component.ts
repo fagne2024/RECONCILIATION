@@ -379,7 +379,7 @@ interface ApiError {
                             <button (click)="exportResultsOptimized('matches')" class="export-button" [disabled]="isExporting" title="Export optimisé rapide des correspondances">
                                 📥 Exporter les correspondances
                             </button>
-                            <button (click)="exportResultsOptimized('boOnly')" class="export-button ecart-bo-button" [disabled]="isExporting || !((response?.boOnly?.length || 0) + (response?.mismatches?.length || 0))" title="Export optimisé rapide des écarts BO">
+                            <button (click)="exportResultsOptimized('boOnly')" class="export-button ecart-bo-button" [disabled]="isExporting || !filteredBoOnlyCount" title="Export optimisé rapide des écarts BO">
                                 📥 Écarts BO
                             </button>
                             <button (click)="exportResultsOptimized('partnerOnly')" class="export-button ecart-partner-button" [disabled]="isExporting || !filteredPartnerOnlyCount" title="Export optimisé rapide des écarts Partenaire">
@@ -641,9 +641,9 @@ interface ApiError {
                         </div>
                         <div class="info-card-content">
                             <div class="status-indicators">
-                                <div class="status-item" [class.has-issues]="(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0) > 0">
+                                <div class="status-item" [class.has-issues]="filteredBoOnlyCount > 0">
                                     <span class="status-dot"></span>
-                                    <span>Écarts BO: {{(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0)}}</span>
+                                    <span>Écarts BO: {{filteredBoOnlyCount}}</span>
                                 </div>
                                 <div class="status-item" [class.has-issues]="filteredPartnerOnlyCount > 0">
                                     <span class="status-dot"></span>
@@ -4441,6 +4441,32 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     private cachedMatchesPage: number = -1;
     private cachedBoOnlyPage: number = -1;
     private cachedPartnerOnlyPage: number = -1;
+
+    /** Totaux BO (écarts + mismatches) depuis la réponse serveur. */
+    private getResponseBoOnlyTotal(): number {
+        const response = this.response;
+        if (!response) {
+            return 0;
+        }
+        if (response.totalBoOnly != null || response.totalMismatches != null) {
+            return (response.totalBoOnly ?? 0) + (response.totalMismatches ?? 0);
+        }
+        return (response.boOnly?.length ?? 0) + (response.mismatches?.length ?? 0);
+    }
+
+    /**
+     * Compte affiché : tableaux filtrés si chargés, sinon totaux serveur (réponse paginée/tronquée).
+     */
+    private resolveDisplayCount(
+        filteredLength: number,
+        totalFromResponse: number | undefined | null,
+        dataLoaded: boolean
+    ): number {
+        if (dataLoaded || filteredLength > 0) {
+            return filteredLength;
+        }
+        return totalFromResponse ?? 0;
+    }
     
     /**
      * Met à jour les propriétés calculées pour éviter les recalculs dans le template
@@ -4450,9 +4476,34 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         const updateStartTime = performance.now();
         
         const step1Start = performance.now();
-        this.filteredMatchesCount = this.filteredMatches.length;
-        this.filteredBoOnlyCount = this.filteredBoOnly.length;
-        this.filteredPartnerOnlyCount = this.filteredPartnerOnly.length;
+        if (this.isMagicServiceView()) {
+            const summary = this.findActiveMagicSummary();
+            if (summary) {
+                this.filteredMatchesCount = summary.totalMatches;
+                this.filteredBoOnlyCount = summary.totalBoOnly;
+                this.filteredPartnerOnlyCount = summary.totalPartnerOnly;
+            } else {
+                this.filteredMatchesCount = this.filteredMatches.length;
+                this.filteredBoOnlyCount = this.filteredBoOnly.length;
+                this.filteredPartnerOnlyCount = this.filteredPartnerOnly.length;
+            }
+        } else {
+            this.filteredMatchesCount = this.resolveDisplayCount(
+                this.filteredMatches.length,
+                this.response?.totalMatches,
+                this.matchesLoaded
+            );
+            this.filteredBoOnlyCount = this.resolveDisplayCount(
+                this.filteredBoOnly.length,
+                this.getResponseBoOnlyTotal(),
+                this.boOnlyLoaded
+            );
+            this.filteredPartnerOnlyCount = this.resolveDisplayCount(
+                this.filteredPartnerOnly.length,
+                this.response?.totalPartnerOnly,
+                this.partnerOnlyLoaded
+            );
+        }
         const step1Duration = performance.now() - step1Start;
         
         const step2Start = performance.now();
@@ -5499,7 +5550,14 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
         // Toujours reconstruire le résumé depuis les données actuelles afin que le rapport
         // reflète systématiquement la réconciliation en cours (et non un cache périmé).
-        if (this.response && (this.filteredMatches.length > 0 || this.filteredBoOnly.length > 0 || this.filteredPartnerOnly.length > 0)) {
+        if (this.response && (
+            this.filteredMatches.length > 0 ||
+            this.filteredBoOnly.length > 0 ||
+            this.filteredPartnerOnly.length > 0 ||
+            (this.response.totalMatches ?? 0) > 0 ||
+            (this.response.totalBoOnly ?? 0) > 0 ||
+            (this.response.totalPartnerOnly ?? 0) > 0
+        )) {
             // Vider l'ancien cache avant de reconstruire
             this.reconciliationSummaryService.clearAgencySummary();
             const summary = this.getAgencySummary();
@@ -7689,8 +7747,19 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             return result;
         }
 
-        const matches = this.response?.matches?.length || 0;
-        const boMismatches = this.response?.boOnly?.length || 0;
+        if (this.response?.totalBoRecords != null && this.response.totalBoRecords > 0) {
+            const result = this.response.totalBoRecords;
+            this.cachedTotalTransactions = result;
+            this.totalTransactions = result;
+            return result;
+        }
+
+        const matches = this.matchesLoaded || (this.filteredMatches.length > 0)
+            ? this.filteredMatches.length
+            : (this.response?.totalMatches ?? this.response?.matches?.length ?? 0);
+        const boMismatches = this.boOnlyLoaded || (this.filteredBoOnly.length > 0)
+            ? this.filteredBoOnly.length
+            : this.getResponseBoOnlyTotal();
         const result = matches + boMismatches;
         
         // Mettre en cache et mettre à jour la propriété publique
@@ -7725,7 +7794,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             this.matchRate = 0;
             return 0;
         }
-        const matches = this.filteredMatches.length || 0;
+        const matches = this.filteredMatchesCount;
         const result = (matches / total) * 100;
         
         // Mettre en cache et mettre à jour la propriété publique

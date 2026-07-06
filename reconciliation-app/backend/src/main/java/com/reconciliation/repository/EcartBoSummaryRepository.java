@@ -45,7 +45,10 @@ public interface EcartBoSummaryRepository extends JpaRepository<EcartBoSummaryEn
         SELECT e FROM EcartBoSummaryEntity e
         WHERE (:agence IS NULL OR e.agence = :agence)
           AND (:service IS NULL OR e.service = :service)
-          AND (:pays IS NULL OR LOWER(e.pays) = LOWER(:pays))
+          AND (
+              :paysVariants IS NULL
+              OR LOWER(TRIM(e.pays)) IN :paysVariants
+          )
           AND (:statut IS NULL OR e.statut = :statut)
           AND (:platform IS NULL OR UPPER(e.env) = UPPER(:platform))
           AND (:startDate IS NULL OR e.dateTransaction >= :startDate)
@@ -60,7 +63,7 @@ public interface EcartBoSummaryRepository extends JpaRepository<EcartBoSummaryEn
     List<EcartBoSummaryEntity> findByFilters(
             @Param("agence") String agence,
             @Param("service") String service,
-            @Param("pays") String pays,
+            @Param("paysVariants") List<String> paysVariants,
             @Param("statut") String statut,
             @Param("platform") String platform,
             @Param("startDate") LocalDateTime startDate,

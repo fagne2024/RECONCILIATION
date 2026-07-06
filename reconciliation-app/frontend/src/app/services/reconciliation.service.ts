@@ -1,6 +1,6 @@
 import { Injectable, OnInit, OnDestroy } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
-import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout, of, defer } from 'rxjs';
+import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout, of, defer, firstValueFrom, Subscription } from 'rxjs';
 import { catchError, tap, map, finalize, retry, takeUntil, switchMap, retryWhen, delay, concatMap } from 'rxjs/operators';
 import { ReconciliationRequest } from '../models/reconciliation-request.model';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
@@ -41,6 +41,8 @@ export interface ProgressUpdate {
 })
 export class ReconciliationService implements OnInit, OnDestroy {
     private static readonly MAX_429_RETRIES = 4;
+    private static readonly LAUNCH_WATCHDOG_MS = 30_000;
+    private static readonly MAX_AUTO_RELAUNCH_ATTEMPTS = 2;
     private apiUrl = '/api/reconciliation';
     private memoryResults = new Map<string, any>(); // Stockage en mémoire pour les gros fichiers
     
@@ -720,6 +722,56 @@ export class ReconciliationService implements OnInit, OnDestroy {
     }
 
     /**
+     * Charge toutes les pages de détail (réponse HTTP tronquée / pagination serveur).
+     */
+    async loadAllDetailResults(
+        sessionId: string,
+        pageSize = 2000
+    ): Promise<Pick<ReconciliationResponse, 'matches' | 'boOnly' | 'partnerOnly' | 'mismatches'>> {
+        const [matches, boOnly, partnerOnly, mismatches] = await Promise.all([
+            this.loadAllPaginatedPages(
+                page => firstValueFrom(this.getMatches(sessionId, page, pageSize)),
+                'matches'
+            ),
+            this.loadAllPaginatedPages(
+                page => firstValueFrom(this.getBoOnly(sessionId, page, pageSize)),
+                'boOnly'
+            ),
+            this.loadAllPaginatedPages(
+                page => firstValueFrom(this.getPartnerOnly(sessionId, page, pageSize)),
+                'partnerOnly'
+            ),
+            this.loadAllPaginatedPages(
+                page => firstValueFrom(this.getMismatches(sessionId, page, pageSize)),
+                'mismatches'
+            )
+        ]);
+
+        return { matches, boOnly, partnerOnly, mismatches };
+    }
+
+    private async loadAllPaginatedPages<T extends Record<string, unknown>>(
+        fetchPage: (page: number) => Promise<T>,
+        itemsKey: keyof T
+    ): Promise<any[]> {
+        const all: any[] = [];
+        let page = 0;
+        let totalPages = 1;
+
+        while (page < totalPages) {
+            const response = await fetchPage(page);
+            totalPages = typeof response.totalPages === 'number' ? response.totalPages : 1;
+            const chunk = response[itemsKey];
+            if (Array.isArray(chunk)) {
+                all.push(...chunk);
+            }
+            page++;
+        }
+
+        return all;
+    }
+
+    /**
      * Récupère les résultats du traitement frontend par chunks
      */
     private getFrontendChunkedResults(jobId: string): Observable<ReconciliationResponse> {
@@ -914,23 +966,95 @@ export class ReconciliationService implements OnInit, OnDestroy {
     }
 
     /**
-     * Méthode de réconciliation classique (sans WebSocket)
+     * 30s après le lancement, relance automatiquement si aucune réconciliation n'est active.
      */
-    reconcile(request: ReconciliationRequest): Observable<ReconciliationResponse> {
-        
-        // Récupérer le type de réconciliation depuis le service d'état
-        const reconciliationType = this.appStateService.getReconciliationType();
-        request.reconciliationType = reconciliationType;
-        
-        
-        // Vérifier si les données sont trop volumineuses pour la sérialisation
+    private withAutoRelaunchOnStall<T>(factory: () => Observable<T>): Observable<T> {
+        return new Observable<T>(subscriber => {
+            let finished = false;
+            let attemptNumber = 0;
+            let watchdogFired = false;
+            let currentSub: Subscription | null = null;
+            let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+
+            const clearWatchdog = () => {
+                if (watchdogTimer !== null) {
+                    clearTimeout(watchdogTimer);
+                    watchdogTimer = null;
+                }
+            };
+
+            const runAttempt = (isAutoRetry: boolean) => {
+                if (isAutoRetry) {
+                    console.warn('[ReconciliationService] Relance automatique : aucune réconciliation active après 30s');
+                    this.updateProgress({
+                        percentage: 0,
+                        processed: 0,
+                        total: 100,
+                        step: 'Relance automatique de la réconciliation...',
+                        estimatedTimeRemaining: ReconciliationService.LAUNCH_WATCHDOG_MS
+                    });
+                }
+
+                attemptNumber++;
+                currentSub?.unsubscribe();
+                currentSub = factory().subscribe({
+                    next: (value) => {
+                        finished = true;
+                        clearWatchdog();
+                        subscriber.next(value);
+                    },
+                    error: (err) => {
+                        if (attemptNumber < ReconciliationService.MAX_AUTO_RELAUNCH_ATTEMPTS) {
+                            if (!this.isReconciliationRunning() && watchdogFired) {
+                                runAttempt(true);
+                            }
+                            return;
+                        }
+                        finished = true;
+                        clearWatchdog();
+                        subscriber.error(err);
+                    },
+                    complete: () => {
+                        finished = true;
+                        clearWatchdog();
+                        subscriber.complete();
+                    }
+                });
+            };
+
+            watchdogTimer = setTimeout(() => {
+                watchdogTimer = null;
+                watchdogFired = true;
+                if (finished || subscriber.closed) {
+                    return;
+                }
+                if (this.isReconciliationRunning()) {
+                    return;
+                }
+                if (attemptNumber >= ReconciliationService.MAX_AUTO_RELAUNCH_ATTEMPTS) {
+                    return;
+                }
+                runAttempt(true);
+            }, ReconciliationService.LAUNCH_WATCHDOG_MS);
+
+            runAttempt(false);
+
+            return () => {
+                finished = true;
+                clearWatchdog();
+                currentSub?.unsubscribe();
+            };
+        });
+    }
+
+    private executeReconcileOnce(request: ReconciliationRequest): Observable<ReconciliationResponse> {
         const boDataLength = request.boFileContent?.length || 0;
         const partnerDataLength = request.partnerFileContent?.length || 0;
-        
+
         if (boDataLength > 100000 || partnerDataLength > 100000) {
             return this.markReconciliationRun(this.reconcileWithBackendChunks(request));
         }
-        
+
         this.updateProgress({
             percentage: 0,
             processed: 0,
@@ -939,9 +1063,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
             estimatedTimeRemaining: 30000
         });
 
-        // Timeout de 60 minutes (3600000ms) pour les très gros fichiers (augmenté de 30 à 60 minutes)
-        const RECONCILIATION_TIMEOUT = 3600000; // 60 minutes
-        
+        const RECONCILIATION_TIMEOUT = 3600000;
+
         return this.markReconciliationRun(
             this.with429Retry(() => this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request, {
                 headers: new HttpHeaders({
@@ -950,7 +1073,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
             })).pipe(
                 timeout(RECONCILIATION_TIMEOUT),
                 tap(response => {
-                    
+                    const sessionId = response.progressSessionId || request.progressSessionId;
+                    if (sessionId && (response.resultsPaginated || ((response.totalMatches ?? 0) > 0 && !(response.matches?.length)))) {
+                        this.currentJobId = sessionId;
+                    }
+
                     this.updateProgress({
                         percentage: 100,
                         processed: response.totalBoRecords + response.totalPartnerRecords,
@@ -962,6 +1089,16 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 catchError(this.handleError)
             )
         );
+    }
+
+    /**
+     * Méthode de réconciliation classique (sans WebSocket)
+     */
+    reconcile(request: ReconciliationRequest): Observable<ReconciliationResponse> {
+        const reconciliationType = this.appStateService.getReconciliationType();
+        request.reconciliationType = reconciliationType;
+
+        return this.withAutoRelaunchOnStall(() => this.executeReconcileOnce(request));
     }
 
     /** Polling progression temps réel pendant un appel /reconcile synchrone. */

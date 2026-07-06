@@ -1,8 +1,10 @@
 package com.reconciliation.exception;
 
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -15,6 +17,8 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
+import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -170,11 +174,35 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Client (navigateur / proxy) ferme la connexion avant la fin de l'envoi JSON.
+     * Frequent sur /api/result8rec quand la reponse est volumineuse — pas une panne serveur.
+     */
+    @ExceptionHandler(ClientAbortException.class)
+    public void handleClientAbortException(ClientAbortException ex, HttpServletRequest request) {
+        log.warn(
+            "Client deconnecte avant fin de reponse ({} {}) — {}",
+            request.getMethod(),
+            request.getRequestURI(),
+            rootCauseMessage(ex)
+        );
+    }
+
+    /**
      * Handle generic exceptions that weren't caught by specific handlers
      */
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    public ResponseEntity<Map<String, String>> handleGenericException(Exception ex) {
+    public ResponseEntity<Map<String, String>> handleGenericException(Exception ex, HttpServletRequest request) {
+        if (isClientDisconnect(ex)) {
+            log.warn(
+                "Client deconnecte avant fin de reponse ({} {}) — {}",
+                request.getMethod(),
+                request.getRequestURI(),
+                rootCauseMessage(ex)
+            );
+            return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+        }
+
         log.error("Erreur interne non gérée", ex);
         
         Map<String, String> error = new HashMap<>();
@@ -188,6 +216,36 @@ public class GlobalExceptionHandler {
         }
         
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    }
+
+    private static boolean isClientDisconnect(Throwable ex) {
+        for (Throwable current = ex; current != null; current = current.getCause()) {
+            if (current instanceof ClientAbortException) {
+                return true;
+            }
+            if (current instanceof SocketTimeoutException) {
+                return true;
+            }
+            if (current instanceof IOException) {
+                String message = current.getMessage();
+                if (message != null) {
+                    String lower = message.toLowerCase();
+                    if (lower.contains("broken pipe") || lower.contains("connection reset")) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String rootCauseMessage(Throwable ex) {
+        Throwable root = ex;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        return root.getClass().getSimpleName()
+            + (root.getMessage() != null ? " — " + root.getMessage() : "");
     }
 }
 

@@ -259,17 +259,82 @@ public class ProfilController {
     /**
      * Retourne toutes les actions disponibles pour un module spécifique
      */
-    @GetMapping("/actions/module/{moduleName}")
-    public ResponseEntity<List<Map<String, Object>>> getActionsForModule(@PathVariable String moduleName) {
+    @GetMapping("/actions/module/{moduleName:.+}")
+    public ResponseEntity<List<Map<String, Object>>> getActionsForModule(
+        @PathVariable String moduleName,
+        @RequestParam(required = false) String prefixes
+    ) {
         try {
             System.out.println("🔍 Récupération des actions pour le module: " + moduleName);
-            List<Map<String, Object>> actions = permissionGeneratorService.getActionsForModule(moduleName);
+            List<String> fallbackPrefixes = parsePrefixesParam(prefixes);
+            List<Map<String, Object>> actions = permissionGeneratorService.getActionsForModule(moduleName, fallbackPrefixes);
             System.out.println("✅ " + actions.size() + " actions trouvées pour le module " + moduleName);
             return ResponseEntity.ok(actions);
         } catch (Exception e) {
             System.err.println("❌ Erreur lors de la récupération des actions: " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    private List<String> parsePrefixesParam(String prefixes) {
+        if (prefixes == null || prefixes.isBlank()) {
+            return List.of();
+        }
+        return List.of(prefixes.split(","))
+            .stream()
+            .map(String::trim)
+            .filter(value -> !value.isEmpty())
+            .toList();
+    }
+
+    /**
+     * Synchronise les permissions d'un module à partir des actions détectées dans les contrôleurs.
+     */
+    @PostMapping("/modules/{moduleName:.+}/sync-actions")
+    public ResponseEntity<Map<String, Object>> syncModuleActions(@PathVariable String moduleName) {
+        try {
+            Map<String, Object> result = permissionGeneratorService.syncModuleActions(moduleName);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(new HashMap<>(errorResponse));
+        } catch (Exception e) {
+            System.err.println("❌ Erreur lors de la synchronisation des actions pour " + moduleName + ": " + e.getMessage());
+            e.printStackTrace();
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Erreur lors de la synchronisation des actions: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(new HashMap<>(errorResponse));
+        }
+    }
+
+    /**
+     * Synchronise les permissions d'un sous-menu à partir du module parent et des préfixes API.
+     */
+    @PostMapping("/modules/{moduleName:.+}/sync-submenu-actions")
+    public ResponseEntity<Map<String, Object>> syncSubmenuModuleActions(
+        @PathVariable String moduleName,
+        @RequestBody Map<String, Object> body
+    ) {
+        try {
+            String parentModule = body.get("parentModule") != null ? String.valueOf(body.get("parentModule")) : null;
+            @SuppressWarnings("unchecked")
+            List<String> prefixes = body.get("prefixes") instanceof List<?> rawList
+                ? rawList.stream().map(String::valueOf).toList()
+                : List.of();
+            Map<String, Object> result = permissionGeneratorService.syncSubmenuModuleActions(moduleName, parentModule, prefixes);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(new HashMap<>(errorResponse));
+        } catch (Exception e) {
+            System.err.println("❌ Erreur lors de la synchronisation des actions sous-menu pour " + moduleName + ": " + e.getMessage());
+            e.printStackTrace();
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Erreur lors de la synchronisation des actions sous-menu: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(new HashMap<>(errorResponse));
         }
     }
 } 

@@ -6,6 +6,7 @@ import { Router } from '@angular/router';
 import { AppStateService } from '../services/app-state.service';
 import { UserLogService } from '../services/user-log.service';
 import { PopupService } from '../services/popup.service';
+import { findNavigationAccessContextByRoute } from '../constants/app-navigation-catalog';
 
 @Injectable()
 export class AuthInterceptor implements HttpInterceptor {
@@ -34,6 +35,18 @@ export class AuthInterceptor implements HttpInterceptor {
     // Si un utilisateur est connecté, ajouter également le header X-Username (pour compatibilité)
     if (username) {
       headers['X-Username'] = username;
+    }
+
+    const routePath = this.router.url.split('?')[0];
+    const navContext = findNavigationAccessContextByRoute(routePath);
+    if (navContext && this.appState.hasNavigationAccess(navContext)) {
+      const existingModule = req.headers.get('X-Permission-Module');
+      const parentModule = navContext.apiModuleName;
+      const shouldUseSubmenuModule = !existingModule
+        || this.isSameModuleName(existingModule, parentModule);
+      if (shouldUseSubmenuModule) {
+        headers['X-Permission-Module'] = navContext.accessModuleName;
+      }
     }
 
     // Cloner la requête et ajouter les headers
@@ -73,6 +86,15 @@ export class AuthInterceptor implements HttpInterceptor {
 
   private isAuthRequest(url: string): boolean {
     return url.includes('/api/auth/login') || url.includes('/api/auth/verify-2fa');
+  }
+
+  private isSameModuleName(left: string, right: string): boolean {
+    const normalize = (value: string) => value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
+    return normalize(left) === normalize(right);
   }
 
   private showPermissionDeniedMessage(error: HttpErrorResponse): void {

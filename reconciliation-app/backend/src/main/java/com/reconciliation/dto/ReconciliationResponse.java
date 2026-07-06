@@ -24,6 +24,10 @@ public class ReconciliationResponse {
     private int processedRecords;
     private double progressPercentage;
 
+    /** Session pour charger les details via /results/matches (reponses volumineuses tronquees). */
+    private String progressSessionId;
+    private boolean resultsPaginated;
+
     @Data
     public static class Match {
         private String key;

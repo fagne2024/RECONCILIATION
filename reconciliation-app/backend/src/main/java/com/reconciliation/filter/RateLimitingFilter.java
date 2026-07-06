@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
 public class RateLimitingFilter extends OncePerRequestFilter {
 
     // Cache pour stocker les compteurs de requêtes par clé (IP ou utilisateur)
-    private final Cache<String, RequestCounter> requestCache;
+    private final Cache<String, RateLimitingRequestCounter> requestCache;
 
     @Value("${rate.limit.enabled:true}")
     private boolean rateLimitEnabled;
@@ -257,7 +257,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
      * Retourne true si la requête peut continuer, false sinon
      */
     private boolean checkRateLimit(String key, HttpServletResponse response) throws IOException {
-        RequestCounter counter = requestCache.get(key, k -> new RequestCounter());
+        RateLimitingRequestCounter counter = requestCache.get(key, k -> new RateLimitingRequestCounter());
 
         long currentTime = System.currentTimeMillis();
         
@@ -290,7 +290,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     /**
      * Ajoute les en-têtes de rate limiting à la réponse
      */
-    private void addRateLimitHeaders(HttpServletResponse response, RequestCounter counter, long currentTime) {
+    private void addRateLimitHeaders(HttpServletResponse response, RateLimitingRequestCounter counter, long currentTime) {
         int remainingPerMinute = Math.max(0, requestsPerMinute - counter.getRequestsInLastMinute(currentTime));
         int remainingPerHour = Math.max(0, requestsPerHour - counter.getRequestsInLastHour(currentTime));
         
@@ -332,71 +332,5 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         
         ObjectMapper mapper = new ObjectMapper();
         response.getWriter().write(mapper.writeValueAsString(errorResponse));
-    }
-
-    /**
-     * Classe interne pour compter les requêtes dans une fenêtre glissante
-     */
-    private static class RequestCounter {
-        private final java.util.concurrent.ConcurrentLinkedQueue<Long> requests = new java.util.concurrent.ConcurrentLinkedQueue<>();
-
-        /**
-         * Ajoute une requête au compteur
-         */
-        public void addRequest(long timestamp) {
-            requests.offer(timestamp);
-        }
-
-        /**
-         * Nettoie les requêtes expirées
-         */
-        public void cleanup(long currentTime) {
-            long oneHourAgo = currentTime - TimeUnit.HOURS.toMillis(1);
-            requests.removeIf(timestamp -> timestamp < oneHourAgo);
-        }
-
-        /**
-         * Retourne le nombre de requêtes dans la dernière minute
-         */
-        public int getRequestsInLastMinute(long currentTime) {
-            long oneMinuteAgo = currentTime - TimeUnit.MINUTES.toMillis(1);
-            return (int) requests.stream()
-                    .filter(timestamp -> timestamp >= oneMinuteAgo)
-                    .count();
-        }
-
-        /**
-         * Retourne le nombre de requêtes dans la dernière heure
-         */
-        public int getRequestsInLastHour(long currentTime) {
-            long oneHourAgo = currentTime - TimeUnit.HOURS.toMillis(1);
-            return (int) requests.stream()
-                    .filter(timestamp -> timestamp >= oneHourAgo)
-                    .count();
-        }
-
-        /**
-         * Retourne le temps de réinitialisation pour la limite par minute
-         */
-        public long getResetTimeForMinute(long currentTime) {
-            long oneMinuteAgo = currentTime - TimeUnit.MINUTES.toMillis(1);
-            Long oldestInMinute = requests.stream()
-                    .filter(timestamp -> timestamp >= oneMinuteAgo)
-                    .min(Long::compareTo)
-                    .orElse(currentTime);
-            return oldestInMinute + TimeUnit.MINUTES.toMillis(1);
-        }
-
-        /**
-         * Retourne le temps de réinitialisation pour la limite par heure
-         */
-        public long getResetTimeForHour(long currentTime) {
-            long oneHourAgo = currentTime - TimeUnit.HOURS.toMillis(1);
-            Long oldestInHour = requests.stream()
-                    .filter(timestamp -> timestamp >= oneHourAgo)
-                    .min(Long::compareTo)
-                    .orElse(currentTime);
-            return oldestInHour + TimeUnit.HOURS.toMillis(1);
-        }
     }
 }

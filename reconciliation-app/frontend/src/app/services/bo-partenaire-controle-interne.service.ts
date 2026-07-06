@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 export interface BoPartenaireControleInterneRecord {
@@ -52,24 +52,21 @@ export class BoPartenaireControleInterneService {
     startMonth: string;
     endMonth: string;
   }): Observable<BoPartenaireControleInterneRecord[]> {
-    const headers = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
     const q = new URLSearchParams({
       country: params.country,
       env: params.env,
       startMonth: params.startMonth,
       endMonth: params.endMonth
     });
-    return this.http.get<BoPartenaireControleInterneRecord[]>(`${this.baseUrl}?${q}`, { headers });
+    return this.http.get<BoPartenaireControleInterneRecord[]>(`${this.baseUrl}?${q}`);
   }
 
   validate(payload: BoPartenaireControleInterneValidatePayload): Observable<BoPartenaireControleInterneRecord> {
-    const headers = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
-    return this.http.post<BoPartenaireControleInterneRecord>(`${this.baseUrl}/validate`, payload, { headers });
+    return this.http.post<BoPartenaireControleInterneRecord>(`${this.baseUrl}/validate`, payload);
   }
 
   revoke(payload: BoPartenaireControleInterneValidatePayload): Observable<BoPartenaireControleInterneRecord> {
-    const headers = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
-    return this.http.post<BoPartenaireControleInterneRecord>(`${this.baseUrl}/revoke`, payload, { headers });
+    return this.http.post<BoPartenaireControleInterneRecord>(`${this.baseUrl}/revoke`, payload);
   }
 
   getComment(params: {
@@ -77,13 +74,12 @@ export class BoPartenaireControleInterneService {
     env: string;
     monthYyyyMm: string;
   }): Observable<BoPartenaireControleInterneCommentRecord> {
-    const headers = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
     const q = new URLSearchParams({
       country: params.country,
       env: params.env,
       monthYyyyMm: params.monthYyyyMm
     });
-    return this.http.get<BoPartenaireControleInterneCommentRecord>(`${this.baseUrl}/comment?${q}`, { headers });
+    return this.http.get<BoPartenaireControleInterneCommentRecord>(`${this.baseUrl}/comment?${q}`);
   }
 
   saveComment(payload: {
@@ -92,16 +88,13 @@ export class BoPartenaireControleInterneService {
     env: string;
     commentaire: string;
   }): Observable<BoPartenaireControleInterneCommentRecord> {
-    const headers = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
-    return this.http.put<BoPartenaireControleInterneCommentRecord>(`${this.baseUrl}/comment`, payload, { headers });
+    return this.http.put<BoPartenaireControleInterneCommentRecord>(`${this.baseUrl}/comment`, payload);
   }
 
   sendCommentEmail(payload: BoPartenaireControleInterneSendEmailPayload): Observable<{ message: string; comment: BoPartenaireControleInterneCommentRecord }> {
-    const headers = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
     return this.http.post<{ message: string; comment: BoPartenaireControleInterneCommentRecord }>(
       `${this.baseUrl}/send-email`,
-      payload,
-      { headers }
+      payload
     );
   }
 }
