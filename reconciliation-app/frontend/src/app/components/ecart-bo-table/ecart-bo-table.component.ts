@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy, HostListener, ElementRef, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription, firstValueFrom } from 'rxjs';
+import { skip } from 'rxjs/operators';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ExportOptimizationService, ExportProgress, ECART_COMMENT_COLORS } from '../../services/export-optimization.service';
@@ -77,6 +78,8 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   isLoading = false;
   loadProgress = 0;
   private lastProcessedSignature = '';
+  private loadBoOnlyInFlight: Promise<void> | null = null;
+  private loadBoOnlyGeneration = 0;
   magicServiceFilterLocked = '';
 
   // Scroll to top
@@ -112,29 +115,21 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.syncMagicContextFromAppState();
 
-    // Fallback: si l'utilisateur arrive ici depuis une vue qui a déjà alimenté ReconciliationTabsService
-    // (ou si AppStateService est temporairement vide), on affiche immédiatement le cache.
-    const cached = this.reconciliationTabsService.getFilteredBoOnly();
-    if (cached && cached.length > 0) {
-      this.applyCachedBoOnly(cached);
-    }
-
     this.subscription.add(
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
         if (response) {
           this.response = response;
           this.syncMagicContextFromAppState();
-          this.loadBoOnly();
+          void this.loadBoOnly();
         }
       })
     );
 
     this.subscription.add(
-      this.appStateService.selectedMagicService$.subscribe(() => {
+      this.appStateService.selectedMagicService$.pipe(skip(1)).subscribe(() => {
         this.syncMagicContextFromAppState();
         if (this.response) {
-          this.lastProcessedSignature = '';
-          this.loadBoOnly();
+          void this.loadBoOnly(true);
         }
       })
     );
@@ -170,25 +165,34 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     }
   }
 
+  private buildBoOnlyLoadSignature(): string {
+    const sessionId =
+      this.response?.progressSessionId ||
+      this.reconciliationService.getCurrentJobId() ||
+      '';
+    return [
+      sessionId,
+      this.response?.totalBoOnly ?? 0,
+      this.appStateService.getSelectedMagicService(),
+      this.appStateService.getSelectedMagicPartnerFile()
+    ].join('|');
+  }
+
   private async resolveBoOnlyForDisplay(): Promise<Record<string, string>[]> {
+    const sessionId =
+      this.response?.progressSessionId ||
+      this.reconciliationService.getCurrentJobId();
+    const expectedTotal = this.response?.totalBoOnly ?? 0;
     let boOnly = this.response?.boOnly || [];
 
-    if (boOnly.length === 0) {
-      const cached = this.reconciliationTabsService.getFilteredBoOnly();
-      if (cached?.length) {
-        boOnly = cached;
-      }
-    }
-
-    const expectedTotal = this.response?.totalBoOnly ?? 0;
     if (
-      boOnly.length === 0 &&
+      sessionId &&
       (this.response?.resultsPaginated || expectedTotal > 0)
     ) {
-      const sessionId =
-        this.response?.progressSessionId ||
-        this.reconciliationService.getCurrentJobId();
-      if (sessionId) {
+      const needsServerLoad =
+        boOnly.length === 0 ||
+        (expectedTotal > 0 && boOnly.length !== expectedTotal);
+      if (needsServerLoad) {
         const ecarts = await this.reconciliationService.loadBoEcartsFromSession(sessionId);
         boOnly = ecarts.boOnly;
         if (this.response) {
@@ -198,8 +202,12 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
             mismatches: ecarts.mismatches
           };
         }
-        this.reconciliationTabsService.setFilteredBoOnly(ecarts.boOnly);
         this.reconciliationTabsService.setFilteredMismatches(ecarts.mismatches);
+      }
+    } else if (boOnly.length === 0) {
+      const cached = this.reconciliationTabsService.getFilteredBoOnly();
+      if (cached?.length) {
+        boOnly = cached;
       }
     }
 
@@ -219,7 +227,22 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     return partitionEcartRecords(boOnly, ctx);
   }
 
-  private async loadBoOnly(): Promise<void> {
+  private loadBoOnly(forceReload = false): Promise<void> {
+    const signature = this.buildBoOnlyLoadSignature();
+    if (!forceReload && signature === this.lastProcessedSignature && this.filteredBoOnly.length > 0) {
+      return Promise.resolve();
+    }
+    if (this.loadBoOnlyInFlight) {
+      return this.loadBoOnlyInFlight;
+    }
+    this.loadBoOnlyInFlight = this.executeLoadBoOnly(signature).finally(() => {
+      this.loadBoOnlyInFlight = null;
+    });
+    return this.loadBoOnlyInFlight;
+  }
+
+  private async executeLoadBoOnly(signature: string): Promise<void> {
+    const generation = ++this.loadBoOnlyGeneration;
     this.isLoading = true;
     this.loadProgress = 0;
     this.cdr.markForCheck();
@@ -227,29 +250,30 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     try {
       this.syncMagicContextFromAppState();
       const allData = await this.resolveBoOnlyForDisplay();
-      this.lastProcessedSignature = `${this.response?.mismatches?.length || 0}_${this.response?.boOnly?.length || 0}_${this.appStateService.getSelectedMagicService()}_${this.appStateService.getSelectedMagicPartnerFile()}`;
+      if (generation !== this.loadBoOnlyGeneration) {
+        return;
+      }
       this.reconciliationTabsService.setFilteredBoOnly(allData);
-      await this.loadBoOnlyProgressively(allData);
+      await this.loadBoOnlyProgressively(allData, generation);
+      if (generation === this.loadBoOnlyGeneration) {
+        this.lastProcessedSignature = signature;
+      }
     } finally {
-      this.isLoading = false;
-      this.cdr.markForCheck();
-      setTimeout(() => this.updateTableScrollState(), 100);
+      if (generation === this.loadBoOnlyGeneration) {
+        this.isLoading = false;
+        this.cdr.markForCheck();
+        setTimeout(() => this.updateTableScrollState(), 100);
+      }
     }
   }
 
-  private applyCachedBoOnly(cached: Record<string, string>[]): void {
-    this.filteredBoOnly = [...cached];
-    this.loadProgress = 100;
-    this.initializeColumns();
-    this.applyFilters();
-    this.isLoading = false;
-    this.cdr.markForCheck();
-  }
-
-  private async loadBoOnlyProgressively(allData: Record<string, string>[]): Promise<void> {
+  private async loadBoOnlyProgressively(allData: Record<string, string>[], generation: number): Promise<void> {
       const total = allData.length;
       
       if (total === 0) {
+        if (generation !== this.loadBoOnlyGeneration) {
+          return;
+        }
         this.filteredBoOnly = [];
         this.loadProgress = 100;
         this.initializeColumns();
@@ -268,9 +292,15 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
         this.applyFilters();
         this.cdr.markForCheck();
         await new Promise(resolve => setTimeout(resolve, 0));
+        if (generation !== this.loadBoOnlyGeneration) {
+          return;
+        }
       }
       
       for (let i = 50; i < total; i += chunkSize) {
+        if (generation !== this.loadBoOnlyGeneration) {
+          return;
+        }
         const chunk = allData.slice(i, Math.min(i + chunkSize, total));
         this.filteredBoOnly.push(...chunk);
         this.loadProgress = Math.round(((i + chunk.length) / total) * 98 + 2);
@@ -283,6 +313,9 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
       
+      if (generation !== this.loadBoOnlyGeneration) {
+        return;
+      }
       this.applyFilters();
       this.loadProgress = 100;
   }

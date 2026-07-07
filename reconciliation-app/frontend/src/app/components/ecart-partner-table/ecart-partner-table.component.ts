@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy, HostListener, ElementRef, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription, firstValueFrom } from 'rxjs';
+import { skip } from 'rxjs/operators';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ExportOptimizationService, ExportProgress, ECART_COMMENT_COLORS } from '../../services/export-optimization.service';
@@ -70,6 +71,8 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
   isLoading = false;
   loadProgress = 0;
   private lastProcessedSignature = '';
+  private loadPartnerOnlyInFlight: Promise<void> | null = null;
+  private loadPartnerOnlyGeneration = 0;
   magicServiceFilterLocked = '';
 
   // Scroll to top
@@ -104,33 +107,21 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.syncMagicContextFromAppState();
 
-    // Fallback: afficher le cache ReconciliationTabsService si disponible.
-    const cached = this.reconciliationTabsService.getFilteredPartnerOnly();
-    if (cached && cached.length > 0) {
-      this.filteredPartnerOnly = [...cached];
-      this.loadProgress = 100;
-      this.initializeColumns();
-      this.applyFilters();
-      this.isLoading = false;
-      this.cdr.markForCheck();
-    }
-
     this.subscription.add(
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
         if (response) {
           this.response = response;
           this.syncMagicContextFromAppState();
-          this.loadPartnerOnly();
+          void this.loadPartnerOnly();
         }
       })
     );
 
     this.subscription.add(
-      this.appStateService.selectedMagicService$.subscribe(() => {
+      this.appStateService.selectedMagicService$.pipe(skip(1)).subscribe(() => {
         this.syncMagicContextFromAppState();
         if (this.response) {
-          this.lastProcessedSignature = '';
-          this.loadPartnerOnly();
+          void this.loadPartnerOnly(true);
         }
       })
     );
@@ -166,30 +157,43 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
     }
   }
 
+  private buildPartnerOnlyLoadSignature(): string {
+    const sessionId =
+      this.response?.progressSessionId ||
+      this.reconciliationService.getCurrentJobId() ||
+      '';
+    return [
+      sessionId,
+      this.response?.totalPartnerOnly ?? 0,
+      this.appStateService.getSelectedMagicService(),
+      this.appStateService.getSelectedMagicPartnerFile()
+    ].join('|');
+  }
+
   private async resolvePartnerOnlyForDisplay(): Promise<Record<string, string>[]> {
+    const sessionId =
+      this.response?.progressSessionId ||
+      this.reconciliationService.getCurrentJobId();
+    const expectedTotal = this.response?.totalPartnerOnly ?? 0;
     let partnerOnly = this.response?.partnerOnly || [];
 
-    if (partnerOnly.length === 0) {
-      const cached = this.reconciliationTabsService.getFilteredPartnerOnly();
-      if (cached?.length) {
-        partnerOnly = cached;
-      }
-    }
-
-    const expectedTotal = this.response?.totalPartnerOnly ?? 0;
     if (
-      partnerOnly.length === 0 &&
+      sessionId &&
       (this.response?.resultsPaginated || expectedTotal > 0)
     ) {
-      const sessionId =
-        this.response?.progressSessionId ||
-        this.reconciliationService.getCurrentJobId();
-      if (sessionId) {
+      const needsServerLoad =
+        partnerOnly.length === 0 ||
+        (expectedTotal > 0 && partnerOnly.length !== expectedTotal);
+      if (needsServerLoad) {
         partnerOnly = await this.reconciliationService.loadPartnerOnlyFromSession(sessionId);
         if (this.response) {
           this.response = { ...this.response, partnerOnly };
         }
-        this.reconciliationTabsService.setFilteredPartnerOnly(partnerOnly);
+      }
+    } else if (partnerOnly.length === 0) {
+      const cached = this.reconciliationTabsService.getFilteredPartnerOnly();
+      if (cached?.length) {
+        partnerOnly = cached;
       }
     }
 
@@ -209,7 +213,22 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
     return partitionEcartRecords(partnerOnly, ctx);
   }
 
-  private async loadPartnerOnly(): Promise<void> {
+  private loadPartnerOnly(forceReload = false): Promise<void> {
+    const signature = this.buildPartnerOnlyLoadSignature();
+    if (!forceReload && signature === this.lastProcessedSignature && this.filteredPartnerOnly.length > 0) {
+      return Promise.resolve();
+    }
+    if (this.loadPartnerOnlyInFlight) {
+      return this.loadPartnerOnlyInFlight;
+    }
+    this.loadPartnerOnlyInFlight = this.executeLoadPartnerOnly(signature).finally(() => {
+      this.loadPartnerOnlyInFlight = null;
+    });
+    return this.loadPartnerOnlyInFlight;
+  }
+
+  private async executeLoadPartnerOnly(signature: string): Promise<void> {
+    const generation = ++this.loadPartnerOnlyGeneration;
     this.isLoading = true;
     this.loadProgress = 0;
     this.cdr.markForCheck();
@@ -217,14 +236,21 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
     try {
       this.syncMagicContextFromAppState();
       const allData = await this.resolvePartnerOnlyForDisplay();
-      this.lastProcessedSignature = `${this.response?.partnerOnly?.length || 0}_${this.appStateService.getSelectedMagicService()}_${this.appStateService.getSelectedMagicPartnerFile()}`;
+      if (generation !== this.loadPartnerOnlyGeneration) {
+        return;
+      }
       this.reconciliationTabsService.setFilteredPartnerOnly(allData);
-      await this.loadPartnerOnlyProgressively(allData);
+      await this.loadPartnerOnlyProgressively(allData, generation);
+      if (generation === this.loadPartnerOnlyGeneration) {
+        this.lastProcessedSignature = signature;
+      }
     } finally {
-      this.isLoading = false;
-      this.loadProgress = 100;
-      this.cdr.markForCheck();
-      setTimeout(() => this.updateTableScrollState(), 100);
+      if (generation === this.loadPartnerOnlyGeneration) {
+        this.isLoading = false;
+        this.loadProgress = 100;
+        this.cdr.markForCheck();
+        setTimeout(() => this.updateTableScrollState(), 100);
+      }
     }
   }
 
@@ -232,10 +258,13 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
     return extractRecordAmount(record);
   }
 
-  private async loadPartnerOnlyProgressively(allData: Record<string, string>[]): Promise<void> {
+  private async loadPartnerOnlyProgressively(allData: Record<string, string>[], generation: number): Promise<void> {
       const total = allData.length;
       
       if (total === 0) {
+        if (generation !== this.loadPartnerOnlyGeneration) {
+          return;
+        }
         this.filteredPartnerOnly = [];
         this.loadProgress = 100;
         this.initializeColumns();
@@ -254,9 +283,15 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
         this.applyFilters();
         this.cdr.markForCheck();
         await new Promise(resolve => setTimeout(resolve, 0));
+        if (generation !== this.loadPartnerOnlyGeneration) {
+          return;
+        }
       }
       
       for (let i = 50; i < total; i += chunkSize) {
+        if (generation !== this.loadPartnerOnlyGeneration) {
+          return;
+        }
         const chunk = allData.slice(i, Math.min(i + chunkSize, total));
         this.filteredPartnerOnly.push(...chunk);
         this.loadProgress = Math.round(((i + chunk.length) / total) * 98 + 2);
@@ -269,6 +304,9 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
       
+      if (generation !== this.loadPartnerOnlyGeneration) {
+        return;
+      }
       this.applyFilters();
   }
 
