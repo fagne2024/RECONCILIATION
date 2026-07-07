@@ -319,7 +319,8 @@
     border-radius: var(--radius);
     margin-top: 20px;
     box-shadow: var(--shadow);
-    overflow: hidden;
+    // Keep tooltips visible outside the panel bounds.
+    overflow: visible;
     width: 100%;
   }
 
@@ -625,7 +626,8 @@
     border-radius: 8px;
     white-space: normal;
     width: 230px;
-    z-index: 6;
+    // Ensure tooltip stays above sticky headers/columns and chart.
+    z-index: 50;
     box-shadow: var(--shadow);
     text-align: left;
     font-weight: 400;

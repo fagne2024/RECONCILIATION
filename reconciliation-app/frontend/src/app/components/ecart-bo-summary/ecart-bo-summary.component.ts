@@ -917,17 +917,20 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     }
 
     if (this.selectedDateFrom) {
-      const dateFrom = new Date(this.selectedDateFrom);
+      const dateFrom = this.parseDate(this.selectedDateFrom);
       if (!item.date) return false;
-      const itemDate = new Date(item.date.split('T')[0]);
+      const itemDate = this.parseDate(item.date.split('T')[0]);
+      if (!dateFrom || !itemDate) return false;
       if (itemDate < dateFrom) return false;
     }
 
     if (this.selectedDateTo) {
-      const dateTo = new Date(this.selectedDateTo);
+      const dateTo = this.parseDate(this.selectedDateTo);
+      if (!dateTo) return false;
       dateTo.setHours(23, 59, 59, 999);
       if (!item.date) return false;
-      const itemDate = new Date(item.date.split('T')[0]);
+      const itemDate = this.parseDate(item.date.split('T')[0]);
+      if (!itemDate) return false;
       if (itemDate > dateTo) return false;
     }
 
@@ -1800,6 +1803,17 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       
       // Format YYYY-MM-DD
       if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+        // Important : "YYYY-MM-DD" est interprété en UTC par JS → décalage de jour possible.
+        // On force une interprétation locale (minuit local) pour des comparaisons J-1/J+1.
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+        if (m) {
+          const y = Number(m[1]);
+          const mo = Number(m[2]);
+          const d = Number(m[3]);
+          if (!isNaN(y) && !isNaN(mo) && !isNaN(d)) {
+            return new Date(y, mo - 1, d);
+          }
+        }
         return new Date(dateStr);
       }
       
