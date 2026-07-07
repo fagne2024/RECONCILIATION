@@ -590,6 +590,15 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       const bos = group.filter(i => this.normalizeSummaryEnv(i.env) === 'BO');
       const partners = group.filter(i => this.normalizeSummaryEnv(i.env) === 'PARTENAIRE');
       if (!bos.length || !partners.length) continue;
+
+      // Si un token est présent côté BO et PARTENAIRE, la correspondance existe.
+      // Le statut doit donc être OK (sinon on affiche "en cours" alors que la paire est déjà liée).
+      for (const item of group) {
+        if (item.statut !== 'ok') {
+          item.statut = 'ok';
+        }
+      }
+
       const bo = bos[0];
       const partner = partners[0];
       bo.linkedId = partner.id;
