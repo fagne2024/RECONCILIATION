@@ -1,3 +1,6 @@
+Certs/
+reconciliation-app/watch-folder/
+
 # Dependencies
 node_modules/
 npm-debug.log*
