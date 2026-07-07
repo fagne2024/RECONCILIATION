@@ -55,6 +55,7 @@ type SummaryGroupAccumulator = {
   date: string;
   recordCount: number;
   totalMontant: number;
+  env: 'BO' | 'PARTENAIRE';
   multiAgenceRecords?: Record<string, string>[];
 };
 
@@ -716,13 +717,39 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     const getValue = (row: Record<string, string>, aliasGroup: readonly string[]): string =>
       getRecordValueByAliases(row, aliasGroup);
 
+    const getPlatform = (row: Record<string, string>): 'BO' | 'PARTENAIRE' => {
+      // Le rapport peut contenir une colonne "Plateforme/Platform" (BO vs PARTENAIRE).
+      // On tolère plusieurs variantes car ce champ ne fait pas partie des alias bilingues globaux.
+      const candidates = [
+        row['Plateforme'],
+        row['plateforme'],
+        row['PLATEFORME'],
+        row['Platform'],
+        row['platform'],
+        row['PLATFORM'],
+        row['Plateform'],
+        row['plateform'],
+        row['Env'],
+        row['env']
+      ]
+        .map(v => (v != null ? String(v).trim() : ''))
+        .filter(Boolean);
+      const raw = candidates[0] || '';
+      const norm = raw.toUpperCase();
+      if (norm.includes('PARTENAIRE') || norm.includes('PARTNER')) {
+        return 'PARTENAIRE';
+      }
+      return 'BO';
+    };
+
     const agence = getValue(record, BILINGUAL_COLUMN_ALIASES.agence) || 'Non spécifié';
     const service = getValue(record, BILINGUAL_COLUMN_ALIASES.service) || 'Non spécifié';
     const pays = getValue(record, BILINGUAL_COLUMN_ALIASES.pays) || 'Non spécifié';
     const date = getValue(record, BILINGUAL_COLUMN_ALIASES.date) || '';
     const montantStr = getValue(record, BILINGUAL_COLUMN_ALIASES.montant);
     const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
-    const key = `${agence}|${service}|${pays}`;
+    const env = getPlatform(record);
+    const key = `${env}|${agence}|${service}|${pays}`;
     const isMultiAgence = agence === 'multiAgence';
 
     let group = groupedByAgence.get(key);
@@ -734,6 +761,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         date,
         recordCount: 0,
         totalMontant: 0,
+        env,
         ...(isMultiAgence ? { multiAgenceRecords: [] } : {})
       };
       groupedByAgence.set(key, group);
@@ -751,6 +779,32 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     const getValue = (record: Record<string, string>, aliasGroup: readonly string[]): string =>
       getRecordValueByAliases(record, aliasGroup);
 
+    const getPlatform = (row: Record<string, string>, fallback: 'BO' | 'PARTENAIRE'): 'BO' | 'PARTENAIRE' => {
+      const candidates = [
+        row['Plateforme'],
+        row['plateforme'],
+        row['PLATEFORME'],
+        row['Platform'],
+        row['platform'],
+        row['PLATFORM'],
+        row['Plateform'],
+        row['plateform'],
+        row['Env'],
+        row['env']
+      ]
+        .map(v => (v != null ? String(v).trim() : ''))
+        .filter(Boolean);
+      const raw = candidates[0] || '';
+      const norm = raw.toUpperCase();
+      if (norm.includes('PARTENAIRE') || norm.includes('PARTNER')) {
+        return 'PARTENAIRE';
+      }
+      if (norm.includes('BO')) {
+        return 'BO';
+      }
+      return fallback;
+    };
+
     const items: EcartBoSummaryItem[] = [];
     for (const group of groupedByAgence.values()) {
       if (group.agence === 'multiAgence' && group.multiAgenceRecords?.length) {
@@ -761,6 +815,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           const date = getValue(record, BILINGUAL_COLUMN_ALIASES.date) || group.date;
           const montantStr = getValue(record, BILINGUAL_COLUMN_ALIASES.montant);
           const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
+          const env = getPlatform(record, group.env);
           items.push({
             selectionKey: this.createSelectionKey('generated'),
             date,
@@ -770,7 +825,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
             nombre: 1,
             montant,
             statut: 'en cours',
-            env: 'BO',
+            env,
             envCode: this.getEnvCodeForNewRows(),
             originalRecords: [],
             token: undefined
@@ -786,7 +841,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           nombre: group.recordCount,
           montant: group.totalMontant,
           statut: 'en cours',
-          env: 'BO',
+          env: group.env,
           envCode: this.getEnvCodeForNewRows(),
           originalRecords: [],
           token: undefined
