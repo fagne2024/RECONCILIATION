@@ -95,10 +95,9 @@ export class EcartBoComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
     
     try {
-      const mismatches = this.response?.mismatches || [];
       const boOnly = this.response?.boOnly || [];
-      const allData = [...mismatches, ...boOnly];
-      const total = allData.length;
+      const allData = [...boOnly];
+      const total = boOnly.length;
       
       if (total === 0) {
         this.filteredBoOnly = [];
@@ -157,9 +156,8 @@ export class EcartBoComponent implements OnInit, OnDestroy {
 
   private buildSearchIndex(): void {
     this.searchIndex.clear();
-    const mismatches = this.response?.mismatches || [];
     const boOnly = this.response?.boOnly || [];
-    const allMismatches = [...mismatches, ...boOnly];
+    const allMismatches = [...boOnly];
     
     allMismatches.forEach((record, index) => {
       // Créer une chaîne de recherche pour ce record
@@ -180,9 +178,8 @@ export class EcartBoComponent implements OnInit, OnDestroy {
   }
   
   private performSearch(searchTerm: string): void {
-    const mismatches = this.response?.mismatches || [];
     const boOnly = this.response?.boOnly || [];
-    const allMismatches = [...mismatches, ...boOnly];
+    const allMismatches = [...boOnly];
     
     if (!searchTerm || !searchTerm.trim()) {
       // Pas de recherche : afficher tous les éléments

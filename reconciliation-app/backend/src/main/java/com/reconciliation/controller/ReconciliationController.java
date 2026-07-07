@@ -43,6 +43,8 @@ import com.reconciliation.entity.ReconciliationOkEntity;
 import com.reconciliation.entity.ReconciliationStatusEntity;
 import com.reconciliation.repository.ReconciliationStatusRepository;
 import com.reconciliation.service.ReconciliationLockService;
+import com.reconciliation.service.ReconciliationAgencySummaryService;
+import com.reconciliation.service.ReconciliationEcartBoLinesService;
 
 @Slf4j
 @RestController
@@ -78,6 +80,10 @@ public class ReconciliationController {
     private ReconciliationStatusRepository reconStatusRepository;
     @Autowired
     private ReconciliationLockService lockService;
+    @Autowired
+    private ReconciliationAgencySummaryService reconciliationAgencySummaryService;
+    @Autowired
+    private ReconciliationEcartBoLinesService reconciliationEcartBoLinesService;
 
     @GetMapping("/test")
     public ResponseEntity<String> test() {
@@ -734,6 +740,112 @@ public class ReconciliationController {
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("success", false);
             errorResponse.put("error", "Impossible de récupérer le résumé: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    /**
+     * Agrège le résumé par agence côté serveur (évite N requêtes paginées volumineuses).
+     */
+    @GetMapping("/results/agency-summary")
+    public ResponseEntity<Map<String, Object>> getAgencySummary(@RequestParam String sessionId) {
+        try {
+            log.info("📋 Agrégation résumé agence pour le job: {}", sessionId);
+
+            Optional<ReconciliationResponse> resultOpt = jobService.getCachedResult(sessionId);
+            if (resultOpt.isEmpty()) {
+                Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+                if (jobOpt.isEmpty()) {
+                    return ResponseEntity.notFound().build();
+                }
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("success", false);
+                errorResponse.put("error", "Aucun résultat disponible");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+
+            Map<String, Object> payload = reconciliationAgencySummaryService.buildAgencySummary(resultOpt.get());
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> summary = (List<Map<String, Object>>) payload.get("summary");
+            log.info("✅ Résumé agence agrégé pour {} — {} lignes", sessionId, summary != null ? summary.size() : 0);
+            return ResponseEntity.ok(payload);
+        } catch (Exception e) {
+            log.error("❌ Erreur agrégation résumé agence pour {}: {}", sessionId, e.getMessage());
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("error", "Impossible d'agréger le résumé: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    /**
+     * Retourne tous les écarts BO (boOnly + mismatches) en une requête légère.
+     */
+    @GetMapping("/results/ecart-bo-ecarts")
+    public ResponseEntity<Map<String, Object>> getEcartBoEcarts(@RequestParam String sessionId) {
+        try {
+            log.info("📋 Récupération écarts BO légers pour le job: {}", sessionId);
+            Optional<ReconciliationJobService.EcartsSlice> ecartsOpt = jobService.getCachedEcarts(sessionId);
+            if (ecartsOpt.isEmpty()) {
+                Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+                if (jobOpt.isEmpty()) {
+                    return ResponseEntity.notFound().build();
+                }
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("success", false);
+                errorResponse.put("error", "Aucun résultat disponible");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            ReconciliationJobService.EcartsSlice ecarts = ecartsOpt.get();
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("boOnly", ecarts.boOnly());
+            response.put("mismatches", ecarts.mismatches());
+            response.put("totalBoOnly", ecarts.boOnly().size());
+            response.put("totalMismatches", ecarts.mismatches().size());
+            log.info("✅ {} boOnly + {} mismatches pour {}", ecarts.boOnly().size(), ecarts.mismatches().size(), sessionId);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("❌ Erreur écarts BO pour {}: {}", sessionId, e.getMessage());
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("error", "Impossible de récupérer les écarts BO: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    /**
+     * Agrège les écarts BO en lignes prêtes pour ecart-bo-summary (côté serveur).
+     */
+    @GetMapping("/results/ecart-bo-summary-lines")
+    public ResponseEntity<Map<String, Object>> getEcartBoSummaryLines(@RequestParam String sessionId) {
+        try {
+            log.info("📋 Agrégation lignes ecart-bo-summary pour le job: {}", sessionId);
+            Optional<ReconciliationJobService.EcartsSlice> ecartsOpt = jobService.getCachedEcarts(sessionId);
+            if (ecartsOpt.isEmpty()) {
+                Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+                if (jobOpt.isEmpty()) {
+                    return ResponseEntity.notFound().build();
+                }
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("success", false);
+                errorResponse.put("error", "Aucun résultat disponible");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            ReconciliationJobService.EcartsSlice ecarts = ecartsOpt.get();
+            Map<String, Object> payload = reconciliationEcartBoLinesService.buildSummaryLines(
+                ecarts.boOnly(),
+                ecarts.mismatches()
+            );
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> lines = (List<Map<String, Object>>) payload.get("lines");
+            log.info("✅ {} ligne(s) ecart-bo-summary pour {}", lines != null ? lines.size() : 0, sessionId);
+            return ResponseEntity.ok(payload);
+        } catch (Exception e) {
+            log.error("❌ Erreur agrégation ecart-bo-summary pour {}: {}", sessionId, e.getMessage());
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("error", "Impossible d'agréger les écarts BO: " + e.getMessage());
             return ResponseEntity.badRequest().body(errorResponse);
         }
     }

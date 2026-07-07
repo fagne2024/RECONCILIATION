@@ -334,10 +334,7 @@ export class AutoProcessingModelsComponent implements OnInit {
           console.log('📋 Modèles BO disponibles:', this.availableBOModels);
           
           this.preloadBOModelColumns();
-          // Charger les règles de traitement des colonnes pour chaque modèle
-          this.models.forEach(model => {
-            this.loadColumnProcessingRules(model.id);
-          });
+          // Les règles de colonnes sont chargées à l'édition du modèle, pas ici (évite les courses async)
           
           // Initialiser les filtres et appliquer le filtrage
           this.initializeFilters();
@@ -1144,6 +1141,49 @@ export class AutoProcessingModelsComponent implements OnInit {
     }, { emitEvent: false });
   }
 
+  /** Prépare le payload API (JSON propre, sans champs techniques). */
+  private buildModelSavePayload(formValue: any): AutoProcessingModel {
+    const payload: AutoProcessingModel = {
+      name: formValue.name,
+      filePattern: formValue.filePattern,
+      fileType: formValue.fileType,
+      autoApply: formValue.autoApply,
+      templateFile: formValue.templateFile,
+      reconciliationKeys: JSON.parse(JSON.stringify({
+        partnerKeys: formValue.reconciliationKeys?.partnerKeys || [],
+        boKeys: formValue.reconciliationKeys?.boKeys || [],
+        boModels: formValue.reconciliationKeys?.boModels || [],
+        boModelKeys: formValue.reconciliationKeys?.boModelKeys || {},
+        boTreatments: formValue.reconciliationKeys?.boTreatments || {},
+        partnerConditionalKeys: this.buildPartnerConditionalKeysConfig(),
+        boConditionalKeys: this.buildBoConditionalKeysConfig()
+      })),
+      reconciliationLogic: {
+        type: formValue.logicType || 'STANDARD',
+        parameters: {
+          expectedRatio: formValue.expectedRatio || '1:1',
+          tolerance: formValue.tolerance || 0.0,
+          description: formValue.logicDescription || ''
+        }
+      },
+      correspondenceRules: {
+        rules: this.correspondenceRules
+      },
+      comparisonColumns: {
+        columns: this.comparisonColumns
+      },
+      preProcessingConfig: JSON.parse(JSON.stringify(this.buildPreProcessingConfig()))
+    };
+
+    if (this.editingModel?.modelId) {
+      payload.modelId = this.editingModel.modelId;
+    } else if (this.editingModel?.id && !/^\d+$/.test(String(this.editingModel.id))) {
+      payload.modelId = this.editingModel.id;
+    }
+
+    return payload;
+  }
+
   saveModel(): void {
     // Utiliser notre logique de validation personnalisée
     if (this.isFormValid()) {
@@ -1157,39 +1197,11 @@ export class AutoProcessingModelsComponent implements OnInit {
       }
       
       // Pour la création, ne pas inclure l'id
-      const modelData: any = {
-        name: formValue.name,
-        filePattern: formValue.filePattern,
-        fileType: formValue.fileType,
-        autoApply: formValue.autoApply,
-        templateFile: formValue.templateFile,
-        reconciliationKeys: {
-          partnerKeys: formValue.reconciliationKeys.partnerKeys || [],
-          boKeys: formValue.reconciliationKeys.boKeys || [],
-          boModels: formValue.reconciliationKeys.boModels || [],
-          boModelKeys: formValue.reconciliationKeys.boModelKeys || {},
-          boTreatments: formValue.reconciliationKeys.boTreatments || {},
-          partnerConditionalKeys: this.buildPartnerConditionalKeysConfig(),
-          boConditionalKeys: this.buildBoConditionalKeysConfig()
-        },
-        columnProcessingRules: this.columnProcessingRules, // Ajouter les règles de traitement
-        // Nouvelles configurations autonomes
-        reconciliationLogic: {
-          type: formValue.logicType || 'STANDARD',
-          parameters: {
-            expectedRatio: formValue.expectedRatio || '1:1',
-            tolerance: formValue.tolerance || 0.0,
-            description: formValue.logicDescription || ''
-          }
-        },
-        correspondenceRules: {
-          rules: this.correspondenceRules
-        },
-        comparisonColumns: {
-          columns: this.comparisonColumns
-        },
-        preProcessingConfig: this.buildPreProcessingConfig()
-      };
+      const modelData = this.buildModelSavePayload(formValue);
+      const rulesToSave = this.columnProcessingRules.map(rule => {
+        const { id, ...rest } = rule;
+        return rest;
+      });
 
       // 🔧 SOLUTION: Ne pas inclure les champs de base de données pour la création
       // if (this.editingModel) {
@@ -1211,9 +1223,10 @@ export class AutoProcessingModelsComponent implements OnInit {
       });
       
       if (this.editingModel) {
-        // Mise à jour du modèle existant
-        // Le backend utilise l'ID numérique (Long) dans l'URL, pas le modelId
-        const modelIdToUse = this.editingModel.id || this.editingModel.modelId;
+        const modelIdToUse =
+          this.editingModel.dbId != null
+            ? String(this.editingModel.dbId)
+            : (this.editingModel.modelId || this.editingModel.id);
         if (!modelIdToUse) {
           console.error('❌ Erreur: Aucun ID disponible pour la mise à jour du modèle');
           console.error('   - editingModel:', this.editingModel);
@@ -1237,15 +1250,12 @@ export class AutoProcessingModelsComponent implements OnInit {
         const wasDuplicate = this.isDuplicatingModel;
         const actionLabel = wasEdit ? 'modifié' : (wasDuplicate ? 'dupliqué' : 'créé');
 
-        // Sauvegarder les règles de traitement des colonnes si elles existent
-        // Note: Les règles sont déjà incluses dans modelData.columnProcessingRules
-        // mais on les sauvegarde séparément pour s'assurer qu'elles sont bien persistées
         const finalModelId = savedModel.modelId || savedModel.id;
-        if (this.columnProcessingRules.length > 0 && finalModelId) {
-          this.autoProcessingService.saveColumnProcessingRulesBatch(finalModelId, this.columnProcessingRules)
+        if (rulesToSave.length > 0 && finalModelId) {
+          this.autoProcessingService.saveColumnProcessingRulesBatch(finalModelId, rulesToSave)
             .then((savedRules) => {
               console.log('✅ Règles de traitement sauvegardées:', savedRules.length);
-              this.successMessage = `Modèle ${actionLabel} avec ${this.columnProcessingRules.length} règle(s) de traitement`;
+              this.successMessage = `Modèle ${actionLabel} avec ${rulesToSave.length} règle(s) de traitement`;
             })
             .catch(error => {
               console.error('❌ Erreur lors de la sauvegarde des règles:', error);
@@ -1273,7 +1283,14 @@ export class AutoProcessingModelsComponent implements OnInit {
         this.loadModels();
       }).catch(error => {
         console.error('Erreur lors de la sauvegarde:', error);
-        this.errorMessage = 'Erreur lors de la sauvegarde du modèle';
+        console.error('Détail serveur:', error?.error);
+        const backendMessage =
+          error?.error?.error ||
+          error?.error?.message ||
+          error?.message;
+        this.errorMessage = backendMessage
+          ? `Erreur lors de la sauvegarde du modèle : ${backendMessage}`
+          : 'Erreur lors de la sauvegarde du modèle';
       });
     }
   }
@@ -1364,7 +1381,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     if (isDuplicate) {
       this.loadColumnProcessingRulesForDuplicate(model, sourceModel.columnProcessingRules);
     } else {
-      this.loadColumnProcessingRules(model.id!);
+      this.loadColumnProcessingRules(model.modelId || model.id!);
     }
 
     // Charger les configurations autonomes

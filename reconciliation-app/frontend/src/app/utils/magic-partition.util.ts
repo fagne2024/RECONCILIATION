@@ -73,3 +73,37 @@ export function filterRecordsByMagicPartition(
         recordMatchesMagicPartition(record, service, partnerFile, magicTaggedDataset)
     );
 }
+
+/** Contexte de cloisonnement partagé entre /results, /ecart-bo et /ecart-partner. */
+export interface MagicPartitionContext {
+    service: string;
+    partnerFile: string;
+}
+
+export function resolveMagicPartitionContext(sources: {
+    appStateService?: string | null;
+    appStatePartnerFile?: string | null;
+    tabsContext?: MagicPartitionContext | null;
+    fallbackService?: string | null;
+    fallbackPartnerFile?: string | null;
+}): MagicPartitionContext {
+    const tabs = sources.tabsContext || { service: '', partnerFile: '' };
+    return {
+        service: String(
+            sources.appStateService || tabs.service || sources.fallbackService || ''
+        ).trim(),
+        partnerFile: String(
+            sources.appStatePartnerFile || tabs.partnerFile || sources.fallbackPartnerFile || ''
+        ).trim()
+    };
+}
+
+export function partitionEcartRecords(
+    records: Record<string, string>[],
+    context: MagicPartitionContext
+): Record<string, string>[] {
+    if (!context.service && !context.partnerFile) {
+        return records;
+    }
+    return filterRecordsByMagicPartition(records, context.service, context.partnerFile);
+}

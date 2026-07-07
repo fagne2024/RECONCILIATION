@@ -13,8 +13,11 @@ import { TrxSfData } from '../../services/trx-sf.service';
 import { ImpactOP } from '../../models/impact-op.model';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
+import { ReconciliationService } from '../../services/reconciliation.service';
+import { EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
+import { buildEcartBoPendingLinesFromRecords } from '../../utils/ecart-bo-pending-lines.util';
 import { extractRecordAmount } from '../../utils/record-amount.util';
-import { filterRecordsByMagicPartition } from '../../utils/magic-partition.util';
+import { partitionEcartRecords, resolveMagicPartitionContext } from '../../utils/magic-partition.util';
 
 @Component({
   selector: 'app-ecart-bo-table',
@@ -95,6 +98,8 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     private trxSfService: TrxSfService,
     private impactOPService: ImpactOPService,
     private reconciliationTabsService: ReconciliationTabsService,
+    private reconciliationService: ReconciliationService,
+    private ecartBoSummaryService: EcartBoSummaryService,
     private el: ElementRef
   ) {}
 
@@ -106,6 +111,14 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.syncMagicContextFromAppState();
+
+    // Fallback: si l'utilisateur arrive ici depuis une vue qui a déjà alimenté ReconciliationTabsService
+    // (ou si AppStateService est temporairement vide), on affiche immédiatement le cache.
+    const cached = this.reconciliationTabsService.getFilteredBoOnly();
+    if (cached && cached.length > 0) {
+      this.applyCachedBoOnly(cached);
+    }
+
     this.subscription.add(
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
         if (response) {
@@ -157,24 +170,53 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     }
   }
 
-  private resolveBoOnlyForDisplay(): Record<string, string>[] {
-    const mismatches = this.response?.mismatches || [];
-    const boOnly = this.response?.boOnly || [];
-    const allData = [...mismatches, ...boOnly];
-    const service = this.appStateService.getSelectedMagicService()
-      || this.reconciliationTabsService.getMagicViewContext().service;
-    const partnerFile = this.appStateService.getSelectedMagicPartnerFile()
-      || this.reconciliationTabsService.getMagicViewContext().partnerFile;
+  private async resolveBoOnlyForDisplay(): Promise<Record<string, string>[]> {
+    let boOnly = this.response?.boOnly || [];
 
-    if (!service && !partnerFile) {
-      return allData;
+    if (boOnly.length === 0) {
+      const cached = this.reconciliationTabsService.getFilteredBoOnly();
+      if (cached?.length) {
+        boOnly = cached;
+      }
     }
 
-    this.reconciliationTabsService.setMagicViewContext(service || '', partnerFile || '');
-    this.magicServiceFilterLocked = (service || '').trim();
+    const expectedTotal = this.response?.totalBoOnly ?? 0;
+    if (
+      boOnly.length === 0 &&
+      (this.response?.resultsPaginated || expectedTotal > 0)
+    ) {
+      const sessionId =
+        this.response?.progressSessionId ||
+        this.reconciliationService.getCurrentJobId();
+      if (sessionId) {
+        const ecarts = await this.reconciliationService.loadBoEcartsFromSession(sessionId);
+        boOnly = ecarts.boOnly;
+        if (this.response) {
+          this.response = {
+            ...this.response,
+            boOnly: ecarts.boOnly,
+            mismatches: ecarts.mismatches
+          };
+        }
+        this.reconciliationTabsService.setFilteredBoOnly(ecarts.boOnly);
+        this.reconciliationTabsService.setFilteredMismatches(ecarts.mismatches);
+      }
+    }
 
-    const strictFiltered = filterRecordsByMagicPartition(allData, service || '', partnerFile || '');
-    return strictFiltered;
+    const ctx = resolveMagicPartitionContext({
+      appStateService: this.appStateService.getSelectedMagicService(),
+      appStatePartnerFile: this.appStateService.getSelectedMagicPartnerFile(),
+      tabsContext: this.reconciliationTabsService.getMagicViewContext()
+    });
+
+    if (!ctx.service && !ctx.partnerFile) {
+      return boOnly;
+    }
+
+    this.reconciliationTabsService.setMagicViewContext(ctx.service, ctx.partnerFile);
+    this.magicServiceFilterLocked = ctx.service;
+
+    return partitionEcartRecords(boOnly, ctx);
   }
 
   private async loadBoOnly(): Promise<void> {
@@ -184,7 +226,7 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
 
     try {
       this.syncMagicContextFromAppState();
-      const allData = this.resolveBoOnlyForDisplay();
+      const allData = await this.resolveBoOnlyForDisplay();
       this.lastProcessedSignature = `${this.response?.mismatches?.length || 0}_${this.response?.boOnly?.length || 0}_${this.appStateService.getSelectedMagicService()}_${this.appStateService.getSelectedMagicPartnerFile()}`;
       this.reconciliationTabsService.setFilteredBoOnly(allData);
       await this.loadBoOnlyProgressively(allData);
@@ -1224,6 +1266,13 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   }
 
   goToSummary(): void {
+    const records = this.filteredBoOnly.length > 0
+      ? this.filteredBoOnly
+      : (this.reconciliationTabsService.getFilteredBoOnly() || []);
+    const pendingLines = buildEcartBoPendingLinesFromRecords(records);
+    if (pendingLines.length > 0) {
+      this.ecartBoSummaryService.setPendingLinesFromEcartBo(pendingLines, 'ecart-bo');
+    }
     this.router.navigate(['/ecart-bo-summary']);
   }
 

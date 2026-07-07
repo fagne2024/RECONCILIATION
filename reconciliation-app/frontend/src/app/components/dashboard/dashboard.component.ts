@@ -36,6 +36,7 @@ import {
     resolveTraitementKind,
     TraitementKind
 } from '../../shared/result8rec-audit-display';
+import { countriesMatch, countryDisplayLabel } from '../../utils/country-codes.util';
 
 export type DashboardMetric = 'volume' | 'transactions' | 'revenu';
 
@@ -443,6 +444,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
             return ie === 'TOTAL';
         }
         return ie === te || ie === 'TOTAL';
+    }
+
+    /** Pays distincts pour les filtres : libellés complets uniquement (GA → Gabon, etc.). */
+    private normalizeCountryFilterOptions(countries: string[]): string[] {
+        return [...new Set((countries || []).map(c => countryDisplayLabel(c)).filter(c => c))].sort();
     }
 
     /**
@@ -1389,7 +1395,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
             .subscribe({
                 next: data => {
                     const rowsForScope = (data || []).filter(item => {
-                        if (!item.country || item.country !== country) {
+                        if (!item.country || !countriesMatch(item.country, country)) {
                             return false;
                         }
                         if (!dateOnly) {
@@ -1515,7 +1521,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
                     const matching = (data || []).filter(item => {
                         if (!item.country || !item.service || !item.date) return false;
-                        if (item.country !== targetCountry) return false;
+                        if (!countriesMatch(item.country, targetCountry)) return false;
                         if (item.service !== targetService) return false;
                         if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) {
                             return false;
@@ -1953,6 +1959,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     ): void {
         const targetEnv = this.reconciliationSummaryEnv || 'ALL';
         const targetCountry = this.reconciliationSummaryCountry || '';
+        const targetCountryDisplay = targetCountry ? countryDisplayLabel(targetCountry) : '';
         const selectedService = (this.reconciliationSummaryService || '').trim();
         const { periodStartStr, periodEndExclusiveStr, eligibilityStartStr } = ctx;
 
@@ -1960,7 +1967,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         data.forEach(item => {
             if (!item.service) return;
             if (!this.matchesRecoSummaryEnv(item.env, targetEnv)) return;
-            if (targetCountry && item.country !== targetCountry) return;
+            if (targetCountryDisplay && !countriesMatch(item.country, targetCountryDisplay)) return;
             servicesSet.add(item.service);
         });
 
@@ -1968,8 +1975,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
         data.forEach(item => {
             if (!item.service) return;
             if (!this.matchesRecoSummaryEnv(item.env, targetEnv)) return;
-            if (targetCountry && item.country !== targetCountry) return;
-            const c = (item.country || '').trim();
+            if (targetCountryDisplay && !countriesMatch(item.country, targetCountryDisplay)) return;
+            const c = countryDisplayLabel(item.country);
+            if (!c) return;
             const dateOnly = this.extractResult8DateOnly(item.date);
             if (!dateOnly) return;
             const isOk = (item.status || '').trim().toUpperCase() === 'OK';
@@ -1989,17 +1997,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
         type RowKey = { service: string; country: string; label: string };
         const rowKeys: RowKey[] = [];
-        if (targetCountry) {
+        if (targetCountryDisplay) {
             const services = this.reconciliationSummaryService
                 ? allServicesForFilter.filter(s => s === this.reconciliationSummaryService)
                 : allServicesForFilter;
-            services.forEach(s => rowKeys.push({ service: s, country: targetCountry, label: s }));
+            services.forEach(s => rowKeys.push({ service: s, country: targetCountryDisplay, label: s }));
         } else {
             const byServiceCountry = new Map<string, Set<string>>();
             data.forEach(item => {
                 if (!item.service) return;
                 if (!this.matchesRecoSummaryEnv(item.env, targetEnv)) return;
-                const c = (item.country || '').trim();
+                const c = countryDisplayLabel(item.country);
                 if (!c) return;
                 if (this.reconciliationSummaryService && item.service !== this.reconciliationSummaryService) return;
                 if (!byServiceCountry.has(item.service)) byServiceCountry.set(item.service, new Set<string>());
@@ -2018,8 +2026,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
         data.forEach(item => {
             if (!item.service) return;
             if (!this.matchesRecoSummaryEnv(item.env, targetEnv)) return;
-            const c = (item.country || '').trim();
-            if (targetCountry && c !== targetCountry) return;
+            const c = countryDisplayLabel(item.country);
+            if (targetCountryDisplay && !countriesMatch(c, targetCountryDisplay)) return;
             const dateOnly = this.extractResult8DateOnly(item.date);
             if (!dateOnly) return;
             if (dateOnly < periodStartStr || dateOnly >= periodEndExclusiveStr) return;
@@ -2051,7 +2059,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     if (!item.service || item.service !== serviceName) return false;
                     if (!this.matchesRecoSummaryEnv(item.env, targetEnv)) return false;
                     if (!item.date) return false;
-                    if (rowCountry && item.country !== rowCountry) return false;
+                    if (rowCountry && !countriesMatch(item.country, rowCountry)) return false;
                     const dateOnly = this.extractResult8DateOnly(item.date);
                     return dateOnly === dayInfo.date;
                 });
@@ -2452,6 +2460,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
         const targetEnv = (this.recoViewEnv || 'ALL').trim() || 'ALL';
         const targetCountry = (this.recoViewCountry || '').trim();
+        const targetCountryDisplay = targetCountry ? countryDisplayLabel(targetCountry) : '';
 
         this.recoViewWeekDays = this.buildCalendarDaysInclusive(
             this.recoViewPeriodStart,
@@ -2462,7 +2471,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         data.forEach(item => {
             if (!item.service) return;
             if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return;
-            if (targetCountry && item.country !== targetCountry) return;
+            if (targetCountryDisplay && !countriesMatch(item.country, targetCountryDisplay)) return;
             const dateOnly = this.extractResult8DateOnly(item.date);
             if (!dateOnly || !weekDates.has(dateOnly)) return;
             if (this.recoViewSelectedDay && dateOnly !== this.recoViewSelectedDay) return;
@@ -2492,8 +2501,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
         type RowKey = { service: string; country: string; label: string };
         const rowKeys: RowKey[] = [];
-        if (targetCountry) {
-            effectiveServices.forEach(s => rowKeys.push({ service: s, country: targetCountry, label: s }));
+        if (targetCountryDisplay) {
+            effectiveServices.forEach(s => rowKeys.push({ service: s, country: targetCountryDisplay, label: s }));
         } else {
             const byServiceCountry = new Map<string, Set<string>>();
             data.forEach(item => {
@@ -2502,7 +2511,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                 const dateOnly = this.extractResult8DateOnly(item.date);
                 if (!dateOnly || !weekDates.has(dateOnly)) return;
                 if (this.recoViewSelectedDay && dateOnly !== this.recoViewSelectedDay) return;
-                const c = (item.country || '').trim();
+                const c = countryDisplayLabel(item.country);
                 if (!c) return;
                 if (this.recoViewSelectedServices.length && !this.recoViewSelectedServices.includes(item.service)) return;
                 if (!byServiceCountry.has(item.service)) byServiceCountry.set(item.service, new Set<string>());
@@ -2523,7 +2532,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     if (!item.service || item.service !== serviceName) return false;
                     if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return false;
                     if (!item.date) return false;
-                    if (rowCountry && item.country !== rowCountry) return false;
+                    if (rowCountry && !countriesMatch(item.country, rowCountry)) return false;
                     const dateOnly = this.extractResult8DateOnly(item.date);
                     return dateOnly === dayInfo.date;
                 });
@@ -2757,7 +2766,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
             if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), envEff)) {
                 return;
             }
-            if (countryEff && item.country !== countryEff) {
+            if (countryEff && !countriesMatch(item.country, countryEff)) {
                 return;
             }
             const dateOnly = this.extractResult8DateOnly(item.date);
@@ -2848,7 +2857,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
             if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), envEff)) {
                 return;
             }
-            if (countryEff && item.country !== countryEff) {
+            if (countryEff && !countriesMatch(item.country, countryEff)) {
                 return;
             }
             if (restrictByService && !serviceFilter!.includes(item.service)) {
@@ -3067,13 +3076,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
                 // Ces listes servent de base pour le cloisonnement du popup
                 this.reconciliationCountryServices = filters.countryServices || {};
                 this.reconciliationCountryEnvServices = filters.countryEnvServices || {};
-                this.releveStatusCountries = filters.countries || [];
+                this.releveStatusCountries = this.normalizeCountryFilterOptions(filters.countries || []);
                 this.allReconciliationServices = filters.services || [];
-                this.reconciliationSummaryCountries = filters.countries || [];
+                this.reconciliationSummaryCountries = this.normalizeCountryFilterOptions(filters.countries || []);
                 this.reconciliationSummaryServices = filters.services || [];
 
                 if (!this.reconciliationSummaryCountries.length) {
-                    this.reconciliationSummaryCountries = filters.countries || [];
+                    this.reconciliationSummaryCountries = this.normalizeCountryFilterOptions(filters.countries || []);
                 }
             },
             error: (err) => {

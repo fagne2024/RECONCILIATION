@@ -1,7 +1,7 @@
 import { Component, OnInit, Input, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
-import { filter } from 'rxjs/operators';
+import { filter, distinctUntilChanged, skip } from 'rxjs/operators';
 import { Observable, Subscription, firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { FormControl } from '@angular/forms';
@@ -21,7 +21,7 @@ import {
 } from '../../constants/reconciliation-env-options';
 import { LoggerService } from '../../services/logger.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
-import { countryNameFromCode } from '../../utils/country-codes.util';
+import { countriesMatch, countryNameFromCode } from '../../utils/country-codes.util';
 import {
     auditSnapshotStatutClass as statutAuditPillClassFn,
     auditSnapshotTraitementClass as traitementAuditPillClassFn,
@@ -3194,6 +3194,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     dbLoadError: string | null = null;
     isLoadingMoreDbReport = false;
     isLoadingLiveDetails = false;
+    private liveReportGeneration = 0;
+    private lastAppliedSummaryKey = '';
+    private agencyStatsIndex: Map<string, { matches: number; boOnly: number; mismatches: number; partnerOnly: number }> | null = null;
+    private partnerOnlyWithoutAgencyCount = 0;
+    private partnerOnlyWithAgencyServiceInIndex = false;
     private dbLoadToken = 0;
     private lastDbReportFetchKey = '';
     currentSource: 'live' | 'db' = 'db';
@@ -3552,20 +3557,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
     }
 
+    private liveContextDetected = false;
+    private initialDbLoadStarted = false;
+    private filterListsDeferred = false;
+    private static readonly DB_DATE_FETCH_CONCURRENCY = 4;
+
     ngOnInit() {
-        console.log('🔄 ReconciliationReportComponent - ngOnInit appelé');
-        
         this.initSearchSubscriptions();
 
-        // Réinitialiser les données pour éviter le cache du navigateur
         this.reportData = [];
         this.filteredReportData = [];
         this.kpiScopeData = [];
-        this.resetSelectionForAuto(); // sélection contrôlée automatiquement en mode live
+        this.resetSelectionForAuto();
         this.loadedFromDb = false;
         this.currentSource = null;
-        
-        // Lire d'éventuels paramètres de requête (pour ouverture directe depuis le dashboard)
+        this.liveContextDetected = false;
+        this.initialDbLoadStarted = false;
+        this.filterListsDeferred = false;
+
         this.route.queryParams.pipe(take(1)).subscribe(params => {
             const country = params['country'];
             const service = params['service'];
@@ -3582,58 +3591,222 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
         });
 
-        // Vérifier immédiatement si on a des données en cours disponibles
-        // Si oui, afficher la vue 'live' par défaut et charger les données immédiatement
         const summary = this.reconciliationSummaryService.getAgencySummary();
-        
-        if (summary && summary.length > 0) {
-            this.currentSource = 'live';
-            this.autoSelectAllOnNextPagination = true;
-            console.log('✅ Résumé disponible, vue "live" par défaut - chargement immédiat');
-            void this.applySummaryLiveReport(summary);
-            this.tryOpenReleveFromDashboard();
-        } else {
-            // Vérifier les résultats de réconciliation
-            this.appStateService.getReconciliationResults().pipe(take(1)).subscribe(response => {
-                if (response) {
-                    console.log('✅ Résultats de réconciliation disponibles, vue "live" par défaut - chargement immédiat');
-                    void this.applyLiveReconciliationResponse(response);
-                    this.tryOpenReleveFromDashboard();
-                }
-            });
+        const response = this.appStateService.getCurrentReconciliationResults();
+        const hasLiveContext =
+            (summary && summary.length > 0) ||
+            !!response ||
+            this.hasTabsDetailData();
+        this.liveContextDetected = hasLiveContext;
+        if (!hasLiveContext) {
+            this.initialDbLoadStarted = true;
         }
-        
-        // Récupérer les données du résumé depuis le service dédié
+
+        const summaryStream = hasLiveContext
+            ? this.reconciliationSummaryService.agencySummary$.pipe(skip(1))
+            : this.reconciliationSummaryService.agencySummary$;
+
         this.subscription.add(
-            this.reconciliationSummaryService.agencySummary$.subscribe(summary => {
-                console.log('📊 ReconciliationReportComponent - Résumé reçu:', summary);
+            summaryStream.pipe(
+                distinctUntilChanged((a, b) => this.getSummaryKey(a) === this.getSummaryKey(b))
+            ).subscribe(summary => {
                 if (summary && summary.length > 0) {
-                    console.log('📊 ReconciliationReportComponent - Génération du rapport...');
+                    this.liveContextDetected = true;
+                    this.currentSource = 'live';
                     void this.applySummaryLiveReport(summary);
-                } else if (!this.response && !this.loadedFromDb && this.currentSource !== 'live') {
-                    // Pas de résumé et pas de réponse en cours → charger depuis la base
-                    // Mais seulement si on n'est pas déjà en mode 'live'
+                } else if (
+                    !this.liveContextDetected &&
+                    !this.loadedFromDb &&
+                    this.currentSource !== 'live' &&
+                    !this.initialDbLoadStarted
+                ) {
+                    this.initialDbLoadStarted = true;
                     this.loadSavedReportFromDatabase();
                 }
             })
         );
 
-        // Également récupérer les données de réconciliation pour les statistiques détaillées
         this.subscription.add(
-            this.appStateService.getReconciliationResults().subscribe(response => {
+            this.appStateService.getReconciliationResults().pipe(
+                distinctUntilChanged((a, b) => {
+                    const idA = a?.progressSessionId || '';
+                    const idB = b?.progressSessionId || '';
+                    return idA === idB && (a?.totalMatches ?? 0) === (b?.totalMatches ?? 0);
+                }),
+                skip(hasLiveContext ? 1 : 0)
+            ).subscribe(response => {
                 if (!response) {
-                    if (!this.loadedFromDb && this.currentSource !== 'live') {
+                    if (
+                        !this.liveContextDetected &&
+                        !this.loadedFromDb &&
+                        this.currentSource !== 'live' &&
+                        !this.initialDbLoadStarted
+                    ) {
+                        this.initialDbLoadStarted = true;
                         this.loadSavedReportFromDatabase();
                     }
+                    return;
+                }
+                this.liveContextDetected = true;
+                if (this.hasSummary && this.reportData.length > 0) {
+                    this.response = response;
                     return;
                 }
                 void this.applyLiveReconciliationResponse(response);
             })
         );
+
+        this.bootstrapReportOnInit(hasLiveContext, summary, response);
+    }
+
+    /** Chaîne ngOnInit : live (résumé / onglets / réponse) ou BDD, puis filterReport → updatePagination. */
+    private bootstrapReportOnInit(
+        hasLiveContext: boolean,
+        summary: AgencySummaryData[],
+        response: ReconciliationResponse | null
+    ): void {
+        if (hasLiveContext) {
+            this.currentSource = 'live';
+            this.autoSelectAllOnNextPagination = true;
+            if (summary.length > 0) {
+                void this.applySummaryLiveReport(summary);
+            } else if (response) {
+                void this.applyLiveReconciliationResponse(response);
+            } else {
+                void this.applySummaryLiveReport([]);
+            }
+            return;
+        }
+
+        this.loadSavedReportFromDatabase();
+    }
+
+    /**
+     * Affiche le tableau immédiatement (filterReport → paginatedData),
+     * puis enrichit les listes de filtres en arrière-plan si demandé.
+     */
+    private refreshReportView(options?: { deferFilterLists?: boolean }): void {
+        if (options?.deferFilterLists) {
+            this.filterReport();
+            if (!this.filterListsDeferred) {
+                this.filterListsDeferred = true;
+                queueMicrotask(() => {
+                    this.extractUniqueValues();
+                    this.filterListsDeferred = false;
+                });
+            }
+            return;
+        }
+        this.extractUniqueValues();
+        this.filterReport();
+    }
+
+    private hasTabsDetailData(): boolean {
+        const detailCount =
+            (this.reconciliationTabsService.getFilteredMatches()?.length ?? 0) +
+            (this.reconciliationTabsService.getFilteredBoOnly()?.length ?? 0) +
+            (this.reconciliationTabsService.getFilteredPartnerOnly()?.length ?? 0) +
+            (this.reconciliationTabsService.getFilteredMismatches()?.length ?? 0);
+        return detailCount > 0;
+    }
+
+    private hydrateResponseFromTabs(): void {
+        if (!this.response) {
+            return;
+        }
+        const matches = this.reconciliationTabsService.getFilteredMatches();
+        const boOnly = this.reconciliationTabsService.getFilteredBoOnly();
+        const partnerOnly = this.reconciliationTabsService.getFilteredPartnerOnly();
+        const mismatches = this.reconciliationTabsService.getFilteredMismatches();
+        if (!matches?.length && !boOnly?.length && !partnerOnly?.length && !mismatches?.length) {
+            return;
+        }
+        this.response = {
+            ...this.response,
+            matches: matches?.length ? matches : this.response.matches,
+            boOnly: boOnly?.length ? boOnly : this.response.boOnly,
+            partnerOnly: partnerOnly?.length ? partnerOnly : this.response.partnerOnly,
+            mismatches: mismatches?.length ? mismatches : this.response.mismatches,
+            resultsPaginated: false
+        };
+    }
+
+    private getSummaryKey(summary: AgencySummaryData[]): string {
+        return summary
+            .map(item => `${item.agency}|${item.service}|${item.country}|${item.recordCount}|${item.totalVolume}|${item.matches ?? ''}|${item.boOnly ?? ''}`)
+            .join(';;');
+    }
+
+    private summaryHasDetailedBreakdown(summary: AgencySummaryData[]): boolean {
+        return summary.length > 0 && summary.every(item => item.matches !== undefined && item.boOnly !== undefined);
+    }
+
+    private needsAgencySummaryAggregation(): boolean {
+        const summary = this.reconciliationSummaryService.getAgencySummary();
+        if (summary.length > 0 && this.summaryHasDetailedBreakdown(summary)) {
+            return false;
+        }
+        if (this.hasTabsDetailData()) {
+            return false;
+        }
+        return this.needsPaginatedDetailLoad(this.response);
+    }
+
+    /**
+     * Agrège le résumé par agence sans charger tout le dataset en mémoire (gros volumes paginés).
+     */
+    private async ensureAgencySummaryForReport(): Promise<AgencySummaryData[] | null> {
+        const existing = this.reconciliationSummaryService.getAgencySummary();
+        if (existing.length > 0 && this.summaryHasDetailedBreakdown(existing)) {
+            return existing;
+        }
+
+        if (!this.response || !this.needsPaginatedDetailLoad(this.response)) {
+            return existing.length > 0 ? existing : null;
+        }
+
+        const sessionId =
+            this.response.progressSessionId ||
+            this.reconciliationService.getCurrentJobId();
+        if (!sessionId) {
+            return existing.length > 0 ? existing : null;
+        }
+
+        this.isLoadingLiveDetails = true;
+        this.dbLoadError = null;
+        try {
+            const { summary, meta } = await this.reconciliationService.loadAgencySummaryAggregated(sessionId);
+            if (summary.length > 0) {
+                this.reconciliationSummaryService.setAgencySummary(summary, {
+                    totalPartnerOnly: meta.totalPartnerOnly,
+                    hasPartnerOnlyWithAgencyService: meta.hasPartnerOnlyWithAgencyService
+                });
+                this.hasSummary = true;
+                return summary;
+            }
+            return existing.length > 0 ? existing : null;
+        } catch (error) {
+            console.error('Erreur agrégation résumé pour le rapport:', error);
+            this.dbLoadError = 'Impossible de charger le résumé de la réconciliation.';
+            return existing.length > 0 ? existing : null;
+        } finally {
+            this.isLoadingLiveDetails = false;
+        }
+    }
+
+    private prepareStatsForSummary(summary: AgencySummaryData[]): void {
+        if (this.summaryHasDetailedBreakdown(summary)) {
+            this.agencyStatsIndex = null;
+            return;
+        }
+        this.buildAgencyStatsIndex();
     }
 
     private needsPaginatedDetailLoad(response: ReconciliationResponse | null): boolean {
         if (!response) {
+            return false;
+        }
+        if (this.hasTabsDetailData()) {
             return false;
         }
         if (response.resultsPaginated) {
@@ -3652,16 +3825,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return totalCount > 0 && detailCount === 0;
     }
 
-    private async ensureLiveDetailDataLoaded(): Promise<void> {
+    private async ensureLiveDetailDataLoaded(): Promise<boolean> {
         if (!this.response || !this.needsPaginatedDetailLoad(this.response)) {
-            return;
+            return false;
         }
 
         const sessionId =
             this.response.progressSessionId ||
             this.reconciliationService.getCurrentJobId();
         if (!sessionId) {
-            return;
+            return false;
         }
 
         this.isLoadingLiveDetails = true;
@@ -3684,9 +3857,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 this.reconciliationSummaryService.setAgencySummary(summary);
                 this.hasSummary = true;
             }
+            return true;
         } catch (error) {
             console.error('Erreur chargement détails paginés pour le rapport:', error);
             this.dbLoadError = 'Impossible de charger les détails de la réconciliation.';
+            return false;
         } finally {
             this.isLoadingLiveDetails = false;
         }
@@ -3697,11 +3872,34 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     ): AgencySummaryData[] {
         const summaryMap = new Map<string, AgencySummaryData>();
 
+        const getValue = (record: Record<string, string>, keys: string[]): string => {
+            for (const key of keys) {
+                const originalKey = Object.keys(record).find(k =>
+                    fixGarbledCharacters(k).toLowerCase() === key.toLowerCase() ||
+                    k.toLowerCase() === key.toLowerCase()
+                );
+                if (originalKey && record[originalKey] != null && String(record[originalKey]).trim() !== '') {
+                    return String(record[originalKey]);
+                }
+                if (record[key] != null && String(record[key]).trim() !== '') {
+                    return String(record[key]);
+                }
+            }
+            return '';
+        };
+
+        const agenceKeys = ['Agence', 'agence', 'AGENCE', 'agency', 'Agency'];
+        const serviceKeys = ['Service', 'service', 'SERVICE', 'serv', 'Serv'];
+        const paysKeys = ['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx', 'Pays provenance', 'pays provenance'];
+        const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction'];
+        const amountKeys = ['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'AMOUNT', 'volume', 'Volume', 'VOLUME'];
+
         const addRecord = (record: Record<string, string>) => {
-            const agency = record['Agence'] || record['agency'] || record['agence'] || record['AGENCE'] || 'Inconnue';
-            const service = record['Service'] || record['service'] || record['SERVICE'] || 'Inconnu';
-            const country = record['GRX'] || record['grx'] || record['Pays provenance'] || record['country'] || record['pays'] || record['PAYS'] || 'Inconnu';
-            const date = record['Date'] || record['date'] || record['DATE'] || new Date().toISOString().split('T')[0];
+            const agency = getValue(record, agenceKeys) || 'Inconnue';
+            const service = getValue(record, serviceKeys) || 'Inconnu';
+            const rawCountry = getValue(record, paysKeys);
+            const country = rawCountry ? (countryNameFromCode(rawCountry.trim()) || rawCountry.trim()) : 'Inconnu';
+            const date = getValue(record, dateKeys) || new Date().toISOString().split('T')[0];
             const key = `${agency}-${service}-${country}`;
 
             if (!summaryMap.has(key)) {
@@ -3716,7 +3914,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
 
             const summary = summaryMap.get(key)!;
-            summary.totalVolume += this.parseAmount(record['montant'] || record['amount'] || record['AMOUNT'] || '0');
+            summary.totalVolume += this.parseAmount(getValue(record, amountKeys) || '0');
             summary.recordCount += 1;
         };
 
@@ -3732,7 +3930,63 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         });
     }
 
+    private buildFallbackSummaryFromResponseTotals(): AgencySummaryData[] {
+        if (!this.response) {
+            return [];
+        }
+        const magicSummaries = this.appStateService.getMagicServiceSummaries();
+        if (magicSummaries?.length) {
+            return magicSummaries
+                .filter((s: { service: string }) => s.service && s.service !== 'Tous')
+                .map((s: {
+                    service: string;
+                    totalMatches: number;
+                    totalBoOnly: number;
+                    totalPartnerOnly: number;
+                }) => ({
+                    agency: s.service,
+                    service: s.service,
+                    country: '',
+                    date: new Date().toISOString().split('T')[0],
+                    totalVolume: 0,
+                    recordCount: (s.totalMatches || 0) + (s.totalBoOnly || 0) + (s.totalPartnerOnly || 0),
+                    matches: s.totalMatches || 0,
+                    boOnly: s.totalBoOnly || 0,
+                    partnerOnly: s.totalPartnerOnly || 0,
+                    mismatches: 0
+                }));
+        }
+
+        const matches = this.response.totalMatches ?? 0;
+        const boOnly = this.response.totalBoOnly ?? 0;
+        const partnerOnly = this.response.totalPartnerOnly ?? 0;
+        const mismatches = this.response.totalMismatches ?? 0;
+        const total = matches + boOnly + partnerOnly + mismatches;
+        if (total <= 0) {
+            return [];
+        }
+
+        return [{
+            agency: 'Consolidé',
+            service: 'Tous',
+            country: '',
+            date: new Date().toISOString().split('T')[0],
+            totalVolume: 0,
+            recordCount: total,
+            matches,
+            boOnly,
+            partnerOnly,
+            mismatches
+        }];
+    }
+
     private async applySummaryLiveReport(summary: AgencySummaryData[]): Promise<void> {
+        const summaryKey = this.getSummaryKey(summary);
+        if (summaryKey === this.lastAppliedSummaryKey && this.reportData.length > 0) {
+            return;
+        }
+        const generation = ++this.liveReportGeneration;
+
         this.currentSource = 'live';
         if (!this.hasUserSelectionChanged) {
             this.resetSelectionForAuto();
@@ -3740,17 +3994,50 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
 
         if (!this.response) {
-            this.response = await firstValueFrom(this.appStateService.getReconciliationResults().pipe(take(1)));
+            this.response =
+                this.appStateService.getCurrentReconciliationResults() ??
+                this.buildResponseSnapshotFromTabs();
         }
-        await this.ensureLiveDetailDataLoaded();
-        this.generateReportDataFromSummary(summary);
-        this.hasSummary = true;
+        this.hydrateResponseFromTabs();
+
+        const displaySummary = summary.length > 0 ? summary : this.buildFallbackSummaryFromResponseTotals();
+        this.prepareStatsForSummary(displaySummary);
+        this.generateReportDataFromSummary(displaySummary);
+        this.lastAppliedSummaryKey = this.getSummaryKey(displaySummary);
+        this.hasSummary = displaySummary.length > 0;
         this.syncLastSavedGlpiValues(this.reportData);
-        this.extractUniqueValues();
-        this.filterReport();
+        this.refreshReportView({ deferFilterLists: true });
+
+        if (generation !== this.liveReportGeneration) {
+            return;
+        }
+
+        if (!this.needsAgencySummaryAggregation()) {
+            this.refreshReportView();
+            return;
+        }
+
+        const aggregated = await this.ensureAgencySummaryForReport();
+        if (!aggregated || aggregated.length === 0 || generation !== this.liveReportGeneration) {
+            this.refreshReportView();
+            return;
+        }
+
+        this.prepareStatsForSummary(aggregated);
+        this.generateReportDataFromSummary(aggregated);
+        this.lastAppliedSummaryKey = this.getSummaryKey(aggregated);
+        this.syncLastSavedGlpiValues(this.reportData);
+        this.refreshReportView();
     }
 
-    private async applyLiveReconciliationResponse(response: ReconciliationResponse): Promise<void> {
+    private async applyLiveReconciliationResponse(
+        response: ReconciliationResponse,
+        options?: { forceRefresh?: boolean }
+    ): Promise<void> {
+        if (!options?.forceRefresh && this.hasSummary && this.reportData.length > 0) {
+            this.response = response;
+            return;
+        }
         this.response = response;
         this.currentSource = 'live';
         if (!this.hasUserSelectionChanged) {
@@ -3758,7 +4045,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.autoSelectAllOnNextPagination = true;
         }
 
-        await this.ensureLiveDetailDataLoaded();
+        this.hydrateResponseFromTabs();
 
         if (this.hasSummary && this.reportData.length > 0) {
                         // Si on a un résumé, on garde les colonnes Agence/Service/Pays du résumé
@@ -3855,15 +4142,50 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const summary = this.reconciliationSummaryService.getAgencySummary();
             if (summary.length > 0) {
                 this.hasSummary = true;
+                this.prepareStatsForSummary(summary);
                 this.generateReportDataFromSummary(summary);
             } else {
-                this.generateReportData();
+                const aggregated = await this.ensureAgencySummaryForReport();
+                if (aggregated && aggregated.length > 0) {
+                    this.hasSummary = true;
+                    this.prepareStatsForSummary(aggregated);
+                    this.generateReportDataFromSummary(aggregated);
+                } else {
+                    const fallback = this.buildFallbackSummaryFromResponseTotals();
+                    if (fallback.length > 0) {
+                        this.prepareStatsForSummary(fallback);
+                        this.generateReportDataFromSummary(fallback);
+                    } else {
+                        this.buildAgencyStatsIndex();
+                        this.generateReportData();
+                    }
+                }
             }
         }
 
         this.syncLastSavedGlpiValues(this.reportData);
-        this.extractUniqueValues();
-        this.filterReport();
+        this.refreshReportView();
+    }
+
+    private buildResponseSnapshotFromTabs(): ReconciliationResponse | null {
+        if (!this.hasTabsDetailData()) {
+            return null;
+        }
+        const matches = this.reconciliationTabsService.getFilteredMatches() || [];
+        const boOnly = this.reconciliationTabsService.getFilteredBoOnly() || [];
+        const partnerOnly = this.reconciliationTabsService.getFilteredPartnerOnly() || [];
+        const mismatches = this.reconciliationTabsService.getFilteredMismatches() || [];
+        return {
+            matches,
+            boOnly,
+            partnerOnly,
+            mismatches,
+            totalMatches: matches.length,
+            totalBoOnly: boOnly.length,
+            totalPartnerOnly: partnerOnly.length,
+            totalMismatches: mismatches.length,
+            resultsPaginated: false
+        } as ReconciliationResponse;
     }
 
     ngOnDestroy() {
@@ -4002,40 +4324,33 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     private generateReportDataFromSummary(summary: AgencySummaryData[]) {
-        console.log('📊 Génération du rapport à partir du résumé par agence:', summary);
+        this.debugLog('Génération du rapport à partir du résumé par agence:', summary);
         
-        // Filtrer par pays autorisés avant de générer le rapport
         const filteredSummary = summary.filter(item => {
             if (!item.country) return false;
             return this.shouldIncludeCountry(item.country);
         });
     
-        console.log('📊 Résumé filtré par pays:', {
+        this.debugLog('Résumé filtré par pays:', {
             total: summary.length,
             filtered: filteredSummary.length,
             allowedCountryCodes: this.allowedCountryCodes
         });
         
-        // Calculer le total des écarts partenaires une seule fois
         const totalPartnerOnly = this.calculateTotalPartnerOnly();
-        console.log('📊 Total des écarts partenaires calculé:', totalPartnerOnly);
         
-        // Détecter si on est sur une réconciliation avec plusieurs agences
         const uniqueAgencies = new Set(filteredSummary.map(item => item.agency));
         const hasMultipleAgencies = uniqueAgencies.size > 1;
-        console.log('📊 Détection multi-agences:', {
-            uniqueAgencies: Array.from(uniqueAgencies),
-            hasMultipleAgencies: hasMultipleAgencies,
-            totalPartnerOnly: totalPartnerOnly
-        });
         
-        // Vérifier si les écarts partenaires ont une agence/service dans leurs colonnes
-        const filteredPartnerOnly = this.getPartnerOnlyDataset();
-        const hasPartnerOnlyWithAgencyService = filteredPartnerOnly.some(record => {
-            const partnerInfo = this.getPartnerOnlyAgencyAndService(record);
-            return partnerInfo.agency !== 'Inconnue' && partnerInfo.service !== 'Inconnu';
-        });
+        const summaryMeta = this.reconciliationSummaryService.getSummaryMeta();
+        const hasPartnerOnlyWithAgencyService = summaryMeta.hasPartnerOnlyWithAgencyService
+            || (!this.summaryHasDetailedBreakdown(filteredSummary) &&
+                this.getPartnerOnlyDataset().some(record => {
+                    const partnerInfo = this.getPartnerOnlyAgencyAndService(record);
+                    return partnerInfo.agency !== 'Inconnue' && partnerInfo.service !== 'Inconnu';
+                }));
         
+        const usePrecomputedStats = this.summaryHasDetailedBreakdown(filteredSummary);
         // Convertir les données du résumé en données du rapport
         // Si on a plusieurs agences et que les écarts partenaires n'ont pas d'agence/service,
         // NE PAS les attribuer aux lignes d'agence (ils iront dans la ligne spéciale)
@@ -4052,14 +4367,23 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         this.reportData = filteredSummary.map((item, index) => {
             const isFirstLine = index === 0;
-            // Si on doit créer une ligne spéciale, ne pas attribuer les écarts partenaires aux lignes d'agence
             const shouldSkipPartnerOnly = shouldCreatePartnerOnlyLine;
             const partnerOnlyAlreadyAttributedValue = partnerOnlyWithoutAgencyServiceAttributed || shouldSkipPartnerOnly;
-            
-            if (isFirstLine && shouldCreatePartnerOnlyLine) {
-                console.log(`🔒 Première ligne - Exclusion des écarts partenaires (ligne spéciale sera créée): shouldSkipPartnerOnly=${shouldSkipPartnerOnly}, partnerOnlyAlreadyAttributedValue=${partnerOnlyAlreadyAttributedValue}`);
+
+            if (usePrecomputedStats) {
+                const row = this.buildReportRowFromPrecomputedSummary(
+                    item,
+                    shouldSkipPartnerOnly,
+                    partnerOnlyAlreadyAttributedValue,
+                    isFirstLine,
+                    shouldCreatePartnerOnlyLine
+                );
+                if (isFirstLine && !hasPartnerOnlyWithAgencyService && row.partnerOnly > 0 && !shouldSkipPartnerOnly) {
+                    partnerOnlyWithoutAgencyServiceAttributed = true;
+                }
+                return row;
             }
-            
+
             const detailedStats = this.calculateDetailedStatsForSummaryItem(item, isFirstLine, partnerOnlyAlreadyAttributedValue);
             
             if (isFirstLine && !hasPartnerOnlyWithAgencyService && detailedStats.partnerOnly > 0 && !shouldSkipPartnerOnly) {
@@ -4070,12 +4394,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             // Si on doit créer une ligne spéciale, ne pas inclure les écarts partenaires dans les lignes d'agence
             const partnerOnly = shouldSkipPartnerOnly ? 0 : detailedStats.partnerOnly;
             
-            console.log(`📊 Rapport final pour index ${index}:`, {
-                agency: item.agency,
-                service: item.service,
-                partnerOnly: partnerOnly,
-                totalPartnerOnly: totalPartnerOnly
-            });
             const mismatches = detailedStats.mismatches;
             
             const boOnlyNum = Number(boOnly) || 0;
@@ -4083,14 +4401,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const mismatchesNum = Number(mismatches) || 0;
             const totalEcarts = boOnlyNum + partnerOnlyNum + mismatchesNum;
             const traitementDefault = totalEcarts > 0 ? 'Niveau Support' : 'Responsable CDO';
-            
-            console.log(`🔍 Traitement pour ${item.agency}/${item.service}:`, {
-                boOnly: boOnlyNum,
-                partnerOnly: partnerOnlyNum,
-                mismatches: mismatchesNum,
-                totalEcarts: totalEcarts,
-                traitement: traitementDefault
-            });
             
             const matches = detailedStats.matches;
             // Utiliser recordCount comme source de vérité principale (vient du résumé)
@@ -4128,31 +4438,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 { force: true }
             );
             
-            // Log pour déboguer les écarts partenaires
-            if (partnerOnly > 0) {
-                console.log(`📊 Ligne créée avec écarts partenaires: ${item.agency}/${item.service} - partnerOnly=${partnerOnly}, matches=${matches}, boOnly=${boOnly}, totalTransactions=${totalTransactions}`);
-            }
-            
             return reportItem;
         });
         
-        // **NOUVELLE LOGIQUE**: Si multi-agences et écarts partenaires sans agence/service, créer une ligne séparée
-        console.log('🔍 Vérification création ligne spéciale:', {
-            hasMultipleAgencies,
-            hasPartnerOnlyWithAgencyService,
-            totalPartnerOnly,
-            shouldCreate: hasMultipleAgencies && !hasPartnerOnlyWithAgencyService && totalPartnerOnly > 0
-        });
-        
+        // Si multi-agences et écarts partenaires sans agence/service, créer une ligne séparée
         if (hasMultipleAgencies && !hasPartnerOnlyWithAgencyService && totalPartnerOnly > 0) {
             // Récupérer le service depuis la première ligne du résumé
             const firstItem = filteredSummary[0];
             const serviceName = firstItem?.service || 'Service Inconnu';
-            
-            console.log('📊 Création ligne séparée pour écarts partenaires multi-agences:', {
-                service: serviceName,
-                partnerOnly: totalPartnerOnly
-            });
             
             const partnerOnlyLine: ReconciliationReportData = {
                 date: firstItem?.date || new Date().toISOString().split('T')[0],
@@ -4182,30 +4475,22 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // FORCER toutes les lignes avec statut OK à avoir traitement = "Responsable CDO"
         this.enforceTraitementForOkStatus();
 
-        this.reportData.forEach(item => {
-            // Ne pas recalculer la ligne des écarts partenaires
-            if (!this.isPartnerOnlySpecialLine(item)) {
-                const partnerOnlyBefore = item.partnerOnly;
-                this.recalculateMatchRate(item);
-                this.syncCommentWithValues(item);
-                // Log si partnerOnly a été modifié
-                if (partnerOnlyBefore !== item.partnerOnly) {
-                    console.warn(`⚠️ generateReportDataFromSummary: partnerOnly modifié pour ${item.agency}/${item.service} - avant: ${partnerOnlyBefore}, après: ${item.partnerOnly}`);
-                } else if (partnerOnlyBefore > 0) {
-                    console.log(`✅ generateReportDataFromSummary: partnerOnly préservé pour ${item.agency}/${item.service} - partnerOnly=${partnerOnlyBefore}`);
+        if (!usePrecomputedStats) {
+            this.reportData.forEach(item => {
+                if (!this.isPartnerOnlySpecialLine(item)) {
+                    this.recalculateMatchRate(item);
+                    this.syncCommentWithValues(item);
+                } else {
+                    this.enforcePartnerOnlyLineValues(item);
                 }
-            } else {
-                // Pour la ligne des écarts partenaires, FORCER toutes les valeurs pour éviter toute modification
-                this.enforcePartnerOnlyLineValues(item);
-            }
-        });
-        
-        // Protection finale: s'assurer que toutes les lignes spéciales ont les bonnes valeurs
-        this.reportData.forEach(item => {
-            if (this.isPartnerOnlySpecialLine(item)) {
-                this.enforcePartnerOnlyLineValues(item);
-            }
-        });
+            });
+        } else {
+            this.reportData.forEach(item => {
+                if (this.isPartnerOnlySpecialLine(item)) {
+                    this.enforcePartnerOnlyLineValues(item);
+                }
+            });
+        }
 
         // IMPORTANT: si les écarts partenaires arrivent plus tard (ou ne sont pas attribuables),
         // garantir la création/mise à jour de la ligne spéciale.
@@ -4217,19 +4502,62 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return dateB - dateA;
         });
         
-        console.log('📊 Rapport final généré - reportData:', this.reportData);
-        console.log('📊 Premier élément du rapport:', this.reportData[0]);
-        
-        // Log détaillé pour vérifier les écarts partenaires
-        this.reportData.forEach(item => {
-            if (item.partnerOnly > 0) {
-                console.log(`📊 Ligne avec écarts partenaires: ${item.agency}/${item.service} - partnerOnly=${item.partnerOnly}, matches=${item.matches}, boOnly=${item.boOnly}, totalTransactions=${item.totalTransactions}, commentaire=${item.comment}`);
-            }
-        });
-    
         this.syncLastSavedGlpiValues(this.reportData);
     }
+
+    private buildReportRowFromPrecomputedSummary(
+        item: AgencySummaryData,
+        shouldSkipPartnerOnly: boolean,
+        partnerOnlyAlreadyAttributed: boolean,
+        isFirstLine: boolean,
+        shouldCreatePartnerOnlyLine: boolean
+    ): ReconciliationReportData {
+        const matches = item.matches ?? 0;
+        const mismatches = item.mismatches ?? 0;
+        const boOnlyOnly = item.boOnly ?? 0;
+        const totalBoOnly = boOnlyOnly + mismatches;
+
+        let partnerOnly = 0;
+        if (!shouldSkipPartnerOnly && !partnerOnlyAlreadyAttributed && !shouldCreatePartnerOnlyLine) {
+            if (this.reconciliationSummaryService.getSummaryMeta().hasPartnerOnlyWithAgencyService) {
+                partnerOnly = item.partnerOnly ?? 0;
+            } else if (isFirstLine) {
+                partnerOnly = this.reconciliationSummaryService.getSummaryMeta().totalPartnerOnly
+                    || this.getPartnerOnlyCount();
+            }
+        } else if (!shouldSkipPartnerOnly && !partnerOnlyAlreadyAttributed) {
+            partnerOnly = item.partnerOnly ?? 0;
+        }
+
+        const totalTransactions = item.recordCount || (matches + totalBoOnly + partnerOnly);
+        const totalEcarts = totalBoOnly + partnerOnly;
+        const traitementDefault = totalEcarts > 0 ? 'Niveau Support' : 'Responsable CDO';
+
+        const reportItem: ReconciliationReportData = {
+            date: item.date,
+            agency: item.agency,
+            service: item.service,
+            country: item.country,
+            totalTransactions,
+            totalVolume: item.totalVolume,
+            matches,
+            boOnly: totalBoOnly,
+            partnerOnly,
+            mismatches,
+            matchRate: totalTransactions > 0 ? (matches / totalTransactions) * 100 : 0,
+            status: this.computeStatusFromCounts(matches, totalBoOnly, partnerOnly, mismatches, totalTransactions),
+            comment: '',
+            traitement: traitementDefault
+        };
+        this.updateCommentFromCounts(reportItem, matches, totalBoOnly, partnerOnly, mismatches, { force: true });
+        return reportItem;
+    }
+
     private calculateTotalPartnerOnly(): number {
+        const meta = this.reconciliationSummaryService.getSummaryMeta();
+        if (meta.totalPartnerOnly > 0) {
+            return meta.totalPartnerOnly;
+        }
         return this.getPartnerOnlyCount();
     }
 
@@ -4449,16 +4777,87 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
     }
 
-    private calculateDetailedStatsForSummaryItem(summaryItem: AgencySummaryData, isFirstLine: boolean = false, partnerOnlyAlreadyAttributed: boolean = false) {
-        // Log pour déboguer la première ligne
-        if (isFirstLine) {
-            console.log(`🔍 calculateDetailedStatsForSummaryItem - Première ligne ${summaryItem.agency}/${summaryItem.service}: partnerOnlyAlreadyAttributed=${partnerOnlyAlreadyAttributed}`);
+    private statsKey(agency: string, service: string, country: string): string {
+        return `${this.normStatsPart(agency)}|${this.normStatsPart(service)}|${this.normStatsPart(country)}`;
+    }
+
+    private normStatsPart(value: string): string {
+        return (value || '').toString().trim().toLowerCase();
+    }
+
+    private getDetailDatasets(): {
+        filteredMatches: Match[];
+        filteredBoOnly: Record<string, string>[];
+        filteredPartnerOnly: Record<string, string>[];
+        filteredMismatches: Record<string, string>[];
+    } {
+        const filteredMatches = this.reconciliationTabsService.getFilteredMatches()?.length
+            ? this.reconciliationTabsService.getFilteredMatches()
+            : (this.response?.matches || []);
+        const filteredBoOnly = this.reconciliationTabsService.getFilteredBoOnly()?.length
+            ? this.reconciliationTabsService.getFilteredBoOnly()
+            : (this.response?.boOnly || []);
+        const filteredPartnerOnly = this.getPartnerOnlyDataset();
+        const filteredMismatches = this.reconciliationTabsService.getFilteredMismatches()?.length
+            ? this.reconciliationTabsService.getFilteredMismatches()
+            : (this.response?.mismatches || []);
+        return { filteredMatches, filteredBoOnly, filteredPartnerOnly, filteredMismatches };
+    }
+
+    private buildAgencyStatsIndex(): void {
+        if (!this.response) {
+            this.agencyStatsIndex = null;
+            this.partnerOnlyWithoutAgencyCount = 0;
+            this.partnerOnlyWithAgencyServiceInIndex = false;
+            return;
         }
-        
-        // Ne pas traiter les lignes spéciales où agence = service (lignes d'écarts partenaires créées manuellement)
-        // Ces lignes ne font pas partie du résumé et ne doivent pas être traitées ici
+
+        const index = new Map<string, { matches: number; boOnly: number; mismatches: number; partnerOnly: number }>();
+        const ensure = (key: string) => {
+            let bucket = index.get(key);
+            if (!bucket) {
+                bucket = { matches: 0, boOnly: 0, mismatches: 0, partnerOnly: 0 };
+                index.set(key, bucket);
+            }
+            return bucket;
+        };
+
+        const { filteredMatches, filteredBoOnly, filteredPartnerOnly, filteredMismatches } = this.getDetailDatasets();
+
+        for (const match of filteredMatches) {
+            const info = this.getBoAgencyAndService(match);
+            ensure(this.statsKey(info.agency, info.service, info.country)).matches++;
+        }
+        for (const record of filteredBoOnly) {
+            const info = this.getBoOnlyAgencyAndService(record);
+            ensure(this.statsKey(info.agency, info.service, info.country)).boOnly++;
+        }
+        for (const record of filteredMismatches) {
+            const info = this.getMismatchAgencyAndService(record);
+            ensure(this.statsKey(info.agency, info.service, info.country)).mismatches++;
+        }
+
+        this.partnerOnlyWithAgencyServiceInIndex = false;
+        this.partnerOnlyWithoutAgencyCount = 0;
+        for (const record of filteredPartnerOnly) {
+            const info = this.getPartnerOnlyAgencyAndService(record);
+            if (info.agency !== 'Inconnue' && info.service !== 'Inconnu') {
+                this.partnerOnlyWithAgencyServiceInIndex = true;
+                ensure(this.statsKey(info.agency, info.service, info.country)).partnerOnly++;
+            } else {
+                this.partnerOnlyWithoutAgencyCount++;
+            }
+        }
+
+        this.agencyStatsIndex = index;
+    }
+
+    private calculateDetailedStatsForSummaryItem(summaryItem: AgencySummaryData, isFirstLine: boolean = false, partnerOnlyAlreadyAttributed: boolean = false) {
+        if (isFirstLine) {
+            this.debugLog(`calculateDetailedStatsForSummaryItem - première ligne ${summaryItem.agency}/${summaryItem.service}`);
+        }
+
         if (summaryItem.agency === summaryItem.service && summaryItem.agency && summaryItem.service) {
-            console.log(`⚠️ calculateDetailedStatsForSummaryItem: Ignoré ligne spéciale ${summaryItem.agency}/${summaryItem.service}`);
             return {
                 matches: 0,
                 boOnly: 0,
@@ -4467,163 +4866,70 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 matchRate: 0
             };
         }
-        
+
         if (!this.response) {
-            // Si pas de données détaillées, estimer basé sur le résumé
             return {
-                matches: Math.floor(summaryItem.recordCount * 0.8), // Estimation 80% de correspondances
-                boOnly: Math.floor(summaryItem.recordCount * 0.1),   // Estimation 10% d'écarts BO
-                partnerOnly: Math.floor(summaryItem.recordCount * 0.05), // Estimation 5% d'écarts partenaire
-                mismatches: Math.floor(summaryItem.recordCount * 0.05), // Estimation 5% d'incohérences
-                matchRate: 80 // Estimation de taux
+                matches: Math.floor(summaryItem.recordCount * 0.8),
+                boOnly: Math.floor(summaryItem.recordCount * 0.1),
+                partnerOnly: Math.floor(summaryItem.recordCount * 0.05),
+                mismatches: Math.floor(summaryItem.recordCount * 0.05),
+                matchRate: 80
             };
         }
 
-        // Utiliser les données filtrées des onglets pour des statistiques précises
-        // Fallback sur les données brutes si les données filtrées ne sont pas encore disponibles
-        const filteredMatches = (this.reconciliationTabsService.getFilteredMatches()?.length ? this.reconciliationTabsService.getFilteredMatches() : (this.response?.matches || []));
-        const filteredBoOnly = (this.reconciliationTabsService.getFilteredBoOnly()?.length ? this.reconciliationTabsService.getFilteredBoOnly() : (this.response?.boOnly || []));
-        const filteredPartnerOnly = this.getPartnerOnlyDataset();
-        const filteredMismatches = (this.reconciliationTabsService.getFilteredMismatches()?.length ? this.reconciliationTabsService.getFilteredMismatches() : (this.response?.mismatches || []));
-        
-        console.log('📊 Données disponibles pour calcul:', {
-            filteredMatches: filteredMatches.length,
-            filteredBoOnly: filteredBoOnly.length,
-            filteredPartnerOnly: filteredPartnerOnly.length,
-            filteredMismatches: filteredMismatches.length,
-            hasResponse: !!this.response,
-            responsePartnerOnly: this.response?.partnerOnly?.length || 0
-        });
-
-        // Filtrer les matches sans logs répétitifs pour améliorer les performances
-        const agencyMatches = filteredMatches.filter(match => {
-            const boInfo = this.getBoAgencyAndService(match);
-            // Si le pays est vide dans les données BO, ne pas l'exiger pour la correspondance
-            const countryMatch = boInfo.country === 'Inconnu' || boInfo.country === '' || 
-                                this.flexibleMatch(boInfo.country, summaryItem.country);
-            const matches = this.flexibleMatch(boInfo.agency, summaryItem.agency) && 
-                           this.flexibleMatch(boInfo.service, summaryItem.service) && 
-                           countryMatch;
-            return matches;
-        });
-
-        // Les écarts BO incluent les mismatches + boOnly
-        const agencyBoOnly = filteredBoOnly.filter(record => {
-            const boInfo = this.getBoOnlyAgencyAndService(record);
-            const countryMatch = boInfo.country === 'Inconnu' || boInfo.country === '' || 
-                                 this.flexibleMatch(boInfo.country, summaryItem.country);
-            return this.flexibleMatch(boInfo.agency, summaryItem.agency) && 
-                   this.flexibleMatch(boInfo.service, summaryItem.service) && 
-                   countryMatch;
-        });
-
-        const agencyMismatches = filteredMismatches.filter(record => {
-            const mismatchInfo = this.getMismatchAgencyAndService(record);
-            const countryMatch = mismatchInfo.country === 'Inconnu' || mismatchInfo.country === '' || 
-                                 this.flexibleMatch(mismatchInfo.country, summaryItem.country);
-            return this.flexibleMatch(mismatchInfo.agency, summaryItem.agency) && 
-                   this.flexibleMatch(mismatchInfo.service, summaryItem.service) && 
-                   countryMatch;
-        });
-
-        // Calculer les écarts partenaires filtrés par agence/service
-        // Note: Les écarts partenaires n'ont souvent pas d'agence/service dans leurs colonnes
-        // car ils viennent du fichier partenaire qui peut avoir une structure différente.
-        // On essaie d'abord de filtrer par agence/service si disponibles, sinon on utilise une logique de fallback.
-        let agencyPartnerOnly: any[] = [];
-        
-        // Essayer de filtrer par agence/service si les colonnes existent
-        const partnerOnlyWithAgencyService = filteredPartnerOnly.filter(record => {
-            const partnerInfo = this.getPartnerOnlyAgencyAndService(record);
-            // Si on a réussi à extraire agence/service (pas "Inconnue"/"Inconnu"), utiliser le filtrage normal
-            if (partnerInfo.agency !== 'Inconnue' && partnerInfo.service !== 'Inconnu') {
-                const countryMatch = partnerInfo.country === 'Inconnu' || partnerInfo.country === '' || 
-                                     this.flexibleMatch(partnerInfo.country, summaryItem.country);
-                return this.flexibleMatch(partnerInfo.agency, summaryItem.agency) && 
-                       this.flexibleMatch(partnerInfo.service, summaryItem.service) && 
-                       countryMatch;
+        if (summaryItem.matches !== undefined && summaryItem.boOnly !== undefined) {
+            const shouldCreatePartnerOnlyLineFromContext = (this as any)._shouldCreatePartnerOnlyLine === true;
+            let finalPartnerOnly = summaryItem.partnerOnly ?? 0;
+            if (isFirstLine && shouldCreatePartnerOnlyLineFromContext) {
+                finalPartnerOnly = 0;
+            } else if (partnerOnlyAlreadyAttributed || shouldCreatePartnerOnlyLineFromContext) {
+                finalPartnerOnly = 0;
+            } else if (!this.reconciliationSummaryService.getSummaryMeta().hasPartnerOnlyWithAgencyService) {
+                if (isFirstLine && !partnerOnlyAlreadyAttributed) {
+                    finalPartnerOnly = this.reconciliationSummaryService.getSummaryMeta().totalPartnerOnly
+                        || this.getPartnerOnlyCount();
+                } else {
+                    finalPartnerOnly = 0;
+                }
             }
-            return false;
-        });
-        
-        // Vérifier si on doit créer une ligne spéciale en utilisant les propriétés de classe stockées
-        // Cette vérification supplémentaire garantit l'exclusion même si le paramètre n'est pas correctement transmis
+            const mismatches = summaryItem.mismatches ?? 0;
+            const totalBoOnly = (summaryItem.boOnly ?? 0) + mismatches;
+            const matches = summaryItem.matches ?? 0;
+            const totalDetailed = matches + totalBoOnly + finalPartnerOnly;
+            return {
+                matches,
+                boOnly: totalBoOnly,
+                partnerOnly: finalPartnerOnly,
+                mismatches,
+                matchRate: totalDetailed > 0 ? (matches / totalDetailed) * 100 : 0
+            };
+        }
+
         const shouldCreatePartnerOnlyLineFromContext = (this as any)._shouldCreatePartnerOnlyLine === true;
-        
-        if (isFirstLine) {
-            console.log(`🔍 calculateDetailedStatsForSummaryItem - Première ligne ${summaryItem.agency}/${summaryItem.service}: partnerOnlyAlreadyAttributed=${partnerOnlyAlreadyAttributed}, shouldCreatePartnerOnlyLineFromContext=${shouldCreatePartnerOnlyLineFromContext}, _shouldCreatePartnerOnlyLine=${(this as any)._shouldCreatePartnerOnlyLine}`);
-        }
-        
-        // FORCER l'exclusion pour la première ligne si on doit créer une ligne spéciale
-        // Cette vérification est prioritaire et doit être faite AVANT toute autre logique
+        const key = this.statsKey(summaryItem.agency, summaryItem.service, summaryItem.country);
+        const bucket = this.agencyStatsIndex?.get(key) ?? { matches: 0, boOnly: 0, mismatches: 0, partnerOnly: 0 };
+
+        let finalPartnerOnly = 0;
         if (isFirstLine && shouldCreatePartnerOnlyLineFromContext) {
-            agencyPartnerOnly = [];
-            console.log(`🔒 calculateDetailedStatsForSummaryItem: Écarts partenaires FORCÉMENT exclus pour première ligne ${summaryItem.agency}/${summaryItem.service} (ligne spéciale sera créée)`);
+            finalPartnerOnly = 0;
         } else if (partnerOnlyAlreadyAttributed || shouldCreatePartnerOnlyLineFromContext) {
-            // Si partnerOnlyAlreadyAttributed est true OU si on doit créer une ligne spéciale (multi-agences),
-            // ne pas attribuer les écarts partenaires aux lignes d'agence
-            agencyPartnerOnly = [];
-            const reason = partnerOnlyAlreadyAttributed ? 'paramètre transmis' : 'détection contexte multi-agences';
-            console.log(`🔒 calculateDetailedStatsForSummaryItem: Écarts partenaires exclus pour ${summaryItem.agency}/${summaryItem.service} (${reason})`);
-        } else if (partnerOnlyWithAgencyService.length > 0) {
-            // Si on a trouvé des écarts avec agence/service, les utiliser
-            agencyPartnerOnly = partnerOnlyWithAgencyService;
-        } else {
-            // Fallback: Si aucun écart n'a d'agence/service dans ses colonnes,
-            // on les attribue uniquement à la première ligne pour éviter de les compter plusieurs fois
-            // SAUF si on doit créer une ligne spéciale (multi-agences)
-            if (isFirstLine && !partnerOnlyAlreadyAttributed && !shouldCreatePartnerOnlyLineFromContext) {
-                agencyPartnerOnly = filteredPartnerOnly;
-                
-                // Log pour comprendre le contexte
-                if (filteredPartnerOnly.length > 0) {
-                    console.log('🔍 Debug partnerOnly - Aucun écart n\'a d\'agence/service dans ses colonnes');
-                    console.log('🔍 Debug partnerOnly - Record exemple:', filteredPartnerOnly[0]);
-                    console.log('🔍 Debug partnerOnly - Toutes les clés du record:', Object.keys(filteredPartnerOnly[0]));
-                    console.log('🔍 Debug partnerOnly - Attribution de tous les écarts partenaires à la première ligne');
-                }
-            } else {
-                // Pas la première ligne, déjà attribué, ou ligne spéciale à créer : ne pas compter les écarts partenaires
-                agencyPartnerOnly = [];
-                if (isFirstLine && shouldCreatePartnerOnlyLineFromContext) {
-                    console.log(`🔒 calculateDetailedStatsForSummaryItem (bloc else): Écarts partenaires exclus pour première ligne ${summaryItem.agency}/${summaryItem.service} (ligne spéciale sera créée)`);
-                }
-            }
-        }
-        
-        // Log détaillé pour comprendre ce qui se passe
-        console.log(`📊 Écarts partenaires filtrés pour ${summaryItem.agency}/${summaryItem.service}:`);
-        console.log(`  - Total écarts partenaires disponibles: ${filteredPartnerOnly.length}`);
-        console.log(`  - Écarts avec agence/service trouvés: ${partnerOnlyWithAgencyService.length}`);
-        console.log(`  - Écarts attribués à cette ligne: ${agencyPartnerOnly.length}`);
-        console.log(`  - Est première ligne: ${isFirstLine}`);
-        console.log(`  - Déjà attribué: ${partnerOnlyAlreadyAttributed}`);
-        
-        // Log détaillé si on a trouvé des écarts
-        if (agencyPartnerOnly.length > 0) {
-            console.log(`✅ ${agencyPartnerOnly.length} écart(s) partenaire attribué(s) à ${summaryItem.agency}/${summaryItem.service}`);
-        } else if (filteredPartnerOnly.length > 0) {
-            console.log(`⚠️ ${filteredPartnerOnly.length} écart(s) partenaire disponible(s) mais non attribué(s) à ${summaryItem.agency}/${summaryItem.service}`);
-            console.log(`   Raison: isFirstLine=${isFirstLine}, alreadyAttributed=${partnerOnlyAlreadyAttributed}`);
+            finalPartnerOnly = 0;
+        } else if (this.partnerOnlyWithAgencyServiceInIndex) {
+            finalPartnerOnly = bucket.partnerOnly;
+        } else if (isFirstLine && !partnerOnlyAlreadyAttributed && !shouldCreatePartnerOnlyLineFromContext) {
+            finalPartnerOnly = this.partnerOnlyWithoutAgencyCount;
         }
 
-        // Calculer le total des écarts BO (boOnly + mismatches)
-        const totalBoOnly = agencyBoOnly.length + agencyMismatches.length;
-        
-        // FORCER partnerOnly à 0 pour la première ligne si on doit créer une ligne spéciale
-        // Cette vérification finale garantit que même si agencyPartnerOnly a été modifié ailleurs, on force à 0
-        const finalPartnerOnly = (isFirstLine && shouldCreatePartnerOnlyLineFromContext) ? 0 : agencyPartnerOnly.length;
-        
-        // Calculer le total détaillé pour le taux de correspondance
-        const totalDetailed = agencyMatches.length + totalBoOnly + finalPartnerOnly;
-        const matchRate = totalDetailed > 0 ? (agencyMatches.length / totalDetailed) * 100 : 0;
+        const totalBoOnly = bucket.boOnly + bucket.mismatches;
+        const totalDetailed = bucket.matches + totalBoOnly + finalPartnerOnly;
+        const matchRate = totalDetailed > 0 ? (bucket.matches / totalDetailed) * 100 : 0;
 
         return {
-            matches: agencyMatches.length,
-            boOnly: totalBoOnly, // Écarts BO totaux (boOnly + mismatches)
-            partnerOnly: finalPartnerOnly, // Écarts partenaires filtrés par agence/service (forcé à 0 si ligne spéciale)
-            mismatches: agencyMismatches.length, // Incohérences séparées
-            matchRate: matchRate
+            matches: bucket.matches,
+            boOnly: totalBoOnly,
+            partnerOnly: finalPartnerOnly,
+            mismatches: bucket.mismatches,
+            matchRate
         };
     }
 
@@ -4973,7 +5279,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private extractUniqueValues() {
         this.uniqueAgencies = [...new Set(this.reportData.map(item => item.agency))].sort();
         this.uniqueServices = [...new Set(this.reportData.map(item => item.service))].sort();
-        this.uniqueCountries = [...new Set(this.reportData.map(item => item.country).filter(country => country && country.trim() !== ''))].sort();
+        // Toujours exposer les pays sous forme de libellés (ex. GA → Gabon).
+        // On garde le matching tolérant via countriesMatch au moment des filtres.
+        const normalizedCountries = this.reportData
+            .map(item => {
+                const raw = (item.country || '').trim();
+                if (!raw) return '';
+                return countryNameFromCode(raw) || raw;
+            })
+            .filter(country => country && country.trim() !== '');
+        this.uniqueCountries = [...new Set(normalizedCountries)].sort((a, b) => a.localeCompare(b, 'fr'));
         this.uniqueDates = [...new Set(this.reportData.map(item => item.date))].sort();
         this.uniqueStatuses = [...new Set(this.reportData.map(item => item.status).filter(status => status && status.trim() !== ''))].sort();
         this.uniqueEnvs = [...new Set(this.reportData.map(item => this.normalizeReleveEnvKey(item.env)))].filter(e => e !== '').sort();
@@ -5028,7 +5343,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const agenciesFor = new Set<string>();
         this.reportData
             .filter(item => {
-                const matchesCountry = noCountry || this.selectedCountries.includes(item.country);
+                const matchesCountry =
+                    noCountry ||
+                    this.selectedCountries.some(sel => countriesMatch(sel, item.country));
                 return matchesCountry && this.itemMatchesEnvFilter(item.env, envsForFilter);
             })
             .forEach(item => agenciesFor.add(item.agency));
@@ -5057,7 +5374,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             })
             .forEach(item => {
                 if (item.country && item.country.trim()) {
-                    countries.add(item.country);
+                    const raw = item.country.trim();
+                    countries.add(countryNameFromCode(raw) || raw);
                 }
             });
         this.filteredCountries = Array.from(countries).sort();
@@ -5083,7 +5401,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const servicesForSelection = new Set<string>();
         this.reportData
             .filter(item => {
-                const matchesCountry = noCountry || this.selectedCountries.includes(item.country);
+                const matchesCountry =
+                    noCountry ||
+                    this.selectedCountries.some(sel => countriesMatch(sel, item.country));
                 const matchesAgency = noAgency || this.selectedAgencies.includes(item.agency);
                 return (
                     matchesCountry &&
@@ -5439,7 +5759,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             qSvc.length > 0
                 ? this.selectedServices.includes(item.service)
                 : this.selectedServices.length === 0 || this.selectedServices.includes(item.service);
-        const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
+        const countryFilterMatch =
+            this.selectedCountries.length === 0 ||
+            this.selectedCountries.some(sel => countriesMatch(sel, item.country));
         const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
         const traitementMatch = options?.excludeTraitement
             || this.selectedTraitements.length === 0
@@ -7110,32 +7432,44 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
             this.clearAuditHistoryUiState();
 
-            for (let i = 0; i < dates.length; i++) {
+            const firstDate = dates[0];
+            const firstRows = await this.fetchResult8RecRows(scope, firstDate);
+            if (token !== this.dbLoadToken) {
+                return;
+            }
+
+            this.reportData = this.mapResult8RecRows(firstRows, preserveComments);
+            this.finalizeLoadedReportData(preserveComments);
+            this.currentSource = 'db';
+            this.lastDbReportFetchKey = scope.key;
+            this.isLoadingDbReport = false;
+            this.isLoadingMoreDbReport = dates.length > 1;
+            this.applyLoadedReportToView(preserveComments);
+
+            const remainingDates = dates.slice(1);
+            const concurrency = ReconciliationReportComponent.DB_DATE_FETCH_CONCURRENCY;
+            for (let i = 0; i < remainingDates.length; i += concurrency) {
                 if (token !== this.dbLoadToken) {
                     return;
                 }
 
-                const date = dates[i];
-                const rows = await this.fetchResult8RecRows(scope, date);
+                const batch = remainingDates.slice(i, i + concurrency);
+                const batchResults = await Promise.all(
+                    batch.map(date => this.fetchResult8RecRows(scope, date))
+                );
                 if (token !== this.dbLoadToken) {
                     return;
                 }
 
-                const mapped = this.mapResult8RecRows(rows, preserveComments);
-                if (i === 0) {
-                    this.reportData = mapped;
-                    this.finalizeLoadedReportData(preserveComments);
-                    this.currentSource = 'db';
-                    this.lastDbReportFetchKey = scope.key;
-                    this.isLoadingDbReport = false;
-                    this.isLoadingMoreDbReport = dates.length > 1;
-                    this.applyLoadedReportToView(preserveComments);
-                } else {
+                for (let j = 0; j < batch.length; j++) {
+                    const mapped = this.mapResult8RecRows(batchResults[j], preserveComments);
                     this.reportData = this.mergeReportDataById(this.reportData, mapped);
-                    this.reportData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                    this.isLoadingMoreDbReport = i < dates.length - 1;
-                    this.applyLoadedReportToView(preserveComments);
                 }
+
+                this.reportData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                const loadedThroughIndex = i + batch.length;
+                this.isLoadingMoreDbReport = loadedThroughIndex < remainingDates.length;
+                this.applyLoadedReportToView(preserveComments);
             }
 
             this.finalizeLoadedReportData(preserveComments);

@@ -20,7 +20,7 @@ public interface ColumnProcessingRuleRepository extends JpaRepository<ColumnProc
     
     void deleteByAutoProcessingModelId(Long modelId);
     
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query("DELETE FROM ColumnProcessingRule cpr WHERE cpr.autoProcessingModel.modelId = :modelId")
     void deleteByAutoProcessingModelModelId(@Param("modelId") String modelId);

@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -87,15 +88,17 @@ public class AutoProcessingController {
             if (model != null) {
                 return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "model", model
+                    "model", toModelDto(model)
                 ));
             } else {
                 return ResponseEntity.notFound().build();
             }
         } catch (Exception e) {
+            System.err.println("❌ Erreur lors de la récupération du modèle " + id + ": " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
-                "error", e.getMessage()
+                "error", e.getMessage() != null ? e.getMessage() : "Erreur inconnue"
             ));
         }
     }
@@ -112,7 +115,7 @@ public class AutoProcessingController {
             AutoProcessingModel createdModel = autoProcessingService.createModel(model);
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "model", createdModel
+                "model", toModelDto(createdModel)
             ));
         } catch (Exception e) {
             System.err.println("❌ Erreur lors de la création du modèle: " + e.getMessage());
@@ -129,9 +132,16 @@ public class AutoProcessingController {
         try {
             System.out.println("🔄 AutoProcessingController: updateModel() appelé avec id: " + id);
             System.out.println("📝 DTO reçu: " + modelDTO);
+
+            if (modelDTO.getName() == null || modelDTO.getName().isBlank()) {
+                return badRequest("Le nom du modèle est obligatoire");
+            }
             
             // Convertir le DTO en entité
             AutoProcessingModel model = convertDTOToEntity(modelDTO);
+            if (model.getModelId() == null || model.getModelId().isBlank()) {
+                model.setModelId(id);
+            }
             
             AutoProcessingModel updatedModel;
             
@@ -148,10 +158,10 @@ public class AutoProcessingController {
             }
             
             if (updatedModel != null) {
-                System.out.println("✅ Modèle mis à jour: " + updatedModel);
+                System.out.println("✅ Modèle mis à jour: " + updatedModel.getModelId());
                 return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "model", updatedModel
+                    "model", toModelDto(updatedModel)
                 ));
             } else {
                 System.err.println("❌ Modèle non trouvé pour la mise à jour avec id: " + id);
@@ -163,10 +173,7 @@ public class AutoProcessingController {
         } catch (Exception e) {
             System.err.println("❌ Erreur lors de la mise à jour du modèle: " + e.getMessage());
             e.printStackTrace();
-            return ResponseEntity.badRequest().body(Map.of(
-                "success", false,
-                "error", e.getMessage()
-            ));
+            return badRequest(e.getMessage() != null ? e.getMessage() : "Erreur lors de la mise à jour du modèle");
         }
     }
 
@@ -445,6 +452,21 @@ public class AutoProcessingController {
     }
 
     // ===== MÉTHODES UTILITAIRES =====
+
+    private ResponseEntity<Map<String, Object>> badRequest(String message) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("success", false);
+        body.put("error", message);
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    private AutoProcessingModelDTO toModelDto(AutoProcessingModel model) {
+        if (model.getColumnProcessingRules() == null || model.getColumnProcessingRules().isEmpty()) {
+            List<ColumnProcessingRule> rules = columnProcessingRuleService.getRulesByModelId(model.getModelId());
+            model.setColumnProcessingRules(rules != null ? rules : List.of());
+        }
+        return new AutoProcessingModelDTO(model);
+    }
 
     private ColumnProcessingRuleDTO convertToDTO(ColumnProcessingRule entity) {
         ColumnProcessingRuleDTO dto = new ColumnProcessingRuleDTO();

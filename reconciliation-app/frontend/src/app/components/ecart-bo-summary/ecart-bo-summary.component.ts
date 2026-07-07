@@ -12,6 +12,7 @@ import {
 } from '../../services/ecart-bo-summary.service';
 import { PopupService } from '../../services/popup.service';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
+import { ReconciliationService } from '../../services/reconciliation.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import {
   BILINGUAL_COLUMN_ALIASES,
@@ -55,7 +56,6 @@ type SummaryGroupAccumulator = {
   date: string;
   recordCount: number;
   totalMontant: number;
-  env: 'BO' | 'PARTENAIRE';
   multiAgenceRecords?: Record<string, string>[];
 };
 
@@ -206,8 +206,36 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     private cdr: ChangeDetectorRef,
     private ecartBoSummaryService: EcartBoSummaryService,
     private popupService: PopupService,
-    private reconciliationTabsService: ReconciliationTabsService
+    private reconciliationTabsService: ReconciliationTabsService,
+    private reconciliationService: ReconciliationService
   ) {}
+
+  private buildResponseFromTabsService(): ReconciliationResponse | null {
+    const mismatches = this.reconciliationTabsService.getFilteredMismatches() || [];
+    const boOnly = this.reconciliationTabsService.getFilteredBoOnly() || [];
+    const partnerOnly = this.reconciliationTabsService.getFilteredPartnerOnly() || [];
+    const matches = this.reconciliationTabsService.getFilteredMatches() || [];
+
+    const hasAny =
+      mismatches.length > 0 || boOnly.length > 0 || partnerOnly.length > 0 || matches.length > 0;
+
+    if (!hasAny) {
+      return null;
+    }
+
+    return {
+      matches,
+      boOnly,
+      partnerOnly,
+      mismatches,
+      totalBoRecords: boOnly.length + matches.length,
+      totalPartnerRecords: partnerOnly.length + matches.length,
+      totalMatches: matches.length,
+      totalMismatches: mismatches.length,
+      totalBoOnly: boOnly.length,
+      totalPartnerOnly: partnerOnly.length
+    };
+  }
 
   ngOnInit(): void {
     this.refreshUniqueEnvCodes();
@@ -227,6 +255,15 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         }
         if (response) {
           this.response = this.slimResponseForEcarts(response);
+          this.prefillBuffer = prefill;
+          this.awaitingEnvChoice = true;
+          this.pendingEnvSelection = this.sessionDefaultEnvCode || '';
+          this.cdr.markForCheck();
+          return;
+        }
+        const responseFromTabs = this.buildResponseFromTabsService();
+        if (responseFromTabs) {
+          this.response = this.slimResponseForEcarts(responseFromTabs);
           this.prefillBuffer = prefill;
           this.awaitingEnvChoice = true;
           this.pendingEnvSelection = this.sessionDefaultEnvCode || '';
@@ -512,99 +549,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
     this.refreshUniqueEnvCodes();
     this.markAndFilterDuplicateSummaryItems(false);
-    // Optimisation: éviter le recalcul + persistance des liaisons au chargement
-    // (très coûteux sur gros volumes, peut faire freezer le navigateur).
-    // On affiche les liens existants en base via les tokens (O(n)).
-    this.applyExistingTokenLinks();
-  }
-
-  /**
-   * Mapping chunké des données sauvegardées pour éviter de bloquer le thread UI.
-   */
-  private async applySavedDataToSummaryChunked(savedData: any[]): Promise<void> {
-    this.selectedRowKeys.clear();
-    const nextItems: EcartBoSummaryItem[] = [];
-    const chunkSize = EcartBoSummaryComponent.SUMMARY_BUILD_CHUNK_SIZE;
-
-    for (let start = 0; start < savedData.length; start += chunkSize) {
-      const end = Math.min(start + chunkSize, savedData.length);
-      for (let i = start; i < end; i++) {
-        const item = savedData[i];
-        const commentaire = item.commentaire || '';
-        const isManual = commentaire.includes('Ajout manuel') || commentaire.includes('ajout manuel');
-        const mapped: any = {
-          id: item.id,
-          selectionKey: this.createSelectionKey(`saved-${item.id ?? 'x'}`),
-          date: this.formatSummaryDate(item.dateTransaction || ''),
-          agence: item.agence || 'Non spécifié',
-          service: item.service || 'Non spécifié',
-          pays: item.pays || 'Non spécifié',
-          nombre: item.nombreTransactions || 0,
-          montant: item.montantTotal || 0,
-          statut: this.normalizeSummaryStatut(item.statut),
-          env: this.normalizeSummaryEnv(item.env),
-          envCode: item.envCode != null && String(item.envCode).trim() !== '' ? String(item.envCode).trim() : undefined,
-          originalRecords: [],
-          isManual,
-          commentaire,
-          token: item.token || undefined
-        };
-        mapped.__originalStatut = mapped.statut;
-        mapped.__originalToken = mapped.token;
-        nextItems.push(mapped as EcartBoSummaryItem);
-      }
-
-      this.loadingStep = savedData.length
-        ? `Préparation ${end.toLocaleString('fr-FR')} / ${savedData.length.toLocaleString('fr-FR')} lignes…`
-        : 'Finalisation…';
-      this.cdr.markForCheck();
-      if (end < savedData.length) {
-        await new Promise<void>(resolve => setTimeout(resolve, 0));
-      }
-    }
-
-    this.summaryItems = nextItems;
-    this.uniqueAgencies = [...new Set(this.summaryItems.map(i => i.agence).filter(Boolean))].sort();
-    this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
-    this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
-    this.refreshUniqueEnvCodes();
-    this.markAndFilterDuplicateSummaryItems(false);
-    this.applyExistingTokenLinks();
-  }
-
-  /**
-   * Applique un liage léger basé sur les tokens existants (O(n)), sans modifier les statuts
-   * et sans appeler le backend. Permet d'afficher les couples BO/Partenaire rapidement.
-   */
-  private applyExistingTokenLinks(): void {
-    const tokenGroups = new Map<string, EcartBoSummaryItem[]>();
-    for (const item of this.summaryItems) {
-      item.linkedId = undefined;
-      const token = (item.token || '').trim();
-      if (!token) continue;
-      if (!tokenGroups.has(token)) tokenGroups.set(token, []);
-      tokenGroups.get(token)!.push(item);
-    }
-
-    for (const group of tokenGroups.values()) {
-      if (group.length < 2) continue;
-      const bos = group.filter(i => this.normalizeSummaryEnv(i.env) === 'BO');
-      const partners = group.filter(i => this.normalizeSummaryEnv(i.env) === 'PARTENAIRE');
-      if (!bos.length || !partners.length) continue;
-
-      // Si un token est présent côté BO et PARTENAIRE, la correspondance existe.
-      // Le statut doit donc être OK (sinon on affiche "en cours" alors que la paire est déjà liée).
-      for (const item of group) {
-        if (item.statut !== 'ok') {
-          item.statut = 'ok';
-        }
-      }
-
-      const bo = bos[0];
-      const partner = partners[0];
-      bo.linkedId = partner.id;
-      partner.linkedId = bo.id;
-    }
+    this.linkMatchingPairs(true);
   }
 
   loadSavedSummaryData(): void {
@@ -612,7 +557,6 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.pendingLinesBuffer = null;
     this.prefillBuffer = null;
     this.isLoading = true;
-    this.loadingStep = 'Chargement des données sauvegardées…';
     this.cdr.markForCheck();
     const { filter, key } = this.buildSavedSummaryFilter();
 
@@ -622,24 +566,22 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         next: (savedData) => {
           this.savedDataMode = true;
           this.lastSavedFetchKey = key;
-          // Laisser Angular afficher le spinner avant le traitement lourd.
+          // Laisser Angular afficher le spinner avant le traitement lourd (linking, filtres).
           setTimeout(() => {
-            void this.applySavedDataToSummaryChunked(savedData)
-              .then(() => this.applyFilters())
-              .catch((processingError) => {
-                console.error('Erreur lors du traitement des données sauvegardées:', processingError);
-                this.popupService.showError('❌ Erreur lors du traitement des données sauvegardées.');
-              })
-              .finally(() => {
-                this.isLoading = false;
-                this.loadingStep = '';
-                this.cdr.markForCheck();
-              });
+            try {
+              this.applySavedDataToSummary(savedData);
+              this.applyFilters();
+            } catch (processingError) {
+              console.error('Erreur lors du traitement des données sauvegardées:', processingError);
+              this.popupService.showError('❌ Erreur lors du traitement des données sauvegardées.');
+            } finally {
+              this.isLoading = false;
+              this.cdr.markForCheck();
+            }
           }, 0);
         },
         error: (error) => {
           this.isLoading = false;
-          this.loadingStep = '';
           this.cdr.markForCheck();
           console.error('Erreur lors du chargement des données sauvegardées:', error);
           if (this.response) {
@@ -684,6 +626,29 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
   /** Construit summaryItems par lots pour ne pas bloquer le thread UI. */
   private async buildSummaryItemsFromReconciliationResponseAsync(): Promise<void> {
+    const sessionId =
+      this.response?.progressSessionId ||
+      this.reconciliationService.getCurrentJobId();
+    const needsRemoteEcarts =
+      !!this.response &&
+      ((this.response.resultsPaginated ?? false) ||
+        ((this.response.totalBoOnly ?? 0) + (this.response.totalMismatches ?? 0) >
+          (this.response.boOnly?.length ?? 0) + (this.response.mismatches?.length ?? 0)));
+
+    if (sessionId && needsRemoteEcarts) {
+      this.loadingStep = 'Chargement des écarts BO…';
+      this.cdr.markForCheck();
+      const serverLines = await this.reconciliationService.loadEcartBoSummaryLines(sessionId);
+      if (serverLines.length > 0) {
+        const filtered = this.filterPendingLinesByMagicService(serverLines);
+        this.applyPendingLinesFromEcartBo(filtered);
+        queueMicrotask(() => this.linkMatchingPairs(false));
+        return;
+      }
+    }
+
+    await this.ensureBoEcartsLoaded();
+
     const mismatches = this.applyMagicReconciliationFilter(this.response?.mismatches ?? []);
     const boOnly = this.applyMagicReconciliationFilter(this.response?.boOnly ?? []);
     const records = mismatches.concat(boOnly);
@@ -705,9 +670,54 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     }
 
     this.finalizeSummaryFromGroups(groupedByAgence);
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
-    this.linkMatchingPairs(false);
+    queueMicrotask(() => this.linkMatchingPairs(false));
     this.applyFilters();
+  }
+
+  /** Charge boOnly/mismatches depuis l'API si la réponse HTTP a été tronquée (pagination). */
+  private async ensureBoEcartsLoaded(): Promise<void> {
+    if (!this.response) {
+      return;
+    }
+
+    const localCount = (this.response.boOnly?.length ?? 0) + (this.response.mismatches?.length ?? 0);
+    const expectedCount = (this.response.totalBoOnly ?? 0) + (this.response.totalMismatches ?? 0);
+    if (localCount > 0 && (!this.response.resultsPaginated || localCount >= expectedCount)) {
+      return;
+    }
+
+    const tabsBo = this.reconciliationTabsService.getFilteredBoOnly() || [];
+    const tabsMismatch = this.reconciliationTabsService.getFilteredMismatches() || [];
+    if ((tabsBo.length + tabsMismatch.length) > 0) {
+      this.response = {
+        ...this.response,
+        boOnly: tabsBo,
+        mismatches: tabsMismatch
+      };
+      return;
+    }
+
+    if (!this.response.resultsPaginated && expectedCount <= 0) {
+      return;
+    }
+
+    const sessionId =
+      this.response.progressSessionId ||
+      this.reconciliationService.getCurrentJobId();
+    if (!sessionId) {
+      return;
+    }
+
+    this.loadingStep = 'Chargement des écarts BO…';
+    this.cdr.markForCheck();
+    const { boOnly, mismatches } = await this.reconciliationService.loadBoEcartsFromSession(sessionId);
+    this.response = {
+      ...this.response,
+      boOnly,
+      mismatches
+    };
+    this.reconciliationTabsService.setFilteredBoOnly(boOnly);
+    this.reconciliationTabsService.setFilteredMismatches(mismatches);
   }
 
   private accumulateSummaryRecord(
@@ -717,39 +727,13 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     const getValue = (row: Record<string, string>, aliasGroup: readonly string[]): string =>
       getRecordValueByAliases(row, aliasGroup);
 
-    const getPlatform = (row: Record<string, string>): 'BO' | 'PARTENAIRE' => {
-      // Le rapport peut contenir une colonne "Plateforme/Platform" (BO vs PARTENAIRE).
-      // On tolère plusieurs variantes car ce champ ne fait pas partie des alias bilingues globaux.
-      const candidates = [
-        row['Plateforme'],
-        row['plateforme'],
-        row['PLATEFORME'],
-        row['Platform'],
-        row['platform'],
-        row['PLATFORM'],
-        row['Plateform'],
-        row['plateform'],
-        row['Env'],
-        row['env']
-      ]
-        .map(v => (v != null ? String(v).trim() : ''))
-        .filter(Boolean);
-      const raw = candidates[0] || '';
-      const norm = raw.toUpperCase();
-      if (norm.includes('PARTENAIRE') || norm.includes('PARTNER')) {
-        return 'PARTENAIRE';
-      }
-      return 'BO';
-    };
-
     const agence = getValue(record, BILINGUAL_COLUMN_ALIASES.agence) || 'Non spécifié';
     const service = getValue(record, BILINGUAL_COLUMN_ALIASES.service) || 'Non spécifié';
     const pays = getValue(record, BILINGUAL_COLUMN_ALIASES.pays) || 'Non spécifié';
     const date = getValue(record, BILINGUAL_COLUMN_ALIASES.date) || '';
     const montantStr = getValue(record, BILINGUAL_COLUMN_ALIASES.montant);
     const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
-    const env = getPlatform(record);
-    const key = `${env}|${agence}|${service}|${pays}`;
+    const key = `${agence}|${service}|${pays}`;
     const isMultiAgence = agence === 'multiAgence';
 
     let group = groupedByAgence.get(key);
@@ -761,7 +745,6 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         date,
         recordCount: 0,
         totalMontant: 0,
-        env,
         ...(isMultiAgence ? { multiAgenceRecords: [] } : {})
       };
       groupedByAgence.set(key, group);
@@ -779,32 +762,6 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     const getValue = (record: Record<string, string>, aliasGroup: readonly string[]): string =>
       getRecordValueByAliases(record, aliasGroup);
 
-    const getPlatform = (row: Record<string, string>, fallback: 'BO' | 'PARTENAIRE'): 'BO' | 'PARTENAIRE' => {
-      const candidates = [
-        row['Plateforme'],
-        row['plateforme'],
-        row['PLATEFORME'],
-        row['Platform'],
-        row['platform'],
-        row['PLATFORM'],
-        row['Plateform'],
-        row['plateform'],
-        row['Env'],
-        row['env']
-      ]
-        .map(v => (v != null ? String(v).trim() : ''))
-        .filter(Boolean);
-      const raw = candidates[0] || '';
-      const norm = raw.toUpperCase();
-      if (norm.includes('PARTENAIRE') || norm.includes('PARTNER')) {
-        return 'PARTENAIRE';
-      }
-      if (norm.includes('BO')) {
-        return 'BO';
-      }
-      return fallback;
-    };
-
     const items: EcartBoSummaryItem[] = [];
     for (const group of groupedByAgence.values()) {
       if (group.agence === 'multiAgence' && group.multiAgenceRecords?.length) {
@@ -815,7 +772,6 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           const date = getValue(record, BILINGUAL_COLUMN_ALIASES.date) || group.date;
           const montantStr = getValue(record, BILINGUAL_COLUMN_ALIASES.montant);
           const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
-          const env = getPlatform(record, group.env);
           items.push({
             selectionKey: this.createSelectionKey('generated'),
             date,
@@ -825,7 +781,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
             nombre: 1,
             montant,
             statut: 'en cours',
-            env,
+            env: 'BO',
             envCode: this.getEnvCodeForNewRows(),
             originalRecords: [],
             token: undefined
@@ -841,7 +797,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           nombre: group.recordCount,
           montant: group.totalMontant,
           statut: 'en cours',
-          env: group.env,
+          env: 'BO',
           envCode: this.getEnvCodeForNewRows(),
           originalRecords: [],
           token: undefined
@@ -981,20 +937,17 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     }
 
     if (this.selectedDateFrom) {
-      const dateFrom = this.parseDate(this.selectedDateFrom);
+      const dateFrom = new Date(this.selectedDateFrom);
       if (!item.date) return false;
-      const itemDate = this.parseDate(item.date.split('T')[0]);
-      if (!dateFrom || !itemDate) return false;
+      const itemDate = new Date(item.date.split('T')[0]);
       if (itemDate < dateFrom) return false;
     }
 
     if (this.selectedDateTo) {
-      const dateTo = this.parseDate(this.selectedDateTo);
-      if (!dateTo) return false;
+      const dateTo = new Date(this.selectedDateTo);
       dateTo.setHours(23, 59, 59, 999);
       if (!item.date) return false;
-      const itemDate = this.parseDate(item.date.split('T')[0]);
-      if (!itemDate) return false;
+      const itemDate = new Date(item.date.split('T')[0]);
       if (itemDate > dateTo) return false;
     }
 
@@ -1867,17 +1820,6 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       
       // Format YYYY-MM-DD
       if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
-        // Important : "YYYY-MM-DD" est interprété en UTC par JS → décalage de jour possible.
-        // On force une interprétation locale (minuit local) pour des comparaisons J-1/J+1.
-        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
-        if (m) {
-          const y = Number(m[1]);
-          const mo = Number(m[2]);
-          const d = Number(m[3]);
-          if (!isNaN(y) && !isNaN(mo) && !isNaN(d)) {
-            return new Date(y, mo - 1, d);
-          }
-        }
         return new Date(dateStr);
       }
       

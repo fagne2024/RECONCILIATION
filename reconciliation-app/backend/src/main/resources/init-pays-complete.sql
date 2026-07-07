@@ -34,7 +34,8 @@ INSERT IGNORE INTO pays (code, nom) VALUES
 ('BJ', 'Bénin'),
 ('NE', 'Niger'),
 ('TD', 'Tchad'),
-('TG', 'Togo');
+('TG', 'Togo'),
+('GA', 'Gabon');
 
 -- Vérification : Afficher les pays créés
 SELECT * FROM pays ORDER BY code;

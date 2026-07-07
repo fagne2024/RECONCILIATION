@@ -19,6 +19,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,7 +36,11 @@ public class ReconciliationJobService {
     
     /** Cache des résultats désérialisés par jobId pour éviter de re-parser le JSON à chaque requête paginée */
     private final ConcurrentHashMap<String, ReconciliationResponse> resultCache = new ConcurrentHashMap<>();
+    /** Cache léger boOnly/mismatches — évite de re-sérialiser les matches pour ecart-bo-summary */
+    private final ConcurrentHashMap<String, EcartsSlice> ecartsSliceCache = new ConcurrentHashMap<>();
     private static final int RESULT_CACHE_MAX_SIZE = 50;
+
+    public record EcartsSlice(List<Map<String, String>> boOnly, List<Map<String, String>> mismatches) {}
     
     private static final String UPLOAD_DIR = "uploads/reconciliation";
     
@@ -190,9 +197,34 @@ public class ReconciliationJobService {
             return;
         }
         resultCache.put(sessionId, result);
+        cacheEcartsSlice(sessionId, result);
         evictResultCacheIfNeeded();
         log.info("Resultat sync mis en cache pour pagination: session={}, matches={}",
                 sessionId, result.getMatches() != null ? result.getMatches().size() : 0);
+    }
+
+    private void cacheEcartsSlice(String sessionId, ReconciliationResponse result) {
+        List<Map<String, String>> boOnly = result.getBoOnly() != null
+            ? new ArrayList<>(result.getBoOnly())
+            : new ArrayList<>();
+        List<Map<String, String>> mismatches = result.getMismatches() != null
+            ? new ArrayList<>(result.getMismatches())
+            : new ArrayList<>();
+        ecartsSliceCache.put(sessionId, new EcartsSlice(boOnly, mismatches));
+    }
+
+    /**
+     * Écarts BO légers (sans charger / sérialiser les matches).
+     */
+    public Optional<EcartsSlice> getCachedEcarts(String jobId) {
+        EcartsSlice cached = ecartsSliceCache.get(jobId);
+        if (cached != null) {
+            return Optional.of(cached);
+        }
+        return getCachedResult(jobId).map(result -> {
+            cacheEcartsSlice(jobId, result);
+            return ecartsSliceCache.get(jobId);
+        });
     }
 
     public Optional<ReconciliationResponse> getCachedResult(String jobId) {
@@ -207,6 +239,7 @@ public class ReconciliationJobService {
         try {
             ReconciliationResponse result = objectMapper.readValue(jobOpt.get().getResultJson(), ReconciliationResponse.class);
             resultCache.put(jobId, result);
+            cacheEcartsSlice(jobId, result);
             evictResultCacheIfNeeded();
             return Optional.of(result);
         } catch (JsonProcessingException e) {
@@ -217,7 +250,12 @@ public class ReconciliationJobService {
     
     private void evictResultCacheIfNeeded() {
         while (resultCache.size() > RESULT_CACHE_MAX_SIZE) {
-            resultCache.keySet().stream().findFirst().ifPresent(resultCache::remove);
+            String oldest = resultCache.keySet().stream().findFirst().orElse(null);
+            if (oldest == null) {
+                break;
+            }
+            resultCache.remove(oldest);
+            ecartsSliceCache.remove(oldest);
         }
     }
     
@@ -248,6 +286,7 @@ public class ReconciliationJobService {
         
         for (ReconciliationJob job : staleJobs) {
             resultCache.remove(job.getJobId());
+            ecartsSliceCache.remove(job.getJobId());
             job.setStatus(ReconciliationJob.JobStatus.FAILED);
             job.setErrorMessage("Job expiré - nettoyage automatique");
             job.setCompletedAt(LocalDateTime.now());

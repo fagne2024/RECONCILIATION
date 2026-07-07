@@ -12,8 +12,9 @@ import { ImpactOP } from '../../models/impact-op.model';
 import { OperationCreateRequest } from '../../models/operation.model';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
+import { ReconciliationService } from '../../services/reconciliation.service';
 import { extractRecordAmount } from '../../utils/record-amount.util';
-import { filterRecordsByMagicPartition } from '../../utils/magic-partition.util';
+import { partitionEcartRecords, resolveMagicPartitionContext } from '../../utils/magic-partition.util';
 
 @Component({
   selector: 'app-ecart-partner-table',
@@ -90,6 +91,7 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
     private operationService: OperationService,
     private compteService: CompteService,
     private reconciliationTabsService: ReconciliationTabsService,
+    private reconciliationService: ReconciliationService,
     private el: ElementRef
   ) {}
 
@@ -101,6 +103,18 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.syncMagicContextFromAppState();
+
+    // Fallback: afficher le cache ReconciliationTabsService si disponible.
+    const cached = this.reconciliationTabsService.getFilteredPartnerOnly();
+    if (cached && cached.length > 0) {
+      this.filteredPartnerOnly = [...cached];
+      this.loadProgress = 100;
+      this.initializeColumns();
+      this.applyFilters();
+      this.isLoading = false;
+      this.cdr.markForCheck();
+    }
+
     this.subscription.add(
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
         if (response) {
@@ -152,22 +166,47 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
     }
   }
 
-  private resolvePartnerOnlyForDisplay(): Record<string, string>[] {
-    const partnerOnly = this.response?.partnerOnly || [];
-    const service = this.appStateService.getSelectedMagicService()
-      || this.reconciliationTabsService.getMagicViewContext().service;
-    const partnerFile = this.appStateService.getSelectedMagicPartnerFile()
-      || this.reconciliationTabsService.getMagicViewContext().partnerFile;
+  private async resolvePartnerOnlyForDisplay(): Promise<Record<string, string>[]> {
+    let partnerOnly = this.response?.partnerOnly || [];
 
-    if (!service && !partnerFile) {
+    if (partnerOnly.length === 0) {
+      const cached = this.reconciliationTabsService.getFilteredPartnerOnly();
+      if (cached?.length) {
+        partnerOnly = cached;
+      }
+    }
+
+    const expectedTotal = this.response?.totalPartnerOnly ?? 0;
+    if (
+      partnerOnly.length === 0 &&
+      (this.response?.resultsPaginated || expectedTotal > 0)
+    ) {
+      const sessionId =
+        this.response?.progressSessionId ||
+        this.reconciliationService.getCurrentJobId();
+      if (sessionId) {
+        partnerOnly = await this.reconciliationService.loadPartnerOnlyFromSession(sessionId);
+        if (this.response) {
+          this.response = { ...this.response, partnerOnly };
+        }
+        this.reconciliationTabsService.setFilteredPartnerOnly(partnerOnly);
+      }
+    }
+
+    const ctx = resolveMagicPartitionContext({
+      appStateService: this.appStateService.getSelectedMagicService(),
+      appStatePartnerFile: this.appStateService.getSelectedMagicPartnerFile(),
+      tabsContext: this.reconciliationTabsService.getMagicViewContext()
+    });
+
+    if (!ctx.service && !ctx.partnerFile) {
       return partnerOnly;
     }
 
-    this.reconciliationTabsService.setMagicViewContext(service || '', partnerFile || '');
-    this.magicServiceFilterLocked = (service || '').trim();
+    this.reconciliationTabsService.setMagicViewContext(ctx.service, ctx.partnerFile);
+    this.magicServiceFilterLocked = ctx.service;
 
-    const strictFiltered = filterRecordsByMagicPartition(partnerOnly, service || '', partnerFile || '');
-    return strictFiltered;
+    return partitionEcartRecords(partnerOnly, ctx);
   }
 
   private async loadPartnerOnly(): Promise<void> {
@@ -177,7 +216,7 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
 
     try {
       this.syncMagicContextFromAppState();
-      const allData = this.resolvePartnerOnlyForDisplay();
+      const allData = await this.resolvePartnerOnlyForDisplay();
       this.lastProcessedSignature = `${this.response?.partnerOnly?.length || 0}_${this.appStateService.getSelectedMagicService()}_${this.appStateService.getSelectedMagicPartnerFile()}`;
       this.reconciliationTabsService.setFilteredPartnerOnly(allData);
       await this.loadPartnerOnlyProgressively(allData);

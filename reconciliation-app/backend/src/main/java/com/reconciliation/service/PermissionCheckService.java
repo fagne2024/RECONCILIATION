@@ -261,6 +261,21 @@ public class PermissionCheckService {
         return "reconciliation".equals(normalizePermissionName(moduleName));
     }
 
+    private boolean isEcartBoSummaryWriteRequest(String apiPath, String httpMethod) {
+        if (apiPath == null || httpMethod == null) {
+            return false;
+        }
+        String path = normalizeApiPath(apiPath);
+        if (!path.startsWith("/api/ecart-bo-summary")) {
+            return false;
+        }
+        String method = httpMethod.toUpperCase(Locale.ROOT);
+        return "POST".equals(method)
+            || "PUT".equals(method)
+            || "PATCH".equals(method)
+            || "DELETE".equals(method);
+    }
+
     private boolean checkPermissionAcrossModules(
         String username,
         String apiPath,
@@ -281,7 +296,10 @@ public class PermissionCheckService {
                 if (hasFlexibleModulePermission(username, canonicalOverride, effectivePermission, httpMethod)) {
                     return true;
                 }
-                return false;
+                // Écritures suivi écarts : retomber sur Réconciliation / Résultats (ex. lancer_reconciliation)
+                if (!isEcartBoSummaryWriteRequest(apiPath, httpMethod)) {
+                    return false;
+                }
             }
         }
 
@@ -750,6 +768,18 @@ public class PermissionCheckService {
     private String resolveReconciliationWorkflowPermission(String apiPath, String httpMethod) {
         String path = normalizeApiPath(apiPath);
         String method = httpMethod != null ? httpMethod.toUpperCase() : "";
+
+        if (path.startsWith("/api/ecart-bo-summary")) {
+            if (path.contains("/batch/status-links")) {
+                return "modifier";
+            }
+            return switch (method) {
+                case "POST" -> "creer";
+                case "PUT", "PATCH" -> "modifier";
+                case "DELETE" -> "supprimer";
+                default -> "consulter";
+            };
+        }
 
         if (path.contains("/status") && ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method))) {
             return "enregistrer_statut_reconciliation";

@@ -8,6 +8,16 @@ export interface AgencySummaryData {
     country: string;
     totalVolume: number;
     recordCount: number;
+    /** Pré-calculé côté résultats ou agrégation paginée — évite de rescanner tous les enregistrements. */
+    matches?: number;
+    boOnly?: number;
+    partnerOnly?: number;
+    mismatches?: number;
+}
+
+export interface AgencySummaryMeta {
+    totalPartnerOnly: number;
+    hasPartnerOnlyWithAgencyService: boolean;
 }
 
 @Injectable({
@@ -16,9 +26,12 @@ export interface AgencySummaryData {
 export class ReconciliationSummaryService {
     private agencySummarySubject = new BehaviorSubject<AgencySummaryData[]>([]);
     public agencySummary$ = this.agencySummarySubject.asObservable();
+    private summaryMeta: AgencySummaryMeta = { totalPartnerOnly: 0, hasPartnerOnlyWithAgencyService: false };
 
-    setAgencySummary(summary: AgencySummaryData[]) {
-        console.log('📊 ReconciliationSummaryService - Stockage du résumé par agence:', summary);
+    setAgencySummary(summary: AgencySummaryData[], meta?: Partial<AgencySummaryMeta>) {
+        if (meta) {
+            this.summaryMeta = { ...this.summaryMeta, ...meta };
+        }
         this.agencySummarySubject.next(summary);
     }
 
@@ -26,7 +39,12 @@ export class ReconciliationSummaryService {
         return this.agencySummarySubject.value;
     }
 
+    getSummaryMeta(): AgencySummaryMeta {
+        return this.summaryMeta;
+    }
+
     clearAgencySummary() {
+        this.summaryMeta = { totalPartnerOnly: 0, hasPartnerOnlyWithAgencyService: false };
         this.agencySummarySubject.next([]);
     }
 }

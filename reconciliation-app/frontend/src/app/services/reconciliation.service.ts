@@ -5,6 +5,10 @@ import { catchError, tap, map, finalize, retry, takeUntil, switchMap, retryWhen,
 import { ReconciliationRequest } from '../models/reconciliation-request.model';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
 import { AppStateService } from './app-state.service';
+import { AgencySummaryData } from './reconciliation-summary.service';
+import { EcartBoSummaryPendingLine } from './ecart-bo-summary.service';
+import { fixGarbledCharacters } from '../utils/encoding-fixer';
+import { countryNameFromCode } from '../utils/country-codes.util';
 
 export interface ReconciliationConfig {
     boFile: File;
@@ -42,7 +46,10 @@ export interface ProgressUpdate {
 export class ReconciliationService implements OnInit, OnDestroy {
     private static readonly MAX_429_RETRIES = 4;
     private static readonly LAUNCH_WATCHDOG_MS = 30_000;
+    private static readonly LAUNCH_WATCHDOG_MAX_MS = 600_000;
+    private static readonly LIVE_PROGRESS_POLL_MS = 4_500;
     private static readonly MAX_AUTO_RELAUNCH_ATTEMPTS = 2;
+    private static readonly BACKEND_PENDING_STEP = 'en attente';
     private apiUrl = '/api/reconciliation';
     private memoryResults = new Map<string, any>(); // Stockage en mémoire pour les gros fichiers
     
@@ -65,6 +72,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
     
     // Job management
     private currentJobId: string | null = null;
+    private boEcartsSessionCache = new Map<string, { boOnly: Record<string, string>[]; mismatches: Record<string, string>[] }>();
+    private ecartBoSummaryLinesCache = new Map<string, EcartBoSummaryPendingLine[]>();
+    private partnerOnlySessionCache = new Map<string, Record<string, string>[]>();
     private destroy$ = new Subject<void>();
     
     constructor(private http: HttpClient, private appStateService: AppStateService) {
@@ -772,6 +782,388 @@ export class ReconciliationService implements OnInit, OnDestroy {
     }
 
     /**
+     * Agrège le résumé par agence (serveur en priorité, repli pagination client).
+     */
+    async loadAgencySummaryAggregated(
+        sessionId: string,
+        pageSize = 5000,
+        onProgress?: (processedPages: number, totalPages: number) => void
+    ): Promise<{
+        summary: AgencySummaryData[];
+        meta: { totalPartnerOnly: number; hasPartnerOnlyWithAgencyService: boolean; partnerOnlyWithoutAgency: number };
+    }> {
+        try {
+            const serverPayload = await firstValueFrom(this.http.get<{
+                success?: boolean;
+                summary?: AgencySummaryData[];
+                meta?: {
+                    totalPartnerOnly?: number;
+                    hasPartnerOnlyWithAgencyService?: boolean;
+                    partnerOnlyWithoutAgency?: number;
+                };
+            }>(`${this.apiUrl}/results/agency-summary?sessionId=${encodeURIComponent(sessionId)}`));
+
+            if (serverPayload?.success && Array.isArray(serverPayload.summary) && serverPayload.summary.length > 0) {
+                const meta = serverPayload.meta ?? {};
+                return {
+                    summary: serverPayload.summary,
+                    meta: {
+                        totalPartnerOnly: meta.totalPartnerOnly ?? 0,
+                        hasPartnerOnlyWithAgencyService: !!meta.hasPartnerOnlyWithAgencyService,
+                        partnerOnlyWithoutAgency: meta.partnerOnlyWithoutAgency ?? 0
+                    }
+                };
+            }
+        } catch (error) {
+            console.warn('Agrégation serveur indisponible, repli pagination client:', error);
+        }
+
+        return this.loadAgencySummaryAggregatedClient(sessionId, pageSize, onProgress);
+    }
+
+    /**
+     * Précharge les écarts BO en arrière-plan (juste après la réconciliation).
+     */
+    prefetchBoEcarts(sessionId: string): void {
+        if (!sessionId || this.boEcartsSessionCache.has(sessionId)) {
+            return;
+        }
+        void this.loadBoEcartsFromSession(sessionId).catch(() => undefined);
+    }
+
+    prefetchEcartBoSummaryLines(sessionId: string): void {
+        if (!sessionId || this.ecartBoSummaryLinesCache.has(sessionId)) {
+            return;
+        }
+        void this.loadEcartBoSummaryLines(sessionId).catch(() => undefined);
+    }
+
+    prefetchPartnerOnly(sessionId: string): void {
+        if (!sessionId || this.partnerOnlySessionCache.has(sessionId)) {
+            return;
+        }
+        void this.loadPartnerOnlyFromSession(sessionId).catch(() => undefined);
+    }
+
+    async loadPartnerOnlyFromSession(sessionId: string, pageSize = 5000): Promise<Record<string, string>[]> {
+        const cached = this.partnerOnlySessionCache.get(sessionId);
+        if (cached) {
+            return cached;
+        }
+
+        const records = await this.loadAllPaginatedPages(
+            page => firstValueFrom(this.getPartnerOnly(sessionId, page, pageSize)),
+            'partnerOnly'
+        );
+        this.partnerOnlySessionCache.set(sessionId, records);
+        return records;
+    }
+
+    /**
+     * Charge uniquement les écarts BO (boOnly + mismatches) — léger même après réconciliation volumineuse.
+     */
+    async loadBoEcartsFromSession(
+        sessionId: string
+    ): Promise<{ boOnly: Record<string, string>[]; mismatches: Record<string, string>[] }> {
+        const cached = this.boEcartsSessionCache.get(sessionId);
+        if (cached) {
+            return cached;
+        }
+
+        try {
+            const payload = await firstValueFrom(this.http.get<{
+                success?: boolean;
+                boOnly?: Record<string, string>[];
+                mismatches?: Record<string, string>[];
+            }>(`${this.apiUrl}/results/ecart-bo-ecarts?sessionId=${encodeURIComponent(sessionId)}`));
+
+            if (payload?.success) {
+                const result = {
+                    boOnly: payload.boOnly ?? [],
+                    mismatches: payload.mismatches ?? []
+                };
+                this.boEcartsSessionCache.set(sessionId, result);
+                return result;
+            }
+        } catch (error) {
+            console.warn('Endpoint ecart-bo-ecarts indisponible, repli pagination:', error);
+        }
+
+        const [boOnly, mismatches] = await Promise.all([
+            this.loadAllPaginatedPages(
+                page => firstValueFrom(this.getBoOnly(sessionId, page, 5000)),
+                'boOnly'
+            ),
+            this.loadAllPaginatedPages(
+                page => firstValueFrom(this.getMismatches(sessionId, page, 5000)),
+                'mismatches'
+            )
+        ]);
+        const result = { boOnly, mismatches };
+        this.boEcartsSessionCache.set(sessionId, result);
+        return result;
+    }
+
+    /**
+     * Lignes agrégées prêtes pour ecart-bo-summary (agrégation serveur).
+     */
+    async loadEcartBoSummaryLines(sessionId: string): Promise<EcartBoSummaryPendingLine[]> {
+        const cached = this.ecartBoSummaryLinesCache.get(sessionId);
+        if (cached) {
+            return cached;
+        }
+
+        try {
+            const payload = await firstValueFrom(this.http.get<{
+                success?: boolean;
+                lines?: Array<{
+                    agence?: string;
+                    service?: string;
+                    pays?: string;
+                    date?: string;
+                    montant?: number;
+                    statut?: string;
+                    nombreTransactions?: number;
+                }>;
+            }>(`${this.apiUrl}/results/ecart-bo-summary-lines?sessionId=${encodeURIComponent(sessionId)}`));
+
+            if (payload?.success && Array.isArray(payload.lines)) {
+                const lines: EcartBoSummaryPendingLine[] = payload.lines.map(line => ({
+                    agence: String(line.agence ?? ''),
+                    service: String(line.service ?? ''),
+                    pays: String(line.pays ?? ''),
+                    date: String(line.date ?? ''),
+                    montant: Number(line.montant) || 0,
+                    statut: String(line.statut ?? 'EN_COURS'),
+                    nombreTransactions: Number(line.nombreTransactions) || 1
+                }));
+                this.ecartBoSummaryLinesCache.set(sessionId, lines);
+                return lines;
+            }
+        } catch (error) {
+            console.warn('Endpoint ecart-bo-summary-lines indisponible:', error);
+        }
+
+        return [];
+    }
+
+    /**
+     * Repli : agrège page par page côté client (gros volumes, plus lent).
+     */
+    private async loadAgencySummaryAggregatedClient(
+        sessionId: string,
+        pageSize = 5000,
+        onProgress?: (processedPages: number, totalPages: number) => void
+    ): Promise<{
+        summary: AgencySummaryData[];
+        meta: { totalPartnerOnly: number; hasPartnerOnlyWithAgencyService: boolean; partnerOnlyWithoutAgency: number };
+    }> {
+
+        const agenceKeys = ['Agence', 'agence', 'AGENCE', 'agency', 'Agency'];
+        const serviceKeys = ['Service', 'service', 'SERVICE', 'serv', 'Serv'];
+        const paysKeys = ['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx', 'Pays provenance', 'pays provenance'];
+        const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction', 'Date opération', 'dateOperation'];
+        const amountKeys = ['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'AMOUNT', 'volume', 'Volume', 'VOLUME'];
+
+        const getValue = (record: Record<string, string>, keys: string[]): string => {
+            for (const key of keys) {
+                const originalKey = Object.keys(record).find(k =>
+                    fixGarbledCharacters(k).toLowerCase() === key.toLowerCase() ||
+                    k.toLowerCase() === key.toLowerCase()
+                );
+                if (originalKey && record[originalKey] != null && String(record[originalKey]).trim() !== '') {
+                    return String(record[originalKey]);
+                }
+                if (record[key] != null && String(record[key]).trim() !== '') {
+                    return String(record[key]);
+                }
+            }
+            return '';
+        };
+
+        const parseAmount = (raw: string): number => {
+            if (!raw) return 0;
+            const cleaned = String(raw).replace(/\s/g, '').replace(',', '.');
+            const parsed = parseFloat(cleaned);
+            return isNaN(parsed) ? 0 : parsed;
+        };
+
+        const ensureEntry = (
+            targetMap: Map<string, AgencySummaryData>,
+            agency: string,
+            service: string,
+            country: string,
+            date: string
+        ): AgencySummaryData => {
+            const key = `${agency}|${service}|${country}`;
+            let entry = targetMap.get(key);
+            if (!entry) {
+                entry = {
+                    agency,
+                    service,
+                    country,
+                    date,
+                    totalVolume: 0,
+                    recordCount: 0,
+                    matches: 0,
+                    boOnly: 0,
+                    partnerOnly: 0,
+                    mismatches: 0
+                };
+                targetMap.set(key, entry);
+            }
+            return entry;
+        };
+
+        const addBoRecordToMap = (
+            targetMap: Map<string, AgencySummaryData>,
+            record: Record<string, string>,
+            field: 'matches' | 'boOnly' | 'mismatches'
+        ) => {
+            const agency = getValue(record, agenceKeys) || 'Inconnue';
+            const service = getValue(record, serviceKeys) || 'Inconnu';
+            const rawCountry = getValue(record, paysKeys);
+            const country = rawCountry ? (countryNameFromCode(rawCountry.trim()) || rawCountry.trim()) : 'Inconnu';
+            const date = getValue(record, dateKeys) || new Date().toISOString().split('T')[0];
+            const entry = ensureEntry(targetMap, agency, service, country, date);
+            entry[field]++;
+            entry.recordCount++;
+            entry.totalVolume += parseAmount(getValue(record, amountKeys) || '0');
+        };
+
+        let processedPages = 0;
+        let totalPagesHint = 0;
+
+        const aggregatePaginated = async <T extends Record<string, unknown>>(
+            fetchPage: (page: number) => Promise<T>,
+            itemsKey: keyof T,
+            handler: (item: any) => void
+        ) => {
+            let page = 0;
+            let totalPages = 1;
+            while (page < totalPages) {
+                const response = await fetchPage(page);
+                totalPages = typeof response.totalPages === 'number' ? response.totalPages : 1;
+                totalPagesHint = Math.max(totalPagesHint, totalPages);
+                const chunk = response[itemsKey];
+                if (Array.isArray(chunk)) {
+                    for (const item of chunk) {
+                        handler(item);
+                    }
+                }
+                page++;
+                processedPages++;
+                onProgress?.(processedPages, totalPagesHint * 4);
+                if (page < totalPages) {
+                    await new Promise<void>(resolve => setTimeout(resolve, 0));
+                }
+            }
+        };
+
+        const aggregateBoStream = async (field: 'matches' | 'boOnly' | 'mismatches', fetchPage: (page: number) => Promise<any>, itemsKey: string) => {
+            const streamMap = new Map<string, AgencySummaryData>();
+            await aggregatePaginated(
+                fetchPage,
+                itemsKey as any,
+                item => {
+                    if (field === 'matches') {
+                        addBoRecordToMap(streamMap, item?.boData || item || {}, field);
+                    } else {
+                        addBoRecordToMap(streamMap, item || {}, field);
+                    }
+                }
+            );
+            return streamMap;
+        };
+
+        const aggregatePartnerStream = async () => {
+            const streamMap = new Map<string, AgencySummaryData>();
+            let localPartnerOnlyWithoutAgency = 0;
+            let localHasPartnerOnlyWithAgencyService = false;
+
+            await aggregatePaginated(
+                page => firstValueFrom(this.getPartnerOnly(sessionId, page, pageSize)),
+                'partnerOnly',
+                record => {
+                    const agency = getValue(record || {}, agenceKeys) || 'Inconnue';
+                    const service = getValue(record || {}, serviceKeys) || 'Inconnu';
+                    if (agency !== 'Inconnue' && service !== 'Inconnu') {
+                        localHasPartnerOnlyWithAgencyService = true;
+                        const rawCountry = getValue(record || {}, paysKeys);
+                        const country = rawCountry ? (countryNameFromCode(rawCountry.trim()) || rawCountry.trim()) : 'Inconnu';
+                        const date = getValue(record || {}, dateKeys) || new Date().toISOString().split('T')[0];
+                        const entry = ensureEntry(streamMap, agency, service, country, date);
+                        entry.partnerOnly!++;
+                        entry.recordCount++;
+                        entry.totalVolume += parseAmount(getValue(record || {}, amountKeys) || '0');
+                    } else {
+                        localPartnerOnlyWithoutAgency++;
+                    }
+                }
+            );
+
+            return {
+                map: streamMap,
+                partnerOnlyWithoutAgency: localPartnerOnlyWithoutAgency,
+                hasPartnerOnlyWithAgencyService: localHasPartnerOnlyWithAgencyService
+            };
+        };
+
+        const mergeSummaryMaps = (maps: Map<string, AgencySummaryData>[]): Map<string, AgencySummaryData> => {
+            const merged = new Map<string, AgencySummaryData>();
+            for (const source of maps) {
+                for (const [key, entry] of source) {
+                    let target = merged.get(key);
+                    if (!target) {
+                        target = { ...entry };
+                        merged.set(key, target);
+                        continue;
+                    }
+                    target.matches = (target.matches || 0) + (entry.matches || 0);
+                    target.boOnly = (target.boOnly || 0) + (entry.boOnly || 0);
+                    target.partnerOnly = (target.partnerOnly || 0) + (entry.partnerOnly || 0);
+                    target.mismatches = (target.mismatches || 0) + (entry.mismatches || 0);
+                    target.recordCount = (target.recordCount || 0) + (entry.recordCount || 0);
+                    target.totalVolume = (target.totalVolume || 0) + (entry.totalVolume || 0);
+                    if (!target.date && entry.date) {
+                        target.date = entry.date;
+                    }
+                }
+            }
+            return merged;
+        };
+
+        const [matchesMap, boOnlyMap, mismatchesMap, partnerResult] = await Promise.all([
+            aggregateBoStream('matches', page => firstValueFrom(this.getMatches(sessionId, page, pageSize)), 'matches'),
+            aggregateBoStream('boOnly', page => firstValueFrom(this.getBoOnly(sessionId, page, pageSize)), 'boOnly'),
+            aggregateBoStream('mismatches', page => firstValueFrom(this.getMismatches(sessionId, page, pageSize)), 'mismatches'),
+            aggregatePartnerStream()
+        ]);
+
+        const summaryMap = mergeSummaryMaps([matchesMap, boOnlyMap, mismatchesMap, partnerResult.map]);
+        const partnerOnlyWithoutAgency = partnerResult.partnerOnlyWithoutAgency;
+        const hasPartnerOnlyWithAgencyService = partnerResult.hasPartnerOnlyWithAgencyService;
+
+        const summary = Array.from(summaryMap.values()).sort((a, b) => {
+            if (a.agency !== b.agency) {
+                return a.agency.localeCompare(b.agency);
+            }
+            return a.service.localeCompare(b.service);
+        });
+
+        const totalPartnerOnly = summary.reduce((n, s) => n + (s.partnerOnly || 0), 0) + partnerOnlyWithoutAgency;
+
+        return {
+            summary,
+            meta: {
+                totalPartnerOnly,
+                hasPartnerOnlyWithAgencyService,
+                partnerOnlyWithoutAgency
+            }
+        };
+    }
+
+    /**
      * Récupère les résultats du traitement frontend par chunks
      */
     private getFrontendChunkedResults(jobId: string): Observable<ReconciliationResponse> {
@@ -956,6 +1348,106 @@ export class ReconciliationService implements OnInit, OnDestroy {
         return this.reconciliationRunningSubject.value;
     }
 
+    private createProgressSessionId(prefix = 'reco'): string {
+        return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    private ensureProgressSessionId(request: ReconciliationRequest): string {
+        if (!request.progressSessionId?.trim()) {
+            request.progressSessionId = this.createProgressSessionId();
+        }
+        return request.progressSessionId;
+    }
+
+    /**
+     * Délai avant de considérer un blocage. Le backend ne crée le job qu'après réception
+     * complète du JSON : les gros fichiers ont besoin de plus de temps d'upload/désérialisation.
+     */
+    private estimateLaunchWatchdogMs(request: ReconciliationRequest): number {
+        const totalRows =
+            (request.boFileContent?.length ?? 0) +
+            (request.partnerFileContent?.length ?? 0);
+        const estimated = ReconciliationService.LAUNCH_WATCHDOG_MS + totalRows * 5;
+        return Math.min(
+            Math.max(estimated, ReconciliationService.LAUNCH_WATCHDOG_MS),
+            ReconciliationService.LAUNCH_WATCHDOG_MAX_MS
+        );
+    }
+
+    private isBackendProgressAcknowledged(step?: string | null): boolean {
+        if (!step) {
+            return false;
+        }
+        const normalized = step.trim().toLowerCase();
+        return normalized !== '' && normalized !== ReconciliationService.BACKEND_PENDING_STEP;
+    }
+
+    private pollLiveProgressOnce(sessionId: string): Observable<{
+        acknowledged: boolean;
+        step?: string;
+        percentage?: number;
+        processed?: number;
+        total?: number;
+        matchesCount?: number;
+        boOnlyCount?: number;
+        partnerRemaining?: number;
+    }> {
+        return this.http.get<{
+            progress?: {
+                step?: string;
+                progress?: number;
+                processedRecords?: number;
+                totalRecords?: number;
+                matchesCount?: number;
+                boOnlyCount?: number;
+                partnerRemaining?: number;
+            };
+        }>(`${this.apiUrl}/live-progress/${sessionId}`).pipe(
+            map(res => ({
+                acknowledged: this.isBackendProgressAcknowledged(res?.progress?.step),
+                step: res?.progress?.step,
+                percentage: typeof res?.progress?.progress === 'number' ? res.progress.progress : undefined,
+                processed: res?.progress?.processedRecords,
+                total: res?.progress?.totalRecords,
+                matchesCount: res?.progress?.matchesCount,
+                boOnlyCount: res?.progress?.boOnlyCount,
+                partnerRemaining: res?.progress?.partnerRemaining
+            })),
+            catchError(() => of({ acknowledged: false }))
+        );
+    }
+
+    private applyLiveProgressUpdate(
+        step?: string,
+        percentage?: number,
+        details?: {
+            processed?: number;
+            total?: number;
+            matchesCount?: number;
+            boOnlyCount?: number;
+            partnerRemaining?: number;
+        }
+    ): void {
+        if (!step) {
+            return;
+        }
+        const current = this.progressSubject.value;
+        this.updateProgress({
+            percentage: typeof percentage === 'number' ? percentage : current.percentage,
+            processed: details?.processed ?? current.processed,
+            total: details?.total ?? current.total,
+            step: this.sanitizeLiveProgressStep(step),
+            estimatedTimeRemaining: current.estimatedTimeRemaining,
+            currentFile: current.currentFile,
+            totalFiles: current.totalFiles,
+            currentBoChunk: current.currentBoChunk,
+            totalBoChunks: current.totalBoChunks,
+            matchesCount: details?.matchesCount ?? current.matchesCount,
+            boOnlyCount: details?.boOnlyCount ?? current.boOnlyCount,
+            partnerRemaining: details?.partnerRemaining ?? current.partnerRemaining
+        });
+    }
+
     private markReconciliationRun<T>(source: Observable<T>): Observable<T> {
         return defer(() => {
             this.reconciliationRunningSubject.next(true);
@@ -966,15 +1458,22 @@ export class ReconciliationService implements OnInit, OnDestroy {
     }
 
     /**
-     * 30s après le lancement, relance automatiquement si aucune réconciliation n'est active.
+     * Relance automatiquement si le backend n'accuse pas réception (live-progress reste « En attente »)
+     * alors que le front affiche déjà la réconciliation en cours.
      */
-    private withAutoRelaunchOnStall<T>(factory: () => Observable<T>): Observable<T> {
-        return new Observable<T>(subscriber => {
+    private withAutoRelaunchOnStall(
+        factory: () => Observable<ReconciliationResponse>,
+        request: ReconciliationRequest
+    ): Observable<ReconciliationResponse> {
+        return new Observable<ReconciliationResponse>(subscriber => {
             let finished = false;
             let attemptNumber = 0;
-            let watchdogFired = false;
+            let responseReceived = false;
+            let backendAcknowledged = false;
             let currentSub: Subscription | null = null;
+            let pollSub: Subscription | null = null;
             let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+            let activeSessionId = this.ensureProgressSessionId(request);
 
             const clearWatchdog = () => {
                 if (watchdogTimer !== null) {
@@ -983,66 +1482,134 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 }
             };
 
+            const stopPolling = () => {
+                pollSub?.unsubscribe();
+                pollSub = null;
+            };
+
+            const abortCurrentAttempt = () => {
+                currentSub?.unsubscribe();
+                currentSub = null;
+                if (this.reconciliationRunningSubject.value) {
+                    this.reconciliationRunningSubject.next(false);
+                }
+            };
+
+            const rotateSessionForRelaunch = () => {
+                activeSessionId = this.createProgressSessionId();
+                request.progressSessionId = activeSessionId;
+                backendAcknowledged = false;
+                responseReceived = false;
+            };
+
+            const startPolling = () => {
+                stopPolling();
+                pollSub = timer(
+                    ReconciliationService.LIVE_PROGRESS_POLL_MS,
+                    ReconciliationService.LIVE_PROGRESS_POLL_MS
+                ).pipe(
+                    switchMap(() => this.pollLiveProgressOnce(activeSessionId))
+                ).subscribe(result => {
+                    if (result.acknowledged) {
+                        backendAcknowledged = true;
+                    }
+                    this.applyLiveProgressUpdate(result.step, result.percentage, {
+                        processed: result.processed,
+                        total: result.total,
+                        matchesCount: result.matchesCount,
+                        boOnlyCount: result.boOnlyCount,
+                        partnerRemaining: result.partnerRemaining
+                    });
+                });
+            };
+
+            const scheduleWatchdog = () => {
+                clearWatchdog();
+                const watchdogMs = this.estimateLaunchWatchdogMs(request);
+                watchdogTimer = setTimeout(() => {
+                    watchdogTimer = null;
+                    if (finished || subscriber.closed || responseReceived || backendAcknowledged) {
+                        return;
+                    }
+                    if (attemptNumber >= ReconciliationService.MAX_AUTO_RELAUNCH_ATTEMPTS) {
+                        finished = true;
+                        stopPolling();
+                        abortCurrentAttempt();
+                        subscriber.error(new Error(
+                            'La réconciliation n\'a pas démarré côté serveur après plusieurs tentatives. Actualisez la page puis relancez.'
+                        ));
+                        return;
+                    }
+                    runAttempt(true);
+                }, watchdogMs);
+            };
+
             const runAttempt = (isAutoRetry: boolean) => {
+                const watchdogMs = this.estimateLaunchWatchdogMs(request);
                 if (isAutoRetry) {
-                    console.warn('[ReconciliationService] Relance automatique : aucune réconciliation active après 30s');
+                    console.warn('[ReconciliationService] Relance automatique : aucune activité backend détectée');
+                    rotateSessionForRelaunch();
                     this.updateProgress({
                         percentage: 0,
                         processed: 0,
                         total: 100,
                         step: 'Relance automatique de la réconciliation...',
-                        estimatedTimeRemaining: ReconciliationService.LAUNCH_WATCHDOG_MS
+                        estimatedTimeRemaining: watchdogMs
                     });
                 }
 
                 attemptNumber++;
-                currentSub?.unsubscribe();
+                abortCurrentAttempt();
+                startPolling();
+                scheduleWatchdog();
+
                 currentSub = factory().subscribe({
                     next: (value) => {
+                        responseReceived = true;
                         finished = true;
                         clearWatchdog();
+                        stopPolling();
                         subscriber.next(value);
                     },
                     error: (err) => {
-                        if (attemptNumber < ReconciliationService.MAX_AUTO_RELAUNCH_ATTEMPTS) {
-                            if (!this.isReconciliationRunning() && watchdogFired) {
-                                runAttempt(true);
-                            }
+                        responseReceived = true;
+                        clearWatchdog();
+                        stopPolling();
+                        const isClientAbort = (err as HttpErrorResponse)?.status === 0;
+                        if (
+                            !finished &&
+                            !isClientAbort &&
+                            attemptNumber < ReconciliationService.MAX_AUTO_RELAUNCH_ATTEMPTS &&
+                            !backendAcknowledged
+                        ) {
+                            runAttempt(true);
+                            return;
+                        }
+                        if (isClientAbort && !finished && attemptNumber < ReconciliationService.MAX_AUTO_RELAUNCH_ATTEMPTS) {
+                            // Annulation volontaire (watchdog) : la relance est déjà déclenchée.
                             return;
                         }
                         finished = true;
-                        clearWatchdog();
+                        abortCurrentAttempt();
                         subscriber.error(err);
                     },
                     complete: () => {
+                        responseReceived = true;
                         finished = true;
                         clearWatchdog();
+                        stopPolling();
                         subscriber.complete();
                     }
                 });
             };
-
-            watchdogTimer = setTimeout(() => {
-                watchdogTimer = null;
-                watchdogFired = true;
-                if (finished || subscriber.closed) {
-                    return;
-                }
-                if (this.isReconciliationRunning()) {
-                    return;
-                }
-                if (attemptNumber >= ReconciliationService.MAX_AUTO_RELAUNCH_ATTEMPTS) {
-                    return;
-                }
-                runAttempt(true);
-            }, ReconciliationService.LAUNCH_WATCHDOG_MS);
 
             runAttempt(false);
 
             return () => {
                 finished = true;
                 clearWatchdog();
-                currentSub?.unsubscribe();
+                stopPolling();
+                abortCurrentAttempt();
             };
         });
     }
@@ -1055,12 +1622,18 @@ export class ReconciliationService implements OnInit, OnDestroy {
             return this.markReconciliationRun(this.reconcileWithBackendChunks(request));
         }
 
+        const totalRows = boDataLength + partnerDataLength;
+        const watchdogMs = this.estimateLaunchWatchdogMs(request);
+        const launchStep = totalRows > 5000
+            ? `Envoi de ${totalRows.toLocaleString('fr-FR')} lignes au serveur...`
+            : 'Démarrage de la réconciliation...';
+
         this.updateProgress({
             percentage: 0,
             processed: 0,
             total: 100,
-            step: 'Démarrage de la réconciliation...',
-            estimatedTimeRemaining: 30000
+            step: launchStep,
+            estimatedTimeRemaining: watchdogMs
         });
 
         const RECONCILIATION_TIMEOUT = 3600000;
@@ -1076,6 +1649,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
                     const sessionId = response.progressSessionId || request.progressSessionId;
                     if (sessionId && (response.resultsPaginated || ((response.totalMatches ?? 0) > 0 && !(response.matches?.length)))) {
                         this.currentJobId = sessionId;
+                        this.prefetchBoEcarts(sessionId);
+                        this.prefetchEcartBoSummaryLines(sessionId);
+                        this.prefetchPartnerOnly(sessionId);
                     }
 
                     this.updateProgress({
@@ -1097,8 +1673,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
     reconcile(request: ReconciliationRequest): Observable<ReconciliationResponse> {
         const reconciliationType = this.appStateService.getReconciliationType();
         request.reconciliationType = reconciliationType;
+        this.ensureProgressSessionId(request);
 
-        return this.withAutoRelaunchOnStall(() => this.executeReconcileOnce(request));
+        return this.withAutoRelaunchOnStall(() => this.executeReconcileOnce(request), request);
     }
 
     /** Polling progression temps réel pendant un appel /reconcile synchrone. */

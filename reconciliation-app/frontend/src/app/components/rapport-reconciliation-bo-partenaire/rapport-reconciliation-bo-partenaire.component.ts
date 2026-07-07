@@ -127,6 +127,7 @@ export type BoPartenaireDisplayLine =
 })
 export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDestroy {
   readonly envOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
+  private static readonly ALL_COUNTRIES = 'ALL';
 
   loading = false;
   /** Relevé manuel en arrière-plan (le tableau reste visible). */
@@ -134,11 +135,13 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   error: string | null = null;
   emptyScopeHint: string | null = null;
 
-  selectedCountry = '';
+  selectedCountry = RapportReconciliationBoPartenaireComponent.ALL_COUNTRIES;
+  /** Évite d’écraser un choix explicite « Tous les pays » après le premier chargement. */
+  private countryAutoSelected = false;
   /** Borne inclusive du filtre période (format `yyyy-MM-dd` pour `<input type="date">`). */
   dateDebut = '';
   dateFin = '';
-  selectedEnv = 'HT';
+  selectedEnv = 'ALL';
 
   countries: string[] = [];
   /** Services disponibles pour le périmètre pays / date / ENV (liste du filtre multiple). */
@@ -273,7 +276,6 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
           .map((c) => (c || '').trim())
           .filter(Boolean);
         this.refreshCountriesList();
-        this.ensureDefaultCountry();
         this.loadDonnees();
       })
     );
@@ -412,6 +414,10 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       return;
     }
     this.rebuildTable();
+    const range = this.getNormalizedDateRange();
+    if (range) {
+      this.loadDecalagesForRange(this.buildEcartFilterForRange(range), this.loadSeq);
+    }
   }
 
   /** Recharge result8rec + écarts + relevé manuel sans réinitialiser pays, dates, ENV ni services. */
@@ -560,7 +566,6 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     this.error = null;
     this.emptyScopeHint = null;
     const seq = ++this.loadSeq;
-    this.ensureDefaultCountry();
     const range = this.getNormalizedDateRange();
     if (!range) {
       this.rawReport = [];
@@ -578,52 +583,28 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       'X-Permission-Module': 'Résultats'
     });
     // Pas de filtre pays côté API : tous les pays du périmètre date sont chargés, filtrage client via selectedCountry.
-    const ecartStart = this.subtractCalendarDaysFromYmd(range.start, 1);
-    const ecartFilter: {
-      startDate: string;
-      endDate: string;
-      platform: string;
-      env?: string;
-    } = {
-      startDate: ecartStart,
-      endDate: range.end,
-      platform: 'PARTENAIRE'
-    };
-    if (this.selectedEnv && this.selectedEnv !== 'ALL') {
-      ecartFilter.env = this.selectedEnv;
-    }
-
-    const ecarts$ = this.ecartBoSummaryService.getEcartBoSummaries(ecartFilter).pipe(
-      catchError((err) => {
-        console.warn('Écarts BO summary indisponibles, suite sans écarts partenaire J±1', err);
-        return of([] as EcartBoSummary[]);
-      })
-    );
+    const ecartFilter = this.buildEcartFilterForRange(range);
 
     this.subs.add(
-      forkJoin({
-        report: this.fetchReportRowsForRange(range, headers),
-        ecarts: ecarts$
-      }).subscribe({
-        next: ({ report, ecarts }) => {
+      this.fetchReportRowsForRange(range, headers).subscribe({
+        next: (report) => {
           if (seq !== this.loadSeq) {
             return;
           }
           this.rawReport = this.mapReportRows(report);
-          this.ecartAll = Array.isArray(ecarts) ? ecarts : [];
+          this.ecartAll = [];
           this.lastReportFetchKey = this.buildReportFetchKey(range.start, range.end);
           this.refreshCountriesList();
+          this.autoSelectCountryAfterLoad(range.start, range.end);
 
           const range0 = this.getNormalizedDateRange();
-          if (range0 && !this.selectedCountry) {
-            const best = this.pickCountryWithMostRowsForDateRange(range0.start, range0.end);
-            if (best) {
-              this.selectedCountry = best;
-              this.syncSelectedCountryWithList();
-            }
-          }
           if (range0) {
-            this.adjustEnvIfNoRowsForCurrentSlice(range0.start, range0.end);
+            if (this.selectedCountry !== RapportReconciliationBoPartenaireComponent.ALL_COUNTRIES) {
+              this.adjustCountryIfNoRowsForCurrentSlice(range0.start, range0.end);
+            }
+            if (this.selectedEnv !== 'ALL') {
+              this.adjustEnvIfNoRowsForCurrentSlice(range0.start, range0.end);
+            }
           }
 
           if (
@@ -644,6 +625,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
           this.rebuildTable();
           this.loading = false;
           this.cdr.markForCheck();
+          this.loadDecalagesForRange(ecartFilter, seq);
         },
         error: (e) => {
           if (seq !== this.loadSeq) {
@@ -656,6 +638,125 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
         }
       })
     );
+  }
+
+  /** Filtre API écarts J±1 (plateforme Partenaire, fenêtre J-1 → fin de période). */
+  private buildEcartFilterForRange(range: { start: string; end: string }): {
+    startDate: string;
+    endDate: string;
+    platform: string;
+    env?: string;
+    pays?: string;
+  } {
+    const filter: {
+      startDate: string;
+      endDate: string;
+      platform: string;
+      env?: string;
+      pays?: string;
+    } = {
+      startDate: this.subtractCalendarDaysFromYmd(range.start, 1),
+      endDate: range.end,
+      platform: 'PARTENAIRE'
+    };
+    if (this.selectedEnv && this.selectedEnv !== 'ALL') {
+      filter.env = this.selectedEnv;
+    }
+    if (
+      this.selectedCountry &&
+      this.selectedCountry !== RapportReconciliationBoPartenaireComponent.ALL_COUNTRIES
+    ) {
+      filter.pays = this.selectedCountry;
+    }
+    return filter;
+  }
+
+  /** Au premier chargement, basculer de ALL vers le pays le plus représenté (décalages + tableau). */
+  private autoSelectCountryAfterLoad(dateStart: string, dateEnd: string): void {
+    if (this.countryAutoSelected) {
+      return;
+    }
+    if (this.selectedCountry !== RapportReconciliationBoPartenaireComponent.ALL_COUNTRIES) {
+      this.syncSelectedCountryWithList();
+      return;
+    }
+    const best = this.pickCountryWithMostRowsForDateRange(dateStart, dateEnd);
+    if (best) {
+      this.selectedCountry = this.resolveCountryLabel(best) || best;
+      this.syncSelectedCountryWithList();
+      this.countryAutoSelected = true;
+      return;
+    }
+    this.ensureDefaultCountry();
+    if (this.selectedCountry && this.selectedCountry !== RapportReconciliationBoPartenaireComponent.ALL_COUNTRIES) {
+      this.countryAutoSelected = true;
+    }
+  }
+
+  private isAllCountriesSelection(country?: string): boolean {
+    const value = (country ?? this.selectedCountry ?? '').trim();
+    return !value || value === RapportReconciliationBoPartenaireComponent.ALL_COUNTRIES;
+  }
+
+  private rowMatchesCountry(row: Result8Row, country: string): boolean {
+    if (this.isAllCountriesSelection(country)) {
+      return true;
+    }
+    const rowCountry = (row.country || '').trim();
+    if (!rowCountry) {
+      return true;
+    }
+    return countriesMatch(country, rowCountry);
+  }
+
+  /** Charge les écarts J±1 en arrière-plan : le tableau s'affiche d'abord, les décalages se mettent à jour ensuite. */
+  private loadDecalagesForRange(
+    ecartFilter: { startDate: string; endDate: string; platform: string; env?: string; pays?: string },
+    seq: number
+  ): void {
+    this.subs.add(
+      this.ecartBoSummaryService
+        .getEcartBoSummaries(ecartFilter)
+        .pipe(
+          catchError((err) => {
+            console.warn('Écarts BO summary indisponibles, décalages J±1 à 0', err);
+            return of([] as EcartBoSummary[]);
+          })
+        )
+        .subscribe((ecarts) => {
+          if (seq !== this.loadSeq) {
+            return;
+          }
+          this.ecartAll = Array.isArray(ecarts) ? ecarts : [];
+          this.rebuildTable();
+          this.cdr.markForCheck();
+        })
+    );
+  }
+
+  /**
+   * Par défaut, on doit démarrer sur un pays qui a des données sur la période.
+   * - Si aucun pays sélectionné → choisir celui avec le plus de lignes sur la période.
+   * - Si un pays est sélectionné (profil, etc.) mais n’a aucune ligne → basculer sur un pays avec données.
+   */
+  private adjustCountryIfNoRowsForCurrentSlice(dateStart: string, dateEnd: string): void {
+    const current = (this.selectedCountry || '').trim();
+    if (!current || current === RapportReconciliationBoPartenaireComponent.ALL_COUNTRIES) {
+      return;
+    }
+    const hasAnyForCurrent =
+      current &&
+      this.countRowsForCountryDateRangeEnv(current, dateStart, dateEnd, null) > 0;
+
+    if (hasAnyForCurrent) {
+      return;
+    }
+
+    const best = this.pickCountryWithMostRowsForDateRange(dateStart, dateEnd);
+    if (best) {
+      this.selectedCountry = best;
+      this.syncSelectedCountryWithList();
+    }
   }
 
   private buildReportHttpParams(startDate: string, endDate: string): HttpParams {
@@ -702,11 +803,12 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       const usernameRaw =
         r.username ?? anyR['user_name'] ?? anyR['userName'] ?? anyR['utilisateur'];
       const traitementRaw = r.traitement ?? anyR['traitement'];
+      const countryRaw = String(r.country ?? '').trim();
       return {
         id: r.id,
         date: r.date,
         service: r.service,
-        country: r.country,
+        country: this.resolveCountryLabel(countryRaw) || countryRaw,
         env: r.env,
         agency: r.agency != null ? String(r.agency) : undefined,
         totalTransactions: Number(r.totalTransactions || r.recordCount || 0) || 0,
@@ -760,46 +862,49 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     return countryNameFromCode(trimmed) || trimmed;
   }
 
+  /** Libellé affiché dans le filtre pays (jamais de code ISO seul : GA → Gabon, CM → Cameroun). */
+  private normalizeCountryForFilter(raw: string | null | undefined): string {
+    return this.resolveCountryLabel(raw);
+  }
+
   private syncSelectedCountryWithList(): void {
     if (!this.selectedCountry || !this.countries.length) {
       return;
     }
-    const match = this.countries.find((c) => countriesMatch(c, this.selectedCountry));
+    const normalized = this.normalizeCountryForFilter(this.selectedCountry);
+    const match = this.countries.find((c) => countriesMatch(c, normalized));
     if (match) {
       this.selectedCountry = match;
+    } else if (normalized) {
+      this.selectedCountry = normalized;
     }
   }
 
   private refreshCountriesList(): void {
     const set = new Set<string>();
-    for (const c of this.countriesFromFilters) {
-      const t = (c || '').trim();
-      if (t) {
-        set.add(t);
+    const addCountry = (raw: string | null | undefined) => {
+      const label = this.normalizeCountryForFilter(raw);
+      if (label) {
+        set.add(label);
       }
+    };
+    for (const c of this.countriesFromFilters) {
+      addCountry(c);
     }
     for (const name of this.appState.getProfileCountryNames()) {
-      const label = this.resolveCountryLabel(name) || name;
-      if (label.trim()) {
-        set.add(label.trim());
-      }
+      addCountry(name);
     }
     const scope = this.appState.getUserPaysScope();
     if (scope?.codes?.length) {
       for (const code of scope.codes) {
-        const label = this.resolveCountryLabel(code) || code;
-        if (label.trim()) {
-          set.add(label.trim());
-        }
+        addCountry(code);
       }
     }
     for (const row of this.rawReport) {
-      const c = (row.country || '').trim();
-      if (c) {
-        set.add(c);
-      }
+      addCountry(row.country);
     }
-    this.countries = Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+    const sorted = Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+    this.countries = [RapportReconciliationBoPartenaireComponent.ALL_COUNTRIES, ...sorted];
   }
 
   private resolveLoadError(err: unknown): string {
@@ -834,7 +939,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       this.selectedEnv === 'ALL' ? null : normalizeReconciliationReportEnv(this.selectedEnv);
 
     const filtered = this.rawReport.filter((row) => {
-      if ((row.country || '').trim() !== this.selectedCountry.trim()) {
+      if (!this.rowMatchesCountry(row, this.selectedCountry)) {
         return false;
       }
       if (!this.isYmdInRangeInclusive(row.date, dateStart, dateEnd)) {
@@ -1663,6 +1768,9 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   }
 
   private ecartPaysMatches(ecart: EcartBoSummary): boolean {
+    if (this.isAllCountriesSelection()) {
+      return true;
+    }
     const rep = (this.selectedCountry || '').trim();
     const ep = (ecart.pays || '').trim();
     if (!rep) {
@@ -1671,7 +1779,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     if (!ep) {
       return true;
     }
-    return this.strEqual(ep, rep);
+    return countriesMatch(rep, ep);
   }
 
   private strEqual(a?: string | null, b?: string | null): boolean {
@@ -1720,7 +1828,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       if (!this.isYmdInRangeInclusive(row.date, start, end)) {
         continue;
       }
-      const c = (row.country || '').trim();
+      const c = this.resolveCountryLabel((row.country || '').trim()) || (row.country || '').trim();
       if (!c) {
         continue;
       }
@@ -1745,7 +1853,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   ): number {
     const c0 = country.trim();
     return this.rawReport.filter((row) => {
-      if ((row.country || '').trim() !== c0) {
+      if (!this.rowMatchesCountry(row, c0)) {
         return false;
       }
       if (!this.isYmdInRangeInclusive(row.date, start, end)) {
@@ -1783,7 +1891,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   ): string | null {
     const freq = new Map<string, number>();
     for (const row of this.rawReport) {
-      if ((row.country || '').trim() !== country) {
+      if (!this.rowMatchesCountry(row, country)) {
         continue;
       }
       if (!this.isYmdInRangeInclusive(row.date, start, end)) {

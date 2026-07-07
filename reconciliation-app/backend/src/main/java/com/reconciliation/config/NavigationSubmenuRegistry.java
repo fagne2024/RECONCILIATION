@@ -317,6 +317,9 @@ public final class NavigationSubmenuRegistry {
         if (normalized.contains("controle interne bo vs partenaire")) {
             return controleInterneFallbackActions();
         }
+        if (normalized.contains("suivi des ecarts j-1")) {
+            return ecartBoSummaryFallbackActions();
+        }
 
         List<Map<String, Object>> actions = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
@@ -326,6 +329,16 @@ public final class NavigationSubmenuRegistry {
             }
             actions.add(fallbackAction("consulter", "GET", prefix));
         }
+        return actions;
+    }
+
+    private static List<Map<String, Object>> ecartBoSummaryFallbackActions() {
+        List<Map<String, Object>> actions = new ArrayList<>();
+        actions.add(fallbackAction("consulter", "GET", "/api/ecart-bo-summary"));
+        actions.add(fallbackAction("creer", "POST", "/api/ecart-bo-summary"));
+        actions.add(fallbackAction("modifier", "PUT", "/api/ecart-bo-summary/{id}"));
+        actions.add(fallbackAction("modifier", "POST", "/api/ecart-bo-summary/batch/status-links/apply"));
+        actions.add(fallbackAction("supprimer", "DELETE", "/api/ecart-bo-summary/{id}"));
         return actions;
     }
 

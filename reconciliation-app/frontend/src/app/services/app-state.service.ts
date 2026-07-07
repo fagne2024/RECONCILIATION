@@ -291,6 +291,10 @@ export class AppStateService {
         return this.reconciliationResult$;
     }
 
+    getCurrentReconciliationResults(): ReconciliationResponse | null {
+        return this.reconciliationResultSubject.value;
+    }
+
     clearReconciliationResults() {
         this.reconciliationResultSubject.next(null);
         this.magicServiceSummariesSubject.next([]);

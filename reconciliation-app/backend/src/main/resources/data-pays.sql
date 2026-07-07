@@ -11,6 +11,7 @@ INSERT INTO pays (code, nom) VALUES
 ('BJ', 'Bénin'),
 ('NE', 'Niger'),
 ('TD', 'Tchad'),
-('TG', 'Togo')
+('TG', 'Togo'),
+('GA', 'Gabon')
 ON CONFLICT DO NOTHING;
 

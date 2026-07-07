@@ -37,6 +37,18 @@ export function countryNameFromCode(code: string | null | undefined): string | n
   return COUNTRY_CODE_TO_NAME[upper] ?? null;
 }
 
+/** Libellé pays affiché : code ISO → nom complet, sinon valeur telle quelle. */
+export function countryDisplayLabel(country: string | null | undefined): string {
+  if (!country) {
+    return '';
+  }
+  const trimmed = country.trim();
+  if (!trimmed) {
+    return '';
+  }
+  return countryNameFromCode(trimmed) || trimmed;
+}
+
 export function countryNamesFromCodes(codes: string[] | null | undefined): string[] {
   if (!codes?.length) {
     return [];

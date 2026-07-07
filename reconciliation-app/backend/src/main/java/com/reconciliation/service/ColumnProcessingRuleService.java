@@ -170,49 +170,40 @@ public class ColumnProcessingRuleService {
 
     @Transactional
     public List<ColumnProcessingRule> saveRulesForModel(String modelId, List<ColumnProcessingRule> rules) {
-        // Supprimer les règles existantes
-        deleteRulesByModelId(modelId);
-        
-        // Sauvegarder les nouvelles règles
-        Optional<AutoProcessingModel> modelOpt = autoProcessingModelRepository.findByModelId(modelId);
-        if (modelOpt.isPresent()) {
-            AutoProcessingModel model = modelOpt.get();
-            
-            for (int i = 0; i < rules.size(); i++) {
-                ColumnProcessingRule rule = rules.get(i);
-                
-                // S'assurer que tous les champs sont correctement initialisés
-                if (rule.getSourceColumn() == null) rule.setSourceColumn("");
-                if (rule.getTargetColumn() == null) rule.setTargetColumn("");
-                if (rule.getFormatType() == null) rule.setFormatType("string");
-                if (rule.getRuleOrder() == null) rule.setRuleOrder(i);
-                
-                // S'assurer que les champs boolean sont correctement définis
-                rule.setToUpperCase(rule.isToUpperCase());
-                rule.setToLowerCase(rule.isToLowerCase());
-                rule.setTrimSpaces(rule.isTrimSpaces());
-                rule.setRemoveSpecialChars(rule.isRemoveSpecialChars());
-                rule.setRemoveAccents(rule.isRemoveAccents());
-                rule.setPadZeros(rule.isPadZeros());
-                
-                rule.setAutoProcessingModel(model);
-                rule.setRuleOrder(i);
-                
-                // Debug: Afficher les valeurs avant sauvegarde
-                System.out.println("🔍 [DEBUG] Sauvegarde règle " + i + ":");
-                System.out.println("  - sourceColumn: " + rule.getSourceColumn());
-                System.out.println("  - removeAccents: " + rule.isRemoveAccents());
-                System.out.println("  - removeSpecialChars: " + rule.isRemoveSpecialChars());
-                System.out.println("  - trimSpaces: " + rule.isTrimSpaces());
-                System.out.println("  - stringToRemove: " + (rule.getStringToRemove() != null ? "\"" + rule.getStringToRemove() + "\"" : "null"));
-                
-                columnProcessingRuleRepository.save(rule);
-            }
-            
-            // Le cache sera invalidé par deleteRulesByModelId, mais on recharge quand même
-            List<ColumnProcessingRule> savedRules = getRulesByModelId(modelId);
-            return savedRules;
+        AutoProcessingModel model = autoProcessingModelRepository.findByModelId(modelId)
+            .orElseThrow(() -> new IllegalArgumentException("Modèle non trouvé avec l'ID: " + modelId));
+
+        invalidateCache(modelId);
+        model.getColumnProcessingRules().clear();
+        autoProcessingModelRepository.saveAndFlush(model);
+
+        if (rules == null || rules.isEmpty()) {
+            return List.of();
         }
-        throw new IllegalArgumentException("Modèle non trouvé avec l'ID: " + modelId);
+
+        for (int i = 0; i < rules.size(); i++) {
+            ColumnProcessingRule incoming = rules.get(i);
+            ColumnProcessingRule rule = new ColumnProcessingRule();
+
+            rule.setSourceColumn(incoming.getSourceColumn() != null ? incoming.getSourceColumn() : "");
+            rule.setTargetColumn(incoming.getTargetColumn() != null ? incoming.getTargetColumn() : "");
+            rule.setFormatType(incoming.getFormatType() != null ? incoming.getFormatType() : "string");
+            rule.setToUpperCase(incoming.isToUpperCase());
+            rule.setToLowerCase(incoming.isToLowerCase());
+            rule.setTrimSpaces(incoming.isTrimSpaces());
+            rule.setRemoveSpecialChars(incoming.isRemoveSpecialChars());
+            rule.setRemoveAccents(incoming.isRemoveAccents());
+            rule.setPadZeros(incoming.isPadZeros());
+            rule.setRegexReplace(incoming.getRegexReplace());
+            rule.setStringToRemove(incoming.getStringToRemove());
+            rule.setSpecialCharReplacementMap(incoming.getSpecialCharReplacementMap());
+            rule.setRuleOrder(incoming.getRuleOrder() != null ? incoming.getRuleOrder() : i);
+            rule.setAutoProcessingModel(model);
+            model.getColumnProcessingRules().add(rule);
+        }
+
+        autoProcessingModelRepository.saveAndFlush(model);
+        invalidateCache(modelId);
+        return List.copyOf(model.getColumnProcessingRules());
     }
 }

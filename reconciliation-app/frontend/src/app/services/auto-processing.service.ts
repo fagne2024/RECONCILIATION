@@ -203,7 +203,8 @@ export interface PartnerConditionalKeysConfig {
 export type BoConditionalKeysConfig = PartnerConditionalKeysConfig;
 
 export interface AutoProcessingModel {
-  id?: string; // Optionnel pour la création
+  id?: string; // modelId métier ou id numérique en string
+  dbId?: number; // id base de données (Long)
   modelId?: string; // ID retourné par le backend
   name: string;
   filePattern: string;
@@ -426,9 +427,18 @@ export class AutoProcessingService {
 
   // Normaliser un modèle individuel
   private normalizeModel(model: any): AutoProcessingModel {
+    const rawId = model?.id;
+    const modelId = model?.modelId
+      ?? (typeof rawId === 'string' && !/^\d+$/.test(rawId) ? rawId : undefined);
+    const dbId = typeof rawId === 'number'
+      ? rawId
+      : (/^\d+$/.test(String(rawId ?? '')) ? Number(rawId) : undefined);
+
     return {
       ...model,
-      id: model.modelId || model.id, // Utiliser modelId comme id principal
+      modelId: modelId ?? model?.modelId,
+      id: modelId ?? (dbId != null ? String(dbId) : (rawId != null ? String(rawId) : undefined)),
+      dbId,
       createdAt: model.createdAt ? new Date(model.createdAt) : undefined,
       updatedAt: model.updatedAt ? new Date(model.updatedAt) : undefined
     };
@@ -452,7 +462,9 @@ export class AutoProcessingService {
   }
 
   createModel(model: AutoProcessingModel): Promise<AutoProcessingModel> {
-    return this.http.post<any>(`${this.apiUrl}/auto-processing/models`, model).toPromise()
+    return this.http.post<any>(`${this.apiUrl}/auto-processing/models`, model, {
+      headers: this.buildContextHeaders(AutoProcessingService.MODELES_MODULE)
+    }).toPromise()
       .then(response => {
         if (response && response.success && response.model) {
           // Invalider le cache après création
@@ -466,7 +478,9 @@ export class AutoProcessingService {
   }
 
   updateModel(id: string, model: AutoProcessingModel): Promise<AutoProcessingModel> {
-    return this.http.put<any>(`${this.apiUrl}/auto-processing/models/${id}`, model).toPromise()
+    return this.http.put<any>(`${this.apiUrl}/auto-processing/models/${encodeURIComponent(id)}`, model, {
+      headers: this.buildContextHeaders(AutoProcessingService.MODELES_MODULE)
+    }).toPromise()
       .then(response => {
         if (response && response.success && response.model) {
           // Invalider le cache après mise à jour

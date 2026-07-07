@@ -4,7 +4,7 @@ import { AppStateService } from '../../services/app-state.service';
 import { Router, ActivatedRoute } from '@angular/router';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
-import { ReconciliationSummaryService } from '../../services/reconciliation-summary.service';
+import { ReconciliationSummaryService, AgencySummaryData } from '../../services/reconciliation-summary.service';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { EcartSolde } from '../../models/ecart-solde.model';
 import { TrxSfService } from '../../services/trx-sf.service';
@@ -22,9 +22,11 @@ import { OperationCreateRequest } from '../../models/operation.model';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import { extractRecordAmount } from '../../utils/record-amount.util';
 import {
-    filterRecordsByMagicPartition,
+    partitionEcartRecords,
     recordMatchesMagicPartition,
-    hasMagicPartitionTags
+    hasMagicPartitionTags,
+    resolveMagicPartitionContext,
+    MagicPartitionContext
 } from '../../utils/magic-partition.util';
 import { MagicServiceSummary } from '../../services/magic-reconciliation.service';
 import {
@@ -224,12 +226,12 @@ interface ApiError {
                     <div class="stat-card stat-card-bo">
                         <div class="stat-icon">⚠️</div>
                         <div class="stat-value">{{filteredBoOnlyCount}}</div>
-                        <div class="stat-label">Transactions non correspondantes BO</div>
+                        <div class="stat-label">Écarts BO (sans correspondance)</div>
                     </div>
                     <div class="stat-card stat-card-partner">
                         <div class="stat-icon">⚠️</div>
                         <div class="stat-value">{{filteredPartnerOnlyCount}}</div>
-                        <div class="stat-label">Transactions non correspondantes Partenaire</div>
+                        <div class="stat-label">Écarts Partenaire (sans correspondance)</div>
                     </div>
                 </div>
             </div>
@@ -244,12 +246,12 @@ interface ApiError {
                     <button 
                         class="ecart-bo-button"
                         (click)="goToEcartBo()">
-                        ⚠️ Voir les ECART BO ({{filteredBoOnlyCount}})
+                        ⚠️ Voir les écarts BO ({{filteredBoOnlyCount}})
                     </button>
                     <button 
                         class="ecart-partner-button"
                         (click)="goToEcartPartner()">
-                        ⚠️ Voir les ECART Partenaire ({{filteredPartnerOnlyCount}})
+                        ⚠️ Voir les écarts Partenaire ({{filteredPartnerOnlyCount}})
                     </button>
                     <button 
                         [class.active]="activeTab === 'agencySummary'"
@@ -4287,7 +4289,64 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             const forceRenderDuration = performance.now() - forceRenderStartTime;
         });
         
+        this.prefetchEcartCountsIfNeeded();
+        
         const totalInitDuration = performance.now() - startTime;
+    }
+
+    /**
+     * Charge les écarts BO/Partenaire en arrière-plan pour aligner les compteurs /results avec /ecart-bo et /ecart-partner.
+     */
+    private prefetchEcartCountsIfNeeded(): void {
+        const sessionId =
+            this.response?.progressSessionId ||
+            this.currentJobId ||
+            this.reconciliationService.getCurrentJobId();
+        if (!sessionId) {
+            return;
+        }
+
+        const expectedBo = this.getResponseBoOnlyTotal();
+        const expectedPartner = this.response?.totalPartnerOnly ?? 0;
+        const needsBo = !this.boOnlyLoaded && (this.response?.resultsPaginated || expectedBo > 0);
+        const needsPartner = !this.partnerOnlyLoaded && (this.response?.resultsPaginated || expectedPartner > 0);
+        if (!needsBo && !needsPartner) {
+            return;
+        }
+
+        void (async () => {
+            try {
+                if (needsBo) {
+                    const ecarts = await this.reconciliationService.loadBoEcartsFromSession(sessionId);
+                    if (this.response) {
+                        this.response = {
+                            ...this.response,
+                            boOnly: ecarts.boOnly,
+                            mismatches: ecarts.mismatches
+                        };
+                    }
+                    this.filteredBoOnly = this.getFilteredBoOnly();
+                    this.boOnlyLoaded = true;
+                    this.setCache('boOnly', this.filteredBoOnly);
+                    this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+                    this.reconciliationTabsService.setFilteredMismatches(ecarts.mismatches);
+                }
+                if (needsPartner) {
+                    const partnerOnly = await this.reconciliationService.loadPartnerOnlyFromSession(sessionId);
+                    if (this.response) {
+                        this.response = { ...this.response, partnerOnly };
+                    }
+                    this.filteredPartnerOnly = this.getFilteredPartnerOnly();
+                    this.partnerOnlyLoaded = true;
+                    this.setCache('partnerOnly', this.filteredPartnerOnly);
+                    this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+                }
+                this.updateCalculatedProperties();
+                this.cdr.markForCheck();
+            } catch {
+                // L'écran dédié rechargera à la demande
+            }
+        })();
     }
 
     private shouldDeferMagicHeavyFilters(): boolean {
@@ -4442,26 +4501,30 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     private cachedBoOnlyPage: number = -1;
     private cachedPartnerOnlyPage: number = -1;
 
-    /** Totaux BO (écarts + mismatches) depuis la réponse serveur. */
+    /** Totaux BO (écarts BO uniquement) depuis la réponse serveur. */
     private getResponseBoOnlyTotal(): number {
         const response = this.response;
         if (!response) {
             return 0;
         }
-        if (response.totalBoOnly != null || response.totalMismatches != null) {
-            return (response.totalBoOnly ?? 0) + (response.totalMismatches ?? 0);
+        if (response.totalBoOnly != null) {
+            return response.totalBoOnly ?? 0;
         }
-        return (response.boOnly?.length ?? 0) + (response.mismatches?.length ?? 0);
+        return (response.boOnly?.length ?? 0);
     }
 
     /**
      * Compte affiché : tableaux filtrés si chargés, sinon totaux serveur (réponse paginée/tronquée).
+     * Ne jamais afficher le total serveur non filtré lorsque le cloisonnement magique est actif.
      */
     private resolveDisplayCount(
         filteredLength: number,
         totalFromResponse: number | undefined | null,
         dataLoaded: boolean
     ): number {
+        if (this.shouldPartitionEcarts()) {
+            return filteredLength;
+        }
         if (dataLoaded || filteredLength > 0) {
             return filteredLength;
         }
@@ -4478,15 +4541,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         const step1Start = performance.now();
         if (this.isMagicServiceView()) {
             const summary = this.findActiveMagicSummary();
-            if (summary) {
-                this.filteredMatchesCount = summary.totalMatches;
-                this.filteredBoOnlyCount = summary.totalBoOnly;
-                this.filteredPartnerOnlyCount = summary.totalPartnerOnly;
-            } else {
-                this.filteredMatchesCount = this.filteredMatches.length;
-                this.filteredBoOnlyCount = this.filteredBoOnly.length;
-                this.filteredPartnerOnlyCount = this.filteredPartnerOnly.length;
-            }
+            this.filteredMatchesCount = (this.matchesLoaded || this.filteredMatches.length > 0)
+                ? this.filteredMatches.length
+                : (summary?.totalMatches ?? this.filteredMatches.length);
+            this.filteredBoOnlyCount = (this.boOnlyLoaded || this.filteredBoOnly.length > 0)
+                ? this.filteredBoOnly.length
+                : (summary?.totalBoOnly ?? this.filteredBoOnly.length);
+            this.filteredPartnerOnlyCount = (this.partnerOnlyLoaded || this.filteredPartnerOnly.length > 0)
+                ? this.filteredPartnerOnly.length
+                : (summary?.totalPartnerOnly ?? this.filteredPartnerOnly.length);
         } else {
             this.filteredMatchesCount = this.resolveDisplayCount(
                 this.filteredMatches.length,
@@ -5118,6 +5181,28 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         if (!this.currentJobId) {
             return;
         }
+
+        if (this.response?.resultsPaginated) {
+            try {
+                const ecarts = await this.reconciliationService.loadBoEcartsFromSession(this.currentJobId);
+                if (this.response) {
+                    this.response = {
+                        ...this.response,
+                        boOnly: ecarts.boOnly,
+                        mismatches: ecarts.mismatches
+                    };
+                }
+                this.filteredBoOnly = this.getFilteredBoOnly();
+                this.boOnlyLoaded = true;
+                this.setCache('boOnly', this.filteredBoOnly);
+                this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+                this.reconciliationTabsService.setFilteredMismatches(ecarts.mismatches);
+                this.updateCalculatedProperties();
+                return;
+            } catch {
+                // Repli pagination page par page ci-dessous
+            }
+        }
         
         this.isLoadingBoOnly = true;
         this.boOnlyChunkedDone = false;
@@ -5395,6 +5480,23 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         if (!this.currentJobId) {
             return;
         }
+
+        if (this.response?.resultsPaginated) {
+            try {
+                const partnerOnly = await this.reconciliationService.loadPartnerOnlyFromSession(this.currentJobId);
+                if (this.response) {
+                    this.response = { ...this.response, partnerOnly };
+                }
+                this.filteredPartnerOnly = this.getFilteredPartnerOnly();
+                this.partnerOnlyLoaded = true;
+                this.setCache('partnerOnly', this.filteredPartnerOnly);
+                this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+                this.updateCalculatedProperties();
+                return;
+            } catch {
+                // Repli pagination page par page ci-dessous
+            }
+        }
         
         this.isLoadingPartnerOnly = true;
         this.loadingProgress.partnerOnly = { current: 0, total: 0, percentage: 0 };
@@ -5547,9 +5649,21 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     openReconciliationReport() {
+        this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+        this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+        this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+        this.reconciliationTabsService.setFilteredMismatches(this.response?.mismatches || []);
 
-        // Toujours reconstruire le résumé depuis les données actuelles afin que le rapport
-        // reflète systématiquement la réconciliation en cours (et non un cache périmé).
+        const currentHash = this.getResponseHash();
+        if (this.cachedAgencySummary && this.lastResponseHash === currentHash) {
+            this.reconciliationSummaryService.setAgencySummary(
+                this.cachedAgencySummary,
+                this.lastAgencySummaryMeta
+            );
+        }
+
+        this.router.navigate(['/reconciliation-report']);
+
         if (this.response && (
             this.filteredMatches.length > 0 ||
             this.filteredBoOnly.length > 0 ||
@@ -5558,15 +5672,16 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             (this.response.totalBoOnly ?? 0) > 0 ||
             (this.response.totalPartnerOnly ?? 0) > 0
         )) {
-            // Vider l'ancien cache avant de reconstruire
-            this.reconciliationSummaryService.clearAgencySummary();
-            const summary = this.getAgencySummary();
-            this.router.navigate(['/reconciliation-report']);
-            return;
+            if (!this.cachedAgencySummary || this.lastResponseHash !== currentHash) {
+                queueMicrotask(() => {
+                    try {
+                        this.getAgencySummary();
+                    } catch {
+                        // Le rapport reconstruira le résumé si besoin
+                    }
+                });
+            }
         }
-
-        // Sinon, naviguer immédiatement (les données seront chargées en arrière-plan)
-        this.router.navigate(['/reconciliation-report']);
     }
 
     nextPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
@@ -7565,7 +7680,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     // Mettre en cache le résumé
-    private cachedAgencySummary: Array<{agency: string; service: string; date: string; country: string; totalVolume: number; recordCount: number}> | null = null;
+    private cachedAgencySummary: AgencySummaryData[] | null = null;
     private lastResponseHash: string = '';
 
     private getResponseHash(): string {
@@ -7576,86 +7691,96 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         });
     }
 
-    getAgencySummary(): Array<{agency: string; service: string; date: string; country: string; totalVolume: number; recordCount: number}> {
-        // Vérifier si nous avons déjà calculé le résumé pour cette réponse
+    getAgencySummary(): AgencySummaryData[] {
         const currentHash = this.getResponseHash();
         if (this.cachedAgencySummary && this.lastResponseHash === currentHash) {
             return this.cachedAgencySummary;
         }
 
-        // Calculer le résumé
-        const summary = this.calculateAgencySummary();
-        
-        // Mettre en cache le résultat
+        const { summary, meta } = this.calculateAgencySummary();
         this.cachedAgencySummary = summary;
         this.lastResponseHash = currentHash;
-
-        // Stocker dans le service pour le rapport
-        this.reconciliationSummaryService.setAgencySummary(summary);
-
+        this.reconciliationSummaryService.setAgencySummary(summary, meta);
         return summary;
     }
 
-    private calculateAgencySummary(): Array<{agency: string; service: string; date: string; country: string; totalVolume: number; recordCount: number}> {
-        const summaryMap = new Map<string, {agency: string; service: string; date: string; country: string; totalVolume: number; recordCount: number}>();
+    private lastAgencySummaryMeta = { totalPartnerOnly: 0, hasPartnerOnlyWithAgencyService: false };
 
-        // Traiter les correspondances
+    private calculateAgencySummary(): { summary: AgencySummaryData[]; meta: { totalPartnerOnly: number; hasPartnerOnlyWithAgencyService: boolean } } {
+        type SummaryEntry = AgencySummaryData & { matches: number; boOnly: number; partnerOnly: number; mismatches: number };
+        const summaryMap = new Map<string, SummaryEntry>();
+        let partnerOnlyWithoutAgency = 0;
+        let hasPartnerOnlyWithAgencyService = false;
+
+        const ensureEntry = (
+            agency: string,
+            service: string,
+            country: string,
+            date: string,
+            volume: number
+        ): SummaryEntry => {
+            const key = `${agency}-${service}-${country}`;
+            let entry = summaryMap.get(key);
+            if (!entry) {
+                entry = {
+                    agency,
+                    service,
+                    country,
+                    date,
+                    totalVolume: 0,
+                    recordCount: 0,
+                    matches: 0,
+                    boOnly: 0,
+                    partnerOnly: 0,
+                    mismatches: 0
+                };
+                summaryMap.set(key, entry);
+            }
+            entry.totalVolume += volume;
+            entry.recordCount += 1;
+            return entry;
+        };
+
         this.filteredMatches.forEach(match => {
             const boInfo = this.getBoAgencyAndService(match);
-            const key = `${boInfo.agency}-${boInfo.service}-${boInfo.country}`;
-            
-            // Debug: log pour voir les volumes extraits
-            if (boInfo.volume > 0) {
-            }
-            
-            if (!summaryMap.has(key)) {
-                summaryMap.set(key, {
-                    agency: boInfo.agency,
-                    service: boInfo.service,
-                    country: boInfo.country,
-                    date: boInfo.date,
-                    totalVolume: 0,
-                    recordCount: 0
-                });
-            }
-            
-            const summary = summaryMap.get(key)!;
-            summary.totalVolume += boInfo.volume;
-            summary.recordCount += 1;
+            const entry = ensureEntry(boInfo.agency, boInfo.service, boInfo.country, boInfo.date, boInfo.volume);
+            entry.matches += 1;
         });
 
-        // Traiter les données BO uniquement
         this.filteredBoOnly.forEach(record => {
             const boInfo = this.getBoOnlyAgencyAndService(record);
-            const key = `${boInfo.agency}-${boInfo.service}-${boInfo.country}`;
-            
-            // Debug: log pour voir les volumes extraits
-            if (boInfo.volume > 0) {
-            }
-            
-            if (!summaryMap.has(key)) {
-                summaryMap.set(key, {
-                    agency: boInfo.agency,
-                    service: boInfo.service,
-                    country: boInfo.country,
-                    date: boInfo.date,
-                    totalVolume: 0,
-                    recordCount: 0
-                });
-            }
-            
-            const summary = summaryMap.get(key)!;
-            summary.totalVolume += boInfo.volume;
-            summary.recordCount += 1;
+            const entry = ensureEntry(boInfo.agency, boInfo.service, boInfo.country, boInfo.date, boInfo.volume);
+            entry.boOnly += 1;
         });
 
-        // Convertir le Map en tableau et trier par agence puis par service
-        return Array.from(summaryMap.values()).sort((a, b) => {
+        this.filteredPartnerOnly.forEach(record => {
+            const partnerInfo = this.getPartnerOnlyAgencyAndService(record);
+            if (partnerInfo.agency !== 'Inconnue' && partnerInfo.service !== 'Inconnu') {
+                hasPartnerOnlyWithAgencyService = true;
+                const entry = ensureEntry(
+                    partnerInfo.agency,
+                    partnerInfo.service,
+                    partnerInfo.country,
+                    partnerInfo.date,
+                    partnerInfo.volume
+                );
+                entry.partnerOnly += 1;
+            } else {
+                partnerOnlyWithoutAgency += 1;
+            }
+        });
+
+        const summary = Array.from(summaryMap.values()).sort((a, b) => {
             if (a.agency !== b.agency) {
                 return a.agency.localeCompare(b.agency);
             }
             return a.service.localeCompare(b.service);
         });
+
+        const totalPartnerOnly = summary.reduce((n, s) => n + (s.partnerOnly || 0), 0) + partnerOnlyWithoutAgency;
+        const meta = { totalPartnerOnly, hasPartnerOnlyWithAgencyService };
+        this.lastAgencySummaryMeta = meta;
+        return { summary, meta };
     }
 
     // Cache pour les calculs
@@ -7858,77 +7983,36 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         return Array.from(serviceTotals.entries()).map(([name, volume]) => ({name, volume}));
     }
 
-    // Filtre utilitaire pour ignorer les lignes où PAYS = 'CM'
     private getFilteredMatches(): Match[] {
-        const startTime = performance.now();
-        
-        const step1Start = performance.now();
         const matches = this.response?.matches || [];
-        const totalMatches = matches.length;
-        const step1Duration = performance.now() - step1Start;
-
-        if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
-            const totalDuration = performance.now() - startTime;
+        if (!this.shouldPartitionEcarts()) {
             return matches;
         }
-
-        const serviceFilter = this.getActiveServiceFilter();
-        const step2Start = performance.now();
-        const filtered = matches.filter(match => this.recordMatchesMagicFilter(match.boData));
-        const step2Duration = performance.now() - step2Start;
-        const totalDuration = performance.now() - startTime;
-
-
-        return filtered;
+        const ctx = this.getEcartPartitionContext();
+        const boDataList = matches
+            .map(match => match.boData)
+            .filter((record): record is Record<string, string> => !!record);
+        const magicTaggedDataset = hasMagicPartitionTags(boDataList);
+        return matches.filter(match =>
+            !!match.boData &&
+            recordMatchesMagicPartition(match.boData, ctx.service, ctx.partnerFile, magicTaggedDataset)
+        );
     }
 
-    private getFilteredBoOnlyCallCount = 0;
     private getFilteredBoOnly(): Record<string, string>[] {
-        this.getFilteredBoOnlyCallCount++;
-        const startTime = performance.now();
-        console.trace('🟠 [TEMPLATE] Stack trace getFilteredBoOnly()'); // Pour voir d'où vient l'appel
-        
-        // Pour TRXBO/OPPART, utiliser mismatches au lieu de boOnly
-        const mismatches = this.response?.mismatches || [];
         const boOnly = this.response?.boOnly || [];
-
-        const combineStartTime = performance.now();
-        // Combiner mismatches et boOnly pour l'affichage des écarts
-        const allMismatches = [...mismatches, ...boOnly];
-        const combineDuration = performance.now() - combineStartTime;
-
-        if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
-            const totalDuration = performance.now() - startTime;
-            return allMismatches;
+        if (!this.shouldPartitionEcarts()) {
+            return boOnly;
         }
-
-        const serviceFilter = this.getActiveServiceFilter();
-        const filterStartTime = performance.now();
-        const filtered = allMismatches.filter(record => this.recordMatchesMagicFilter(record));
-        const filterDuration = performance.now() - filterStartTime;
-        const totalDuration = performance.now() - startTime;
-        
-
-        return filtered;
+        return partitionEcartRecords(boOnly, this.getEcartPartitionContext());
     }
 
     private getFilteredPartnerOnly(): Record<string, string>[] {
-        const startTime = performance.now();
         const partnerOnly = this.response?.partnerOnly || [];
-        const totalPartnerOnly = partnerOnly.length;
-        
-        if (!this.getActiveServiceFilter() && !this.shouldApplyServicePartition()) {
+        if (!this.shouldPartitionEcarts()) {
             return partnerOnly;
         }
-        
-        const serviceFilter = this.getActiveServiceFilter();
-        const filterStartTime = performance.now();
-        const filtered = partnerOnly.filter(record => this.recordMatchesMagicFilter(record));
-        const filterDuration = performance.now() - filterStartTime;
-        const totalDuration = performance.now() - startTime;
-        
-        
-        return filtered;
+        return partitionEcartRecords(partnerOnly, this.getEcartPartitionContext());
     }
 
     private invalidateCache() {
@@ -7993,7 +8077,21 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     private shouldApplyServicePartition(): boolean {
-        return !!(this.getActiveServiceFilter() || (this.isMagicServiceView() && this.selectedMagicPartnerFile));
+        return this.shouldPartitionEcarts();
+    }
+
+    private shouldPartitionEcarts(): boolean {
+        const ctx = this.getEcartPartitionContext();
+        return !!(ctx.service || ctx.partnerFile);
+    }
+
+    private getEcartPartitionContext(): MagicPartitionContext {
+        return resolveMagicPartitionContext({
+            appStateService: this.appStateService.getSelectedMagicService(),
+            appStatePartnerFile: this.selectedMagicPartnerFile || this.appStateService.getSelectedMagicPartnerFile(),
+            tabsContext: this.reconciliationTabsService.getMagicViewContext(),
+            fallbackService: this.getActiveServiceFilter()
+        });
     }
 
     applyServiceFilter() {
@@ -8100,7 +8198,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const beforeReturnDuration = performance.now() - buttonClickStartTime;
     }
 
-    goToEcartBo() {
+    async goToEcartBo() {
         const buttonClickStartTime = performance.now();
         
         const setActiveTabStartTime = performance.now();
@@ -8116,6 +8214,30 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         }
         const setActiveTabDuration = performance.now() - setActiveTabStartTime;
         
+        // IMPORTANT: /ecart-bo est un écran séparé. Si les données boOnly sont en lazy-load,
+        // une navigation immédiate détruit ce composant et annule le chargement, ce qui rend la page vide.
+        // On attend donc la fin du lazy-load si nécessaire.
+        try {
+            const cacheKey = 'boOnly';
+            const pending = this.loadingPromises.get(cacheKey);
+            if (pending) {
+                await pending;
+            } else if (!this.boOnlyLoaded && !this.isLoadingBoOnly) {
+                const loadPromise = this.loadBoOnlyDataLazy();
+                this.loadingPromises.set(cacheKey, loadPromise);
+                await loadPromise.finally(() => this.loadingPromises.delete(cacheKey));
+            }
+            if (this.response) {
+                // Partager un snapshot des résultats pour les écrans dédiés
+                this.appStateService.setReconciliationResults(this.response);
+            }
+            // Toujours republier le dataset filtré après chargement (y compris hors magic view)
+            this.reconciliationTabsService.setFilteredBoOnly(this.getFilteredBoOnly());
+        } catch (e) {
+            // On navigue quand même : l'écran cible affichera "Aucun écart" si pas de données.
+            console.warn('goToEcartBo: chargement lazy interrompu', e);
+        }
+
         const navigateStartTime = performance.now();
         // Navigation immédiate - les données se chargeront en arrière-plan si nécessaire
         this.router.navigate(['/ecart-bo']).then(() => {
@@ -8129,7 +8251,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const beforeReturnDuration = performance.now() - buttonClickStartTime;
     }
 
-    goToEcartPartner() {
+    async goToEcartPartner() {
         const buttonClickStartTime = performance.now();
         
         const setActiveTabStartTime = performance.now();
@@ -8142,6 +8264,25 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         }
         const setActiveTabDuration = performance.now() - setActiveTabStartTime;
         
+        // Même logique que goToEcartBo : attendre le lazy-load PartnerOnly avant de quitter l'écran.
+        try {
+            const cacheKey = 'partnerOnly';
+            const pending = this.loadingPromises.get(cacheKey);
+            if (pending) {
+                await pending;
+            } else if (!this.partnerOnlyLoaded && !this.isLoadingPartnerOnly) {
+                const loadPromise = this.loadPartnerOnlyDataLazy();
+                this.loadingPromises.set(cacheKey, loadPromise);
+                await loadPromise.finally(() => this.loadingPromises.delete(cacheKey));
+            }
+            if (this.response) {
+                this.appStateService.setReconciliationResults(this.response);
+            }
+            this.reconciliationTabsService.setFilteredPartnerOnly(this.getFilteredPartnerOnly());
+        } catch (e) {
+            console.warn('goToEcartPartner: chargement lazy interrompu', e);
+        }
+
         const navigateStartTime = performance.now();
         // Navigation immédiate - les données se chargeront en arrière-plan si nécessaire
         this.router.navigate(['/ecart-partner']).then(() => {
@@ -8479,25 +8620,6 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     private getMagicPartnerTag(record: Record<string, string>): string {
         return (record['_magicPartnerFile'] || '').trim();
-    }
-
-    private recordMatchesMagicFilter(record: Record<string, string>): boolean {
-        const partnerFileFilter = this.selectedMagicPartnerFile
-            || this.appStateService.getSelectedMagicPartnerFile()
-            || '';
-        const serviceFilter = this.getActiveServiceFilter();
-        const partnerOnly = this.response?.partnerOnly || [];
-        const magicTaggedDataset = hasMagicPartitionTags(partnerOnly)
-            || hasMagicPartitionTags(this.response?.boOnly || [])
-            || hasMagicPartitionTags(this.response?.mismatches || [])
-            || this.magicServiceSummaries.length > 0;
-
-        return recordMatchesMagicPartition(
-            record,
-            serviceFilter,
-            partnerFileFilter,
-            magicTaggedDataset
-        );
     }
 
     selectMagicPartnerFile(fileName: string): void {
