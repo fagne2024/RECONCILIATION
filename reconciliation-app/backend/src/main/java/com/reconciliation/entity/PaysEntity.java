@@ -1,5 +1,6 @@
 package com.reconciliation.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.util.List;
 
@@ -18,6 +19,7 @@ public class PaysEntity {
     private String nom;
     
     @OneToMany(mappedBy = "pays", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
     private List<ProfilPaysEntity> profilPays;
     
     // Constructeurs

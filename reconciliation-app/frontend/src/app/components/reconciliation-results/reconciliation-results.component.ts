@@ -4541,15 +4541,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         const step1Start = performance.now();
         if (this.isMagicServiceView()) {
             const summary = this.findActiveMagicSummary();
-            this.filteredMatchesCount = (this.matchesLoaded || this.filteredMatches.length > 0)
-                ? this.filteredMatches.length
-                : (summary?.totalMatches ?? this.filteredMatches.length);
-            this.filteredBoOnlyCount = (this.boOnlyLoaded || this.filteredBoOnly.length > 0)
-                ? this.filteredBoOnly.length
-                : (summary?.totalBoOnly ?? this.filteredBoOnly.length);
-            this.filteredPartnerOnlyCount = (this.partnerOnlyLoaded || this.filteredPartnerOnly.length > 0)
-                ? this.filteredPartnerOnly.length
-                : (summary?.totalPartnerOnly ?? this.filteredPartnerOnly.length);
+            this.filteredMatchesCount = summary?.totalMatches ?? this.filteredMatches.length;
+            this.filteredBoOnlyCount = summary?.totalBoOnly ?? this.filteredBoOnly.length;
+            this.filteredPartnerOnlyCount = summary?.totalPartnerOnly ?? this.filteredPartnerOnly.length;
         } else {
             this.filteredMatchesCount = this.resolveDisplayCount(
                 this.filteredMatches.length,
@@ -7930,7 +7924,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         // pour garantir que le nombre total de transactions est toujours correct
         // Nombre de transactions = correspondances + écarts BO (filtré par service en mode magique)
         if (this.isMagicServiceView()) {
-            const summary = this.magicServiceSummaries.find(s => s.service === this.selectedMagicService);
+            const summary = this.findActiveMagicSummary();
             const result = summary
                 ? summary.totalBoRecords
                 : (this.filteredMatchesCount + this.filteredBoOnlyCount);

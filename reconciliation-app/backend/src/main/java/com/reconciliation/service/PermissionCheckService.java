@@ -617,6 +617,15 @@ public class PermissionCheckService {
         if (lowerPath.contains("/bulk") || lowerPath.endsWith("bulk")) return "bulk";
         if (lowerPath.contains("/recent") || lowerPath.endsWith("recent")) return "consulter_recent";
         if (lowerPath.contains("/mark-ok") || lowerPath.contains("/mark") || lowerPath.endsWith("mark-ok") || lowerPath.endsWith("mark")) return "marquer_ok";
+        if (lowerPath.startsWith("/api/reconciliation-report")) {
+            return switch (lowerMethod) {
+                case "get" -> "consulter";
+                case "post" -> "creer";
+                case "put", "patch" -> "modifier";
+                case "delete" -> "supprimer";
+                default -> null;
+            };
+        }
         if (lowerPath.contains("/reconcil") || lowerPath.endsWith("reconcil")) return "lancer_reconciliation";
         if (lowerPath.contains("/import") || lowerPath.endsWith("import")) return "importer";
         if (lowerPath.contains("/export") || lowerPath.endsWith("export")) return "exporter";
@@ -751,6 +760,7 @@ public class PermissionCheckService {
 
         String path = normalizeApiPath(apiPath);
 
+        if (path.startsWith("/api/reconciliation-report")) return false;
         if (path.startsWith("/api/reconciliation")) return true;
         if (path.startsWith("/api/reconciliation-launcher")) return true;
         if (path.startsWith("/api/ecart-bo-summary")) return true;
@@ -772,6 +782,21 @@ public class PermissionCheckService {
         if (path.startsWith("/api/ecart-bo-summary")) {
             if (path.contains("/batch/status-links")) {
                 return "modifier";
+            }
+            return switch (method) {
+                case "POST" -> "creer";
+                case "PUT", "PATCH" -> "modifier";
+                case "DELETE" -> "supprimer";
+                default -> "consulter";
+            };
+        }
+
+        if (path.startsWith("/api/result8rec")) {
+            if (path.contains("/status") && ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method))) {
+                return "enregistrer_statut_reconciliation";
+            }
+            if (path.contains("/mark-ok") || path.contains("/unmark-ok")) {
+                return "marquer_ok";
             }
             return switch (method) {
                 case "POST" -> "creer";

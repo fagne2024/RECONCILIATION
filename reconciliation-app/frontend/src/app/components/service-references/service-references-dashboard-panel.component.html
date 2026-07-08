@@ -59,7 +59,6 @@
             </mat-form-field>
             <div class="sr-fbar-div" aria-hidden="true"></div>
             <mat-form-field appearance="fill" class="sr-fsel">
-                <mat-label>Pays</mat-label>
                 <mat-select
                     [(ngModel)]="selectedPays"
                     multiple
@@ -77,12 +76,11 @@
                 </mat-select>
             </mat-form-field>
             <mat-form-field appearance="fill" class="sr-fsel">
-                <mat-label>Type</mat-label>
                 <mat-select
                     [(ngModel)]="selectedServiceTypes"
                     multiple
                     (selectionChange)="onDashboardFilterChange()"
-                    placeholder="Type de service"
+                    placeholder="Tous les types"
                 >
                     <mat-option>
                         <ngx-mat-select-search
@@ -95,12 +93,11 @@
                 </mat-select>
             </mat-form-field>
             <mat-form-field appearance="fill" class="sr-fsel">
-                <mat-label>Opérateur</mat-label>
                 <mat-select
                     [(ngModel)]="selectedOperateurs"
                     multiple
                     (selectionChange)="onDashboardFilterChange()"
-                    placeholder="Opérateur"
+                    placeholder="Tous les opérateurs"
                 >
                     <mat-option>
                         <ngx-mat-select-search
@@ -113,12 +110,11 @@
                 </mat-select>
             </mat-form-field>
             <mat-form-field appearance="fill" class="sr-fsel">
-                <mat-label>Réseau</mat-label>
                 <mat-select
                     [(ngModel)]="selectedReseaux"
                     multiple
                     (selectionChange)="onDashboardFilterChange()"
-                    placeholder="Réseau"
+                    placeholder="Tous les réseaux"
                 >
                     <mat-option>
                         <ngx-mat-select-search
@@ -166,7 +162,7 @@
                         [(ngModel)]="selectedPays"
                         multiple
                         (selectionChange)="onDashboardFilterChange()"
-                        placeholder="Sélection multiple possible"
+                        placeholder="Tous les pays"
                     >
                         <mat-option>
                             <ngx-mat-select-search
@@ -186,7 +182,7 @@
                         [(ngModel)]="selectedServiceTypes"
                         multiple
                         (selectionChange)="onDashboardFilterChange()"
-                        placeholder="Sélection multiple possible"
+                        placeholder="Tous les types"
                     >
                         <mat-option>
                             <ngx-mat-select-search
@@ -206,7 +202,7 @@
                         [(ngModel)]="selectedOperateurs"
                         multiple
                         (selectionChange)="onDashboardFilterChange()"
-                        placeholder="Sélection multiple possible"
+                        placeholder="Tous les opérateurs"
                     >
                         <mat-option>
                             <ngx-mat-select-search
@@ -226,7 +222,7 @@
                         [(ngModel)]="selectedReseaux"
                         multiple
                         (selectionChange)="onDashboardFilterChange()"
-                        placeholder="Sélection multiple possible"
+                        placeholder="Tous les réseaux"
                     >
                         <mat-option>
                             <ngx-mat-select-search
