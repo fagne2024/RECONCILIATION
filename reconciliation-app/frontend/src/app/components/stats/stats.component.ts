@@ -12,6 +12,7 @@ import { MatSelect } from '@angular/material/select';
 import { ModernPopupComponent, PopupConfig } from '../modern-popup/modern-popup.component';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { normalizeCountryFilterOptions, matchesCountryFilter, countriesMatch } from '../../utils/country-codes.util';
 
 interface AggregatedStatRow {
     agency: string;
@@ -372,7 +373,7 @@ export class StatsComponent implements OnInit, OnDestroy {
         }
         // Filtrer par pays si sélectionné
         if (this.filterForm.value.country && this.filterForm.value.country.length > 0) {
-            data = data.filter(s => this.filterForm.value.country.includes(s.country));
+            data = data.filter(s => matchesCountryFilter(s.country, this.filterForm.value.country));
         }
         const agencies = [...new Set(data.map(s => s.agency))];
         return agencies.sort();
@@ -386,7 +387,7 @@ export class StatsComponent implements OnInit, OnDestroy {
         }
         // Filtrer par pays si sélectionné
         if (this.filterForm.value.country && this.filterForm.value.country.length > 0) {
-            data = data.filter(s => this.filterForm.value.country.includes(s.country));
+            data = data.filter(s => matchesCountryFilter(s.country, this.filterForm.value.country));
         }
         const services = [...new Set(data.map(s => s.service))];
         return services.sort();
@@ -402,8 +403,8 @@ export class StatsComponent implements OnInit, OnDestroy {
         if (this.filterForm.value.service && this.filterForm.value.service.length > 0) {
             data = data.filter(s => this.filterForm.value.service.includes(s.service));
         }
-        const countries = [...new Set(data.map(s => s.country))];
-        return countries.sort();
+        const countries = normalizeCountryFilterOptions(data.map(s => s.country));
+        return countries;
     }
 
     // Harmonisation de la méthode de filtrage
@@ -427,7 +428,7 @@ export class StatsComponent implements OnInit, OnDestroy {
             const beforeEnd = !endDate || summaryDate <= endDate;
             const agencyMatch = !filters.agency || filters.agency.length === 0 || filters.agency.includes(summary.agency);
             const serviceMatch = !filters.service || filters.service.length === 0 || filters.service.includes(summary.service);
-            const countryMatch = !filters.country || filters.country.length === 0 || filters.country.includes(summary.country);
+            const countryMatch = matchesCountryFilter(summary.country, filters.country);
             
             const match = agencyMatch && serviceMatch && countryMatch && afterStart && beforeEnd;
             
@@ -688,8 +689,8 @@ export class StatsComponent implements OnInit, OnDestroy {
 
         // Nettoyer les pays si l'agence a changé
         if (currentCountry && currentCountry.length > 0) {
-            const validCountries = currentCountry.filter((country: string) => 
-                this.filteredCountries.includes(country)
+            const validCountries = currentCountry.filter((country: string) =>
+                this.filteredCountries.some(fc => countriesMatch(fc, country))
             );
             if (validCountries.length !== currentCountry.length) {
                 this.filterForm.patchValue({ country: validCountries });
@@ -1665,7 +1666,7 @@ export class StatsComponent implements OnInit, OnDestroy {
         return Array.from(new Set(this.agencySummaries.map(s => s.service))).sort();
     }
     getAllCountries(): string[] {
-        return Array.from(new Set(this.agencySummaries.map(s => s.country))).sort();
+        return normalizeCountryFilterOptions(this.agencySummaries.map(s => s.country));
     }
 
     /**

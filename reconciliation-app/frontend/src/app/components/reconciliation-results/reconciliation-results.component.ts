@@ -5654,6 +5654,17 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
         this.reconciliationTabsService.setFilteredMismatches(this.response?.mismatches || []);
 
+        // Invalider un résumé cache incomplet (matches=0 alors que totalMatches>0),
+        // sinon le rapport affiche Transactions/Correspondances faussees.
+        const expectedMatches = this.response?.totalMatches ?? 0;
+        const cachedMatches = (this.cachedAgencySummary || [])
+            .reduce((sum, row) => sum + (Number(row.matches) || 0), 0);
+        if (expectedMatches > 0 && cachedMatches === 0) {
+            this.cachedAgencySummary = null;
+            this.lastResponseHash = '';
+            this.reconciliationSummaryService.clearAgencySummary();
+        }
+
         const currentHash = this.getResponseHash();
         if (this.cachedAgencySummary && this.lastResponseHash === currentHash) {
             this.reconciliationSummaryService.setAgencySummary(
@@ -7694,7 +7705,14 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     getAgencySummary(): AgencySummaryData[] {
         const currentHash = this.getResponseHash();
         if (this.cachedAgencySummary && this.lastResponseHash === currentHash) {
-            return this.cachedAgencySummary;
+            const expectedMatches = this.response?.totalMatches ?? 0;
+            const cachedMatches = this.cachedAgencySummary
+                .reduce((sum, row) => sum + (Number(row.matches) || 0), 0);
+            // Cache invalide si les correspondances n'avaient pas encore été chargées
+            if (!(expectedMatches > 0 && cachedMatches === 0)) {
+                return this.cachedAgencySummary;
+            }
+            this.cachedAgencySummary = null;
         }
 
         const { summary, meta } = this.calculateAgencySummary();
@@ -7712,21 +7730,51 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         let partnerOnlyWithoutAgency = 0;
         let hasPartnerOnlyWithAgencyService = false;
 
+        const normalizeDate = (raw: string): string => {
+            if (!raw) {
+                return new Date().toISOString().split('T')[0];
+            }
+            const value = String(raw).trim();
+            // dd/MM/yyyy -> yyyy-MM-dd
+            const dmy = value.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+            if (dmy) {
+                return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+            }
+            // dd-MM-yyyy
+            const dmyDash = value.match(/^(\d{2})-(\d{2})-(\d{4})/);
+            if (dmyDash) {
+                return `${dmyDash[3]}-${dmyDash[2]}-${dmyDash[1]}`;
+            }
+            // yyyy-MM-dd... (y compris avec heure)
+            const iso = value.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (iso) {
+                return iso[1];
+            }
+            if (value.includes('T')) {
+                return value.split('T')[0];
+            }
+            if (value.includes(' ')) {
+                return value.split(' ')[0];
+            }
+            return value;
+        };
+
         const ensureEntry = (
             agency: string,
             service: string,
             country: string,
-            date: string,
-            volume: number
+            date: string
         ): SummaryEntry => {
-            const key = `${agency}-${service}-${country}`;
+            const day = normalizeDate(date);
+            // Regrouper par agence + service + pays (tous jours), date affichée = plus récente.
+            const key = `${agency}|${service}|${country}`;
             let entry = summaryMap.get(key);
             if (!entry) {
                 entry = {
                     agency,
                     service,
                     country,
-                    date,
+                    date: day,
                     totalVolume: 0,
                     recordCount: 0,
                     matches: 0,
@@ -7735,22 +7783,41 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                     mismatches: 0
                 };
                 summaryMap.set(key, entry);
+            } else if (day && day > (entry.date || '')) {
+                entry.date = day;
             }
-            entry.totalVolume += volume;
-            entry.recordCount += 1;
             return entry;
+        };
+
+        const addBo = (
+            agency: string,
+            service: string,
+            country: string,
+            date: string,
+            volume: number,
+            kind: 'matches' | 'boOnly' | 'mismatches'
+        ) => {
+            const entry = ensureEntry(agency, service, country, date);
+            entry.recordCount += 1;
+            entry.totalVolume += volume || 0;
+            if (kind === 'matches') entry.matches += 1;
+            if (kind === 'boOnly') entry.boOnly += 1;
+            if (kind === 'mismatches') entry.mismatches += 1;
         };
 
         this.filteredMatches.forEach(match => {
             const boInfo = this.getBoAgencyAndService(match);
-            const entry = ensureEntry(boInfo.agency, boInfo.service, boInfo.country, boInfo.date, boInfo.volume);
-            entry.matches += 1;
+            addBo(boInfo.agency, boInfo.service, boInfo.country, boInfo.date, boInfo.volume, 'matches');
         });
 
         this.filteredBoOnly.forEach(record => {
             const boInfo = this.getBoOnlyAgencyAndService(record);
-            const entry = ensureEntry(boInfo.agency, boInfo.service, boInfo.country, boInfo.date, boInfo.volume);
-            entry.boOnly += 1;
+            addBo(boInfo.agency, boInfo.service, boInfo.country, boInfo.date, boInfo.volume, 'boOnly');
+        });
+
+        (this.response?.mismatches || []).forEach(record => {
+            const info = this.getBoOnlyAgencyAndService(record);
+            addBo(info.agency, info.service, info.country, info.date, info.volume || 0, 'mismatches');
         });
 
         this.filteredPartnerOnly.forEach(record => {
@@ -7761,9 +7828,9 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                     partnerInfo.agency,
                     partnerInfo.service,
                     partnerInfo.country,
-                    partnerInfo.date,
-                    partnerInfo.volume
+                    partnerInfo.date
                 );
+                // partnerOnly ne doit PAS incrémenter recordCount/totalVolume (transactions BO).
                 entry.partnerOnly += 1;
             } else {
                 partnerOnlyWithoutAgency += 1;

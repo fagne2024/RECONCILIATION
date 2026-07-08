@@ -7,6 +7,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { ModernPopupComponent, PopupConfig } from '../modern-popup/modern-popup.component';
 import { MatSelect } from '@angular/material/select';
+import { normalizeCountryFilterOptions, matchesCountryFilter, countriesMatch } from '../../utils/country-codes.util';
 
 interface AggregatedStatRow {
   agency: string;
@@ -183,14 +184,18 @@ export class StatsReportGraphComponent implements OnInit {
   getFilteredAgencies(): string[] {
     let data = this.agencySummaries;
     if (this.filterForm.value.service?.length > 0) data = data.filter((s: any) => this.filterForm.value.service.includes(s.service));
-    if (this.filterForm.value.country?.length > 0) data = data.filter((s: any) => this.filterForm.value.country.includes(s.country));
+    if (this.filterForm.value.country?.length > 0) {
+      data = data.filter((s: any) => matchesCountryFilter(s.country, this.filterForm.value.country));
+    }
     return [...new Set(data.map((s: any) => s.agency))].sort();
   }
 
   getFilteredServices(): string[] {
     let data = this.agencySummaries;
     if (this.filterForm.value.agency?.length > 0) data = data.filter((s: any) => this.filterForm.value.agency.includes(s.agency));
-    if (this.filterForm.value.country?.length > 0) data = data.filter((s: any) => this.filterForm.value.country.includes(s.country));
+    if (this.filterForm.value.country?.length > 0) {
+      data = data.filter((s: any) => matchesCountryFilter(s.country, this.filterForm.value.country));
+    }
     return [...new Set(data.map((s: any) => s.service))].sort();
   }
 
@@ -198,7 +203,7 @@ export class StatsReportGraphComponent implements OnInit {
     let data = this.agencySummaries;
     if (this.filterForm.value.agency?.length > 0) data = data.filter((s: any) => this.filterForm.value.agency.includes(s.agency));
     if (this.filterForm.value.service?.length > 0) data = data.filter((s: any) => this.filterForm.value.service.includes(s.service));
-    return [...new Set(data.map((s: any) => s.country))].sort();
+    return normalizeCountryFilterOptions(data.map((s: any) => s.country));
   }
 
   updateFilteredLists(): void {
@@ -215,7 +220,9 @@ export class StatsReportGraphComponent implements OnInit {
 
     const validAgencies = currentAgency.filter((agency: string) => this.filteredAgencies.includes(agency));
     const validServices = currentService.filter((service: string) => this.filteredServices.includes(service));
-    const validCountries = currentCountry.filter((country: string) => this.filteredCountries.includes(country));
+    const validCountries = currentCountry.filter((country: string) =>
+      this.filteredCountries.some(fc => countriesMatch(fc, country))
+    );
 
     if (
       validAgencies.length !== currentAgency.length ||
@@ -258,7 +265,7 @@ export class StatsReportGraphComponent implements OnInit {
       const beforeEnd = !endDate || summaryDate <= endDate;
       const agencyMatch = !filters.agency?.length || filters.agency.includes(summary.agency);
       const serviceMatch = !filters.service?.length || filters.service.includes(summary.service);
-      const countryMatch = !filters.country?.length || filters.country.includes(summary.country);
+      const countryMatch = matchesCountryFilter(summary.country, filters.country);
       return agencyMatch && serviceMatch && countryMatch && afterStart && beforeEnd;
     });
 

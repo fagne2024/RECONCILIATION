@@ -5,6 +5,7 @@ import { FormControl } from '@angular/forms';
 import { MatSelect } from '@angular/material/select';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { normalizeCountryFilterOptions } from '../../utils/country-codes.util';
 
 @Component({
   selector: 'app-ranking',
@@ -107,7 +108,9 @@ export class RankingComponent implements OnInit {
     this.rankingService.getCountries().subscribe({
       next: (data) => {
         // Correction : éviter la duplication de 'Tous les pays'
-        const paysSansDoublon = data.filter((c: string) => c !== 'Tous les pays');
+        const paysSansDoublon = normalizeCountryFilterOptions(
+          data.filter((c: string) => c !== 'Tous les pays')
+        );
         this.countries = ['Tous les pays', ...paysSansDoublon];
         this.filteredCountries = this.countries;
       },

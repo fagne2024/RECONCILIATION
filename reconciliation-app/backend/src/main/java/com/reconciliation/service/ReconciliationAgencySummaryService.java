@@ -57,14 +57,12 @@ public class ReconciliationAgencySummaryService {
                 if (!"Inconnue".equals(agency) && !"Inconnu".equals(service)) {
                     hasPartnerOnlyWithAgencyService = true;
                     String country = normalizeCountry(extractValue(record, PAYS_KEYS));
-                    String date = extractValue(record, DATE_KEYS);
-                    if (date.isBlank()) {
-                        date = java.time.LocalDate.now().toString();
-                    }
+                    String date = normalizeDate(extractValue(record, DATE_KEYS));
                     SummaryEntry entry = ensureEntry(summaryMap, agency, service, country, date);
                     entry.partnerOnly++;
-                    entry.recordCount++;
-                    entry.totalVolume += parseAmount(extractValue(record, AMOUNT_KEYS));
+                    // Ne pas incrémenter recordCount/totalVolume ici :
+                    // recordCount et totalVolume doivent refléter les transactions BO (matches/boOnly/mismatches),
+                    // pas les lignes partenaire-only.
                 } else {
                     partnerOnlyWithoutAgency++;
                 }
@@ -105,10 +103,7 @@ public class ReconciliationAgencySummaryService {
             service = "Inconnu";
         }
         String country = normalizeCountry(extractValue(record, PAYS_KEYS));
-        String date = extractValue(record, DATE_KEYS);
-        if (date.isBlank()) {
-            date = java.time.LocalDate.now().toString();
-        }
+        String date = normalizeDate(extractValue(record, DATE_KEYS));
         SummaryEntry entry = ensureEntry(summaryMap, agency, service, country, date);
         switch (field) {
             case "matches" -> entry.matches++;
@@ -128,8 +123,49 @@ public class ReconciliationAgencySummaryService {
         String country,
         String date
     ) {
+        // Regroupement par agence + service + pays (tous jours confondus).
+        // La date affichée est la plus récente rencontrée.
+        String day = normalizeDate(date);
         String key = agency + "|" + service + "|" + country;
-        return summaryMap.computeIfAbsent(key, ignored -> new SummaryEntry(agency, service, country, date));
+        SummaryEntry entry = summaryMap.computeIfAbsent(key, ignored -> new SummaryEntry(agency, service, country, day));
+        if (day.compareTo(entry.date) > 0) {
+            entry.date = day;
+        }
+        return entry;
+    }
+
+    /**
+     * Normalise une date au format yyyy-MM-dd pour agrégation journalière.
+     * Sans cela, des timestamps différents créent une ligne par transaction.
+     */
+    private static String normalizeDate(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return java.time.LocalDate.now().toString();
+        }
+        String value = raw.trim();
+        // ISO: 2026-07-07T12:30:00 / 2026-07-07 12:30:00
+        if (value.length() >= 10 && value.charAt(4) == '-' && value.charAt(7) == '-') {
+            return value.substring(0, 10);
+        }
+        // dd/MM/yyyy[ HH:mm[:ss]]
+        java.util.regex.Matcher dmy = java.util.regex.Pattern
+            .compile("^(\\d{2})/(\\d{2})/(\\d{4})")
+            .matcher(value);
+        if (dmy.find()) {
+            return dmy.group(3) + "-" + dmy.group(2) + "-" + dmy.group(1);
+        }
+        // dd-MM-yyyy
+        java.util.regex.Matcher dmyDash = java.util.regex.Pattern
+            .compile("^(\\d{2})-(\\d{2})-(\\d{4})")
+            .matcher(value);
+        if (dmyDash.find()) {
+            return dmyDash.group(3) + "-" + dmyDash.group(2) + "-" + dmyDash.group(1);
+        }
+        try {
+            return java.time.LocalDate.parse(value.substring(0, Math.min(value.length(), 10))).toString();
+        } catch (Exception ignored) {
+            return java.time.LocalDate.now().toString();
+        }
     }
 
     private static String extractValue(Map<String, String> record, String... keys) {

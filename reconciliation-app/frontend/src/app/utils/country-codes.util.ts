@@ -29,15 +29,34 @@ const COUNTRY_CODE_TO_NAME: Record<string, string> = {
   CV: 'Cap-Vert'
 };
 
+/** Variantes métier → code ISO (ex. CITCH = CI). */
+const COUNTRY_ALIAS_TO_ISO: Record<string, string> = {
+  CITCH: 'CI'
+};
+
+function resolveIsoCode(raw: string): string {
+  const upper = raw.trim().toUpperCase();
+  if (COUNTRY_CODE_TO_NAME[upper]) {
+    return upper;
+  }
+  if (COUNTRY_ALIAS_TO_ISO[upper]) {
+    return COUNTRY_ALIAS_TO_ISO[upper];
+  }
+  if (upper.startsWith('CITCH')) {
+    return 'CI';
+  }
+  return upper;
+}
+
 export function countryNameFromCode(code: string | null | undefined): string | null {
   if (!code) {
     return null;
   }
-  const upper = code.trim().toUpperCase();
-  return COUNTRY_CODE_TO_NAME[upper] ?? null;
+  const iso = resolveIsoCode(code);
+  return COUNTRY_CODE_TO_NAME[iso] ?? null;
 }
 
-/** Libellé pays affiché : code ISO → nom complet, sinon valeur telle quelle. */
+/** Libellé pays affiché : code ISO / alias → nom complet, sinon valeur telle quelle. */
 export function countryDisplayLabel(country: string | null | undefined): string {
   if (!country) {
     return '';
@@ -65,7 +84,37 @@ export function countryNamesFromCodes(codes: string[] | null | undefined): strin
   return names;
 }
 
-/** Compare deux libellés pays (code ISO, nom complet ou variante). */
+/** Options de filtre pays : libellés complets uniques (GA → Gabon, CITCH → Côte d'Ivoire). */
+export function normalizeCountryFilterOptions(countries: (string | null | undefined)[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const raw of countries || []) {
+    const label = countryDisplayLabel(raw);
+    if (!label) {
+      continue;
+    }
+    const key = countryMatchKey(label);
+    if (!key) {
+      continue;
+    }
+    if (!byKey.has(key)) {
+      byKey.set(key, label);
+    }
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+/** Filtre pays : true si aucune sélection ou si la ligne correspond à un pays choisi. */
+export function matchesCountryFilter(
+  rowCountry: string | null | undefined,
+  selectedCountries: string[] | null | undefined
+): boolean {
+  if (!selectedCountries?.length) {
+    return true;
+  }
+  return selectedCountries.some(selected => countriesMatch(rowCountry, selected));
+}
+
+/** Compare deux libellés pays (code ISO, nom complet, alias ou variante). */
 export function countriesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
   const ka = countryMatchKey(a);
   const kb = countryMatchKey(b);
@@ -83,11 +132,14 @@ function countryMatchKey(value: string | null | undefined): string | null {
   if (!trimmed) {
     return null;
   }
+  const upper = trimmed.toUpperCase();
+  if (upper === 'CITCH' || upper.startsWith('CITCH')) {
+    return COUNTRY_CODE_TO_NAME['CI'].toLowerCase();
+  }
   const fromCode = countryNameFromCode(trimmed);
   if (fromCode) {
     return fromCode.toLowerCase();
   }
-  const upper = trimmed.toUpperCase();
   for (const [code, name] of Object.entries(COUNTRY_CODE_TO_NAME)) {
     if (code === upper || name.toLowerCase() === trimmed.toLowerCase()) {
       return name.toLowerCase();

@@ -58,7 +58,7 @@ import {
 
 import { PopupService } from '../../services/popup.service';
 import { AppStateService, UserPaysScope } from '../../services/app-state.service';
-import { countriesMatch, countryNameFromCode } from '../../utils/country-codes.util';
+import { countriesMatch, countryDisplayLabel, normalizeCountryFilterOptions } from '../../utils/country-codes.util';
 
 
 
@@ -481,17 +481,11 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
         switchMap((filters) => {
 
-          const fromApi = (filters.countries ?? []).map((c) => (c || '').trim()).filter(Boolean);
-
-          const merged = new Set<string>([...fromApi, ...this.countries]);
-
-          if (this.selectedCountry) {
-
-            merged.add(this.selectedCountry);
-
-          }
-
-          this.countries = Array.from(merged).sort((a, b) => a.localeCompare(b, 'fr'));
+          this.countries = normalizeCountryFilterOptions([
+            ...(filters.countries ?? []),
+            ...this.countries,
+            this.selectedCountry
+          ]);
 
           this.syncSelectedCountryWithList();
 
@@ -573,17 +567,14 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   }
 
+  /** Libellé affiché dans le filtre pays (jamais de code ISO seul : GA → Gabon). */
+  private normalizeCountryForFilter(raw: string | null | undefined): string {
+    return countryDisplayLabel(raw);
+  }
+
   private resolveCountryLabel(value: string | null | undefined): string {
 
-    const trimmed = (value || '').trim();
-
-    if (!trimmed) {
-
-      return '';
-
-    }
-
-    return countryNameFromCode(trimmed) || trimmed;
+    return this.normalizeCountryForFilter(value);
 
   }
 
@@ -595,7 +586,9 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     }
 
-    const match = this.countries.find((c) => countriesMatch(c, this.selectedCountry));
+    const normalized = this.normalizeCountryForFilter(this.selectedCountry);
+
+    const match = this.countries.find((c) => countriesMatch(c, normalized));
 
     if (match) {
 
@@ -605,7 +598,11 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     }
 
-    this.countries = [...this.countries, this.selectedCountry].sort((a, b) => a.localeCompare(b, 'fr'));
+    if (normalized) {
+
+      this.selectedCountry = normalized;
+
+    }
 
   }
 
@@ -2491,11 +2488,18 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   private refreshCountries(): void {
 
-    const set = new Set<string>(this.countries);
+    const set = new Set<string>();
+
+    for (const c of this.countries) {
+      const label = this.normalizeCountryForFilter(c);
+      if (label) {
+        set.add(label);
+      }
+    }
 
     for (const row of this.rawReport) {
 
-      const c = (row.country || '').trim();
+      const c = this.normalizeCountryForFilter(row.country);
 
       if (c) {
 

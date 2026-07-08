@@ -16,7 +16,7 @@ import {
     resolveTraitementKind,
     TraitementKind
 } from '../../shared/result8rec-audit-display';
-import { countriesMatch, countryDisplayLabel } from '../../utils/country-codes.util';
+import { countriesMatch, countryDisplayLabel, normalizeCountryFilterOptions } from '../../utils/country-codes.util';
 
 type RecoSummaryStatus = 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
 
@@ -271,7 +271,7 @@ export class EtatReconciliationsComponent implements OnInit {
     private loadFilterOptions(): void {
         this.dashboardService.getReconciliationFilters().subscribe({
             next: (filters) => {
-                this.reconciliationSummaryCountries = this.normalizeCountryFilterOptions(filters.countries || []);
+                this.reconciliationSummaryCountries = normalizeCountryFilterOptions(filters.countries || []);
                 this.reconciliationSummaryServices = filters.services || [];
             },
             error: (err) => {
@@ -333,11 +333,6 @@ export class EtatReconciliationsComponent implements OnInit {
             return ie === 'TOTAL';
         }
         return ie === te || ie === 'TOTAL';
-    }
-
-    /** Pays distincts pour les filtres : libellés complets uniquement (GA → Gabon, etc.). */
-    private normalizeCountryFilterOptions(countries: string[]): string[] {
-        return [...new Set((countries || []).map(c => countryDisplayLabel(c)).filter(c => c))].sort();
     }
 
     /**

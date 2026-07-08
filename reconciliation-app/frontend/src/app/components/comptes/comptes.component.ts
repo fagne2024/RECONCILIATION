@@ -21,6 +21,7 @@ import { AgencySummaryService } from '../../services/agency-summary.service';
 import { FraisTransactionService } from '../../services/frais-transaction.service';
 import { FraisTransaction } from '../../models/frais-transaction.model';
 import { PopupService } from '../../services/popup.service';
+import { normalizeCountryFilterOptions, matchesCountryFilter, countriesMatch } from '../../utils/country-codes.util';
 
 type DailySolde = {
     date: string;
@@ -1457,8 +1458,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.subscription.add(
             this.compteService.getDistinctPays().subscribe({
                 next: (paysList: string[]) => {
-                    this.paysList = paysList;
-                    this.filteredPaysList = paysList;
+                    this.paysList = normalizeCountryFilterOptions(paysList);
+                    this.filteredPaysList = this.paysList;
                     this.syncPaysAutocompleteFilteredLists();
                     // Mettre à jour les listes filtrées avec cloisonnement après chargement des données
                     setTimeout(() => {
@@ -1595,8 +1596,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
         // Nettoyer les pays si le code propriétaire a changé
         if (currentPays && currentPays.length > 0) {
-            const validPays = currentPays.filter((pays: string) => 
-                this.filteredPaysList.includes(pays)
+            const validPays = currentPays.filter((pays: string) =>
+                this.filteredPaysList.some(fp => countriesMatch(fp, pays))
             );
             if (validPays.length !== currentPays.length) {
                 this.selectedPays = validPays;
@@ -1647,10 +1648,11 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (this.selectedTypes && this.selectedTypes.length > 0) {
             data = data.filter(c => c.type && this.selectedTypes.includes(c.type));
         }
-        const pays = [...new Set(data.map(c => c.pays).filter((p): p is string => p !== undefined && p !== null))];
-        // Toujours inclure les éléments déjà sélectionnés pour qu'ils restent visibles et cochés
-        const withSelected = Array.from(new Set([...(pays || []), ...(this.selectedPays || [])]));
-        return withSelected.sort();
+        const pays = normalizeCountryFilterOptions(
+            data.map(c => c.pays).filter((p): p is string => p !== undefined && p !== null)
+        );
+        const withSelected = normalizeCountryFilterOptions([...pays, ...(this.selectedPays || [])]);
+        return withSelected;
     }
 
     getFilteredCodeProprietaire(): string[] {
@@ -1662,7 +1664,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         let data = this.allComptes && this.allComptes.length ? this.allComptes : this.comptes;
         // Filtrer par pays si sélectionné (cloisonnement principal)
         if (this.selectedPays && this.selectedPays.length > 0) {
-            data = data.filter(c => c.pays && this.selectedPays.includes(c.pays));
+            data = data.filter(c => c.pays && matchesCountryFilter(c.pays, this.selectedPays));
         }
         // Filtrer par catégorie si sélectionnée
         if (this.selectedCategories && this.selectedCategories.length > 0) {
@@ -1687,7 +1689,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         let data = this.allComptes && this.allComptes.length ? this.allComptes : this.comptes;
         // Filtrer par pays si sélectionné
         if (this.selectedPays && this.selectedPays.length > 0) {
-            data = data.filter(c => c.pays && this.selectedPays.includes(c.pays));
+            data = data.filter(c => c.pays && matchesCountryFilter(c.pays, this.selectedPays));
         }
         // Filtrer par code propriétaire si sélectionné
         if (this.selectedCodesProprietaire && this.selectedCodesProprietaire.length > 0) {
@@ -1712,7 +1714,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         let data = this.allComptes && this.allComptes.length ? this.allComptes : this.comptes;
         // Filtrer par pays si sélectionné
         if (this.selectedPays && this.selectedPays.length > 0) {
-            data = data.filter(c => c.pays && this.selectedPays.includes(c.pays));
+            data = data.filter(c => c.pays && matchesCountryFilter(c.pays, this.selectedPays));
         }
         // Filtrer par code propriétaire si sélectionné
         if (this.selectedCodesProprietaire && this.selectedCodesProprietaire.length > 0) {

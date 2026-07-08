@@ -9,6 +9,7 @@ import { AppStateService } from '../../services/app-state.service';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import { normalizeCountryFilterOptions, countriesMatch } from '../../utils/country-codes.util';
 
 @Component({
   selector: 'app-suivi-des-ecarts',
@@ -120,7 +121,7 @@ export class SuiviDesEcartsComponent implements OnInit, OnDestroy {
   extractUniqueValues() {
     this.uniqueAgencies = [...new Set(this.suiviEcarts.map(e => e.agence).filter(Boolean))].sort();
     this.uniqueServices = [...new Set(this.suiviEcarts.map(e => e.service).filter(Boolean))].sort();
-    this.uniquePays = [...new Set(this.suiviEcarts.map(e => e.pays).filter(Boolean))].sort();
+    this.uniquePays = normalizeCountryFilterOptions(this.suiviEcarts.map(e => e.pays).filter(Boolean));
     this.filteredAgencies = [...this.uniqueAgencies];
     this.filteredServices = [...this.uniqueServices];
   }
@@ -147,7 +148,7 @@ export class SuiviDesEcartsComponent implements OnInit, OnDestroy {
       if (this.selectedService && item.service !== this.selectedService) return false;
 
       // Filtre par pays
-      if (this.selectedPays && item.pays !== this.selectedPays) return false;
+      if (this.selectedPays && !countriesMatch(item.pays, this.selectedPays)) return false;
 
       // Filtre par statut
       if (this.selectedStatut && item.statut !== this.selectedStatut) return false;

@@ -9,6 +9,7 @@ import { PopupService } from '../../services/popup.service';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { MatSelect } from '@angular/material/select';
+import { normalizeCountryFilterOptions, matchesCountryFilter, countriesMatch } from '../../utils/country-codes.util';
 
 @Component({
     selector: 'app-operations',
@@ -845,7 +846,7 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
 
     loadPaysList() {
         setTimeout(() => {
-        this.paysList = [...new Set(this.operations.map(op => op.pays))].sort();
+        this.paysList = normalizeCountryFilterOptions(this.operations.map(op => op.pays));
         this.filteredPaysList = this.paysList.slice();
         this.filteredAddFormCodeProprietaireList = this.codeProprietaireList.slice();
         }, 100);
@@ -1904,7 +1905,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
             
             // Filtre par pays
             if (selectedPays && selectedPays.length > 0) {
-                if (!selectedPays.includes(op.pays)) {
+                if (!matchesCountryFilter(op.pays, selectedPays)) {
                     console.log(`Opération ${op.id} exclue: pays ${op.pays} pas dans ${selectedPays}`);
                     return false;
                 }
@@ -2088,8 +2089,8 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
 
         // Nettoyer les pays si le code propriétaire a changé
         if (currentPays && currentPays.length > 0) {
-            const validPays = currentPays.filter((pays: string) => 
-                this.filteredPaysList.includes(pays)
+            const validPays = currentPays.filter((pays: string) =>
+                this.filteredPaysList.some(fp => countriesMatch(fp, pays))
             );
             if (validPays.length !== currentPays.length) {
                 this.filterForm.controls['pays'].setValue(validPays);
@@ -2182,8 +2183,10 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         if (this.filterForm.value.reference && this.filterForm.value.reference.length > 0) {
             data = data.filter(op => this.filterForm.value.reference.includes(op.reference));
         }
-        const pays = [...new Set(data.map(op => op.pays).filter((p): p is string => p !== undefined && p !== null))];
-        return pays.sort();
+        const pays = normalizeCountryFilterOptions(
+            data.map(op => op.pays).filter((p): p is string => p !== undefined && p !== null)
+        );
+        return pays;
     }
 
     getFilteredBanques(): string[] {
@@ -2199,7 +2202,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         }
         // Filtrer par pays si sélectionné
         if (this.filterForm.value.pays && this.filterForm.value.pays.length > 0) {
-            data = data.filter(op => this.filterForm.value.pays.includes(op.pays));
+            data = data.filter(op => matchesCountryFilter(op.pays, this.filterForm.value.pays));
         }
         // Filtrer par service si sélectionné
         if (this.filterForm.value.service && this.filterForm.value.service.length > 0) {
@@ -2226,7 +2229,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         }
         // Filtrer par pays si sélectionné
         if (this.filterForm.value.pays && this.filterForm.value.pays.length > 0) {
-            data = data.filter(op => this.filterForm.value.pays.includes(op.pays));
+            data = data.filter(op => matchesCountryFilter(op.pays, this.filterForm.value.pays));
         }
         // Filtrer par banque si sélectionnée
         if (this.filterForm.value.banque && this.filterForm.value.banque.length > 0) {
@@ -2248,7 +2251,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
             data = data.filter(op => this.filterForm.value.typeOperation.includes(op.typeOperation));
         }
         if (this.filterForm.value.pays && this.filterForm.value.pays.length > 0) {
-            data = data.filter(op => this.filterForm.value.pays.includes(op.pays));
+            data = data.filter(op => matchesCountryFilter(op.pays, this.filterForm.value.pays));
         }
         if (this.filterForm.value.statut && this.filterForm.value.statut.length > 0) {
             data = data.filter(op => this.filterForm.value.statut.includes(op.statut));
@@ -2275,7 +2278,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
             data = data.filter(op => this.filterForm.value.typeOperation.includes(op.typeOperation));
         }
         if (this.filterForm.value.pays && this.filterForm.value.pays.length > 0) {
-            data = data.filter(op => this.filterForm.value.pays.includes(op.pays));
+            data = data.filter(op => matchesCountryFilter(op.pays, this.filterForm.value.pays));
         }
         if (this.filterForm.value.statut && this.filterForm.value.statut.length > 0) {
             data = data.filter(op => this.filterForm.value.statut.includes(op.statut));
@@ -2301,7 +2304,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
             data = data.filter(op => this.filterForm.value.typeOperation.includes(op.typeOperation));
         }
         if (this.filterForm.value.pays && this.filterForm.value.pays.length > 0) {
-            data = data.filter(op => this.filterForm.value.pays.includes(op.pays));
+            data = data.filter(op => matchesCountryFilter(op.pays, this.filterForm.value.pays));
         }
         if (this.filterForm.value.banque && this.filterForm.value.banque.length > 0) {
             data = data.filter(op => this.filterForm.value.banque.includes(op.banque));
@@ -3494,7 +3497,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
 
         // Appliquer les filtres en temps réel
         if (this.approClientFilters.pays) {
-            filtered = filtered.filter(op => op.pays === this.approClientFilters.pays);
+            filtered = filtered.filter(op => countriesMatch(op.pays, this.approClientFilters.pays));
         }
         if (this.approClientFilters.codeProprietaire) {
             filtered = filtered.filter(op => op.codeProprietaire?.includes(this.approClientFilters.codeProprietaire));
@@ -3550,7 +3553,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
 
         // Appliquer les filtres en temps réel
         if (this.compenseClientFilters.pays) {
-            filtered = filtered.filter(op => op.pays === this.compenseClientFilters.pays);
+            filtered = filtered.filter(op => countriesMatch(op.pays, this.compenseClientFilters.pays));
         }
         if (this.compenseClientFilters.codeProprietaire) {
             filtered = filtered.filter(op => op.codeProprietaire?.includes(this.compenseClientFilters.codeProprietaire));
@@ -3596,7 +3599,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         );
 
         if (this.nivellementFilters.pays) {
-            filtered = filtered.filter(op => op.pays === this.nivellementFilters.pays);
+            filtered = filtered.filter(op => countriesMatch(op.pays, this.nivellementFilters.pays));
         }
         if (this.nivellementFilters.codeProprietaire) {
             filtered = filtered.filter(op => op.codeProprietaire?.includes(this.nivellementFilters.codeProprietaire));
@@ -3645,7 +3648,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         );
 
         if (this.regularisationSoldeFilters.pays) {
-            filtered = filtered.filter(op => op.pays === this.regularisationSoldeFilters.pays);
+            filtered = filtered.filter(op => countriesMatch(op.pays, this.regularisationSoldeFilters.pays));
         }
         if (this.regularisationSoldeFilters.codeProprietaire) {
             filtered = filtered.filter(op => op.codeProprietaire === this.regularisationSoldeFilters.codeProprietaire);
@@ -3874,7 +3877,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         
         // Si un pays est sélectionné, filtrer les opérations par pays
         if (this.approClientFilters.pays) {
-            operations = operations.filter(op => op.pays === this.approClientFilters.pays);
+            operations = operations.filter(op => countriesMatch(op.pays, this.approClientFilters.pays));
         }
         
         // Extraire les codes propriétaires uniques
@@ -3895,7 +3898,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         
         // Si un pays est sélectionné, filtrer les opérations par pays
         if (this.compenseClientFilters.pays) {
-            operations = operations.filter(op => op.pays === this.compenseClientFilters.pays);
+            operations = operations.filter(op => countriesMatch(op.pays, this.compenseClientFilters.pays));
         }
         
         // Extraire les codes propriétaires uniques
@@ -3917,7 +3920,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         
         // Si un pays est sélectionné, filtrer les opérations par pays
         if (this.nivellementFilters.pays) {
-            operations = operations.filter(op => op.pays === this.nivellementFilters.pays);
+            operations = operations.filter(op => countriesMatch(op.pays, this.nivellementFilters.pays));
         }
         
         // Extraire les codes propriétaires uniques
@@ -3939,7 +3942,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         
         // Si un pays est sélectionné, filtrer les opérations par pays
         if (this.regularisationSoldeFilters.pays) {
-            operations = operations.filter(op => op.pays === this.regularisationSoldeFilters.pays);
+            operations = operations.filter(op => countriesMatch(op.pays, this.regularisationSoldeFilters.pays));
         }
         
         // Extraire les codes propriétaires uniques

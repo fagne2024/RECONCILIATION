@@ -10,6 +10,7 @@ import { ReleveBancaireService } from '../../services/releve-bancaire.service';
 import { ReleveBancaireRow } from '../../models/releve-bancaire.model';
 import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { PopupService } from '../../services/popup.service';
+import { countryDisplayLabel, countriesMatch, normalizeCountryFilterOptions } from '../../utils/country-codes.util';
 
 // Interface locale pour les opérations bancaires avec Date
 interface OperationBancaireDisplay extends Omit<OperationBancaire, 'dateOperation'> {
@@ -99,6 +100,7 @@ export class BanqueComponent implements OnInit {
   // Mapping codes pays -> noms pays
   private paysCodeToName: Record<string, string> = {
     'CI': "Côte d'Ivoire",
+    'CITCH': "Côte d'Ivoire",
     'SN': 'Sénégal',
     'GN': 'Guinée',
     'BF': 'Burkina Faso',
@@ -909,15 +911,7 @@ export class BanqueComponent implements OnInit {
   }
 
   private resolveDisplayCountryName(input: string): string {
-    const raw = (input || '').toString().trim();
-    if (!raw) return '';
-    if (raw.length <= 3) {
-      const code = raw.toUpperCase();
-      return this.paysCodeToName[code] || raw;
-    }
-    const norm = this.normalizeCountryName(raw);
-    const entry = Object.entries(this.paysCodeToName).find(([, name]) => this.normalizeCountryName(name) === norm);
-    return entry ? entry[1] : raw;
+    return countryDisplayLabel(input) || input.trim();
   }
 
   ngOnInit(): void {
@@ -2349,32 +2343,31 @@ export class BanqueComponent implements OnInit {
         }));
         this.filteredOperations = [...this.operations];
         
-        // Pays pour réconciliation basés sur les opérations (forcer libellés complets, pas de codes)
-        const namesSet = new Set<string>();
-        (this.operations || []).forEach(o => {
-          const paysName = (o.pays && String(o.pays).trim())
-            ? this.resolveDisplayCountryName(String(o.pays))
-            : (() => {
-                const code = (o as any).codePays ? String((o as any).codePays).toUpperCase().trim() : '';
-                return code && this.paysCodeToName[code] ? this.paysCodeToName[code] : '';
-              })();
-          if (paysName) namesSet.add(paysName);
+        const rawPays = (this.operations || []).map(o => {
+          if (o.pays && String(o.pays).trim()) {
+            return String(o.pays);
+          }
+          const code = (o as any).codePays ? String((o as any).codePays).toUpperCase().trim() : '';
+          return code || '';
         });
-        this.reconPaysOptions = Array.from(namesSet)
-          .map(n => this.resolveDisplayCountryName(n))
-          .sort((a, b) => a.localeCompare(b));
+        this.paysList = normalizeCountryFilterOptions(rawPays);
+        this.reconPaysOptions = [...this.paysList];
         if (!this.reconPays && this.reconPaysOptions.length === 1) {
           this.reconPays = this.reconPaysOptions[0];
         }
-        // Si une valeur précédente est un code (ex: "CI"), migrer vers le nom complet s'il existe
-        if (this.reconPays && !this.reconPaysOptions.includes(this.reconPays)) {
-          const codeGuess = this.reconPays.length <= 3 ? this.reconPays.toUpperCase() : '';
-          const mapped = codeGuess && this.paysCodeToName[codeGuess] ? this.paysCodeToName[codeGuess] : '';
-          if (mapped && this.reconPaysOptions.includes(mapped)) {
-            this.reconPays = mapped;
-          } else if (this.reconPays.length <= 3) {
-            // Si code inconnu, on réinitialise pour éviter d'afficher un code dans la liste
+        if (this.reconPays && !this.reconPaysOptions.some(p => countriesMatch(p, this.reconPays))) {
+          const mapped = countryDisplayLabel(this.reconPays);
+          const match = mapped ? this.reconPaysOptions.find(p => countriesMatch(p, mapped)) : undefined;
+          if (match) {
+            this.reconPays = match;
+          } else if ((this.reconPays || '').trim().length <= 5) {
             this.reconPays = '';
+          }
+        }
+        if (this.filters.pays) {
+          const match = this.paysList.find(p => countriesMatch(p, this.filters.pays));
+          if (match) {
+            this.filters.pays = match;
           }
         }
         this.updatePagedOperations();
@@ -2448,7 +2441,7 @@ export class BanqueComponent implements OnInit {
   // Filtrage
   applyFilters() {
     this.filteredOperations = this.operations.filter(operation => {
-      const matchPays = !this.filters.pays || operation.pays === this.filters.pays;
+      const matchPays = !this.filters.pays || countriesMatch(operation.pays, this.filters.pays);
       const matchType = !this.filters.typeOperation || operation.typeOperation === this.filters.typeOperation;
       const matchStatut = !this.filters.statut || operation.statut === this.filters.statut;
       const matchTraitement = !this.filters.traitement || operation.traitement === this.filters.traitement;
@@ -2819,7 +2812,7 @@ export class BanqueComponent implements OnInit {
         const code = (op as any).codePays ? String((op as any).codePays).toUpperCase().trim() : '';
         return code && this.paysCodeToName[code] ? this.paysCodeToName[code] : '';
       })();
-      const matchCountry = opName === this.reconPays;
+      const matchCountry = countriesMatch(opName, this.reconPays);
       const matchDate = !ymd || this.normalizeDateToYmd(op.dateOperation) === ymd;
       return matchCountry && matchDate;
     });
@@ -2847,7 +2840,9 @@ export class BanqueComponent implements OnInit {
     const relevéFiltered = sourceReleves.filter(r => {
       // Faire correspondre par nom pays affiché comme pour le Cameroun
       const rowDisplayName = this.deriveCountryNameFromBanque(r.banque);
-      const matchCountry = rowDisplayName ? (rowDisplayName === this.reconPays) : (() => {
+      const matchCountry = rowDisplayName
+        ? countriesMatch(rowDisplayName, this.reconPays)
+        : (() => {
         const rowCode = this.deriveCountryCodeFromBanque(r.banque);
         const expectedCode = reconCode;
         return !expectedCode || rowCode === expectedCode;

@@ -3738,7 +3738,25 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     private summaryHasDetailedBreakdown(summary: AgencySummaryData[]): boolean {
-        return summary.length > 0 && summary.every(item => item.matches !== undefined && item.boOnly !== undefined);
+        if (!summary.length || !summary.every(item => item.matches !== undefined && item.boOnly !== undefined)) {
+            return false;
+        }
+        // Un résumé "précalculé" avec matches=0 partout alors que la réconciliation a des correspondances
+        // est incomplet (souvent généré avant le chargement des matches paginés).
+        return !this.isAgencySummaryIncomplete(summary);
+    }
+
+    private isAgencySummaryIncomplete(summary: AgencySummaryData[]): boolean {
+        if (!summary?.length) {
+            return true;
+        }
+        const totalMatchesExpected = this.response?.totalMatches ?? 0;
+        if (totalMatchesExpected <= 0) {
+            return false;
+        }
+        const matchesInSummary = summary.reduce((sum, item) => sum + (Number(item.matches) || 0), 0);
+        // Tolérance: si le résumé ignore totalement les correspondances, forcer une re-agrégation serveur.
+        return matchesInSummary === 0;
     }
 
     private needsAgencySummaryAggregation(): boolean {
@@ -3746,10 +3764,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (summary.length > 0 && this.summaryHasDetailedBreakdown(summary)) {
             return false;
         }
-        if (this.hasTabsDetailData()) {
+        if (this.hasTabsDetailData() && !this.isAgencySummaryIncomplete(summary)) {
             return false;
         }
-        return this.needsPaginatedDetailLoad(this.response);
+        return this.needsPaginatedDetailLoad(this.response) || this.isAgencySummaryIncomplete(summary);
     }
 
     /**
@@ -3761,21 +3779,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return existing;
         }
 
-        if (!this.response || !this.needsPaginatedDetailLoad(this.response)) {
-            return existing.length > 0 ? existing : null;
-        }
-
         const sessionId =
-            this.response.progressSessionId ||
+            this.response?.progressSessionId ||
             this.reconciliationService.getCurrentJobId();
-        if (!sessionId) {
+
+        // Toujours tenter l'agrégation serveur si le résumé local est incomplet
+        // (ex: matches=0 partout alors que totalMatches > 0).
+        const shouldForceServerAggregation =
+            !!sessionId &&
+            (this.isAgencySummaryIncomplete(existing) || this.needsPaginatedDetailLoad(this.response));
+
+        if (!shouldForceServerAggregation) {
             return existing.length > 0 ? existing : null;
         }
 
         this.isLoadingLiveDetails = true;
         this.dbLoadError = null;
         try {
-            const { summary, meta } = await this.reconciliationService.loadAgencySummaryAggregated(sessionId);
+            const { summary, meta } = await this.reconciliationService.loadAgencySummaryAggregated(sessionId!);
             if (summary.length > 0) {
                 this.reconciliationSummaryService.setAgencySummary(summary, {
                     totalPartnerOnly: meta.totalPartnerOnly,
@@ -3891,36 +3912,67 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const agenceKeys = ['Agence', 'agence', 'AGENCE', 'agency', 'Agency'];
         const serviceKeys = ['Service', 'service', 'SERVICE', 'serv', 'Serv'];
         const paysKeys = ['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx', 'Pays provenance', 'pays provenance'];
-        const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction'];
+        const dateKeys = [
+            'Date opération',
+            'dateOperation',
+            'date_operation',
+            'Date',
+            'date',
+            'DATE',
+            'jour',
+            'Jour',
+            'JOUR',
+            'dateTransaction',
+            'DateTransaction'
+        ];
         const amountKeys = ['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'AMOUNT', 'volume', 'Volume', 'VOLUME'];
 
-        const addRecord = (record: Record<string, string>) => {
+        const addRecord = (
+            record: Record<string, string>,
+            kind: 'matches' | 'boOnly' | 'mismatches' | 'partnerOnly'
+        ) => {
             const agency = getValue(record, agenceKeys) || 'Inconnue';
             const service = getValue(record, serviceKeys) || 'Inconnu';
             const rawCountry = getValue(record, paysKeys);
             const country = rawCountry ? (countryNameFromCode(rawCountry.trim()) || rawCountry.trim()) : 'Inconnu';
             const date = getValue(record, dateKeys) || new Date().toISOString().split('T')[0];
-            const key = `${agency}-${service}-${country}`;
+            // Important: le rapport est par jour — inclure la date évite de fusionner plusieurs dates.
+            const day = this.formatDateForSearch(date);
+            const key = `${agency}-${service}-${country}-${day}`;
 
             if (!summaryMap.has(key)) {
                 summaryMap.set(key, {
                     agency,
                     service,
                     country,
-                    date,
+                    date: day,
                     totalVolume: 0,
-                    recordCount: 0
+                    recordCount: 0,
+                    matches: 0,
+                    boOnly: 0,
+                    mismatches: 0,
+                    partnerOnly: 0
                 });
             }
 
             const summary = summaryMap.get(key)!;
-            summary.totalVolume += this.parseAmount(getValue(record, amountKeys) || '0');
-            summary.recordCount += 1;
+
+            // recordCount = transactions BO (matches + boOnly + mismatches). Le partnerOnly est géré séparément.
+            if (kind === 'matches' || kind === 'boOnly' || kind === 'mismatches') {
+                summary.recordCount += 1;
+                summary.totalVolume += this.parseAmount(getValue(record, amountKeys) || '0');
+            }
+
+            if (kind === 'matches') summary.matches = (Number(summary.matches) || 0) + 1;
+            if (kind === 'boOnly') summary.boOnly = (Number(summary.boOnly) || 0) + 1;
+            if (kind === 'mismatches') summary.mismatches = (Number(summary.mismatches) || 0) + 1;
+            if (kind === 'partnerOnly') summary.partnerOnly = (Number(summary.partnerOnly) || 0) + 1;
         };
 
-        (details.matches || []).forEach(match => addRecord(match.boData || {}));
-        (details.boOnly || []).forEach(record => addRecord(record));
-        (details.mismatches || []).forEach(record => addRecord(record));
+        (details.matches || []).forEach(match => addRecord(match.boData || {}, 'matches'));
+        (details.boOnly || []).forEach(record => addRecord(record, 'boOnly'));
+        (details.mismatches || []).forEach(record => addRecord(record, 'mismatches'));
+        (details.partnerOnly || []).forEach(record => addRecord(record, 'partnerOnly'));
 
         return Array.from(summaryMap.values()).sort((a, b) => {
             if (a.agency !== b.agency) {
@@ -4140,16 +4192,27 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         this.ensurePartnerOnlySpecialLine();
         } else {
             const summary = this.reconciliationSummaryService.getAgencySummary();
-            if (summary.length > 0) {
+            // Si le résumé local est incomplet (matches=0 alors que totalMatches>0),
+            // forcer l'agrégation serveur avant d'afficher.
+            const usableSummary =
+                summary.length > 0 && this.summaryHasDetailedBreakdown(summary)
+                    ? summary
+                    : null;
+            if (usableSummary) {
                 this.hasSummary = true;
-                this.prepareStatsForSummary(summary);
-                this.generateReportDataFromSummary(summary);
+                this.prepareStatsForSummary(usableSummary);
+                this.generateReportDataFromSummary(usableSummary);
             } else {
                 const aggregated = await this.ensureAgencySummaryForReport();
                 if (aggregated && aggregated.length > 0) {
                     this.hasSummary = true;
                     this.prepareStatsForSummary(aggregated);
                     this.generateReportDataFromSummary(aggregated);
+                } else if (summary.length > 0) {
+                    // Fallback: résumé local même incomplet (mieux que rien)
+                    this.hasSummary = true;
+                    this.prepareStatsForSummary(summary);
+                    this.generateReportDataFromSummary(summary);
                 } else {
                     const fallback = this.buildFallbackSummaryFromResponseTotals();
                     if (fallback.length > 0) {
@@ -4325,14 +4388,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     private generateReportDataFromSummary(summary: AgencySummaryData[]) {
         this.debugLog('Génération du rapport à partir du résumé par agence:', summary);
+
+        // Regrouper d'abord par agence/service/pays/jour — évite une ligne par transaction
+        // (ex: date avec heure différentes qui créent des clés distinctes).
+        const consolidatedSummary = this.consolidateAgencySummaryByAgency(summary);
         
-        const filteredSummary = summary.filter(item => {
+        const filteredSummary = consolidatedSummary.filter(item => {
             if (!item.country) return false;
             return this.shouldIncludeCountry(item.country);
         });
     
         this.debugLog('Résumé filtré par pays:', {
             total: summary.length,
+            consolidated: consolidatedSummary.length,
             filtered: filteredSummary.length,
             allowedCountryCodes: this.allowedCountryCodes
         });
@@ -4446,11 +4514,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             // Récupérer le service depuis la première ligne du résumé
             const firstItem = filteredSummary[0];
             const serviceName = firstItem?.service || 'Service Inconnu';
+            const latestDate = filteredSummary.reduce((latest, item) => {
+                const day = this.formatDateForSearch(item.date) || item.date || '';
+                return this.getSortableDateTime(day) > this.getSortableDateTime(latest) ? day : latest;
+            }, firstItem?.date || new Date().toISOString().split('T')[0]);
             
             const partnerOnlyLine: ReconciliationReportData = {
-                date: firstItem?.date || new Date().toISOString().split('T')[0],
-                agency: serviceName, // Le service devient l'agence
-                service: serviceName, // Le service est aussi dans la colonne service
+                date: latestDate,
+                // Ligne spéciale multi-agences (écarts Partenaire sans agence/service exploitables)
+                agency: 'Multiagence',
+                service: serviceName,
                 country: firstItem?.country || '',
                 totalTransactions: totalPartnerOnly,
                 totalVolume: 0,
@@ -4459,15 +4532,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 partnerOnly: totalPartnerOnly,
                 mismatches: 0,
                 matchRate: 0, // Taux à 0% car ce sont uniquement des écarts
-                status: 'En Cours',
-                comment: `${totalPartnerOnly} écart(s) Partenaire`,
+                status: 'NOK',
+                comment: this.buildCommentForCounts(0, 0, totalPartnerOnly, 0, totalPartnerOnly),
                 traitement: 'Niveau Support'
             };
             
             // FORCER immédiatement les valeurs correctes pour la ligne spéciale
             this.enforcePartnerOnlyLineValues(partnerOnlyLine);
             
-            this.reportData.push(partnerOnlyLine);
+            // Placer Multiagence en première ligne
+            this.reportData.unshift(partnerOnlyLine);
         }
         
         this.enforceDefaultStatusForReportData();
@@ -4495,14 +4569,87 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // IMPORTANT: si les écarts partenaires arrivent plus tard (ou ne sont pas attribuables),
         // garantir la création/mise à jour de la ligne spéciale.
         this.ensurePartnerOnlySpecialLine();
-        
+
+        this.reportData = (this.reportData || []).filter(r =>
+            this.isPartnerOnlySpecialLine(r) ||
+            (
+                ((r?.agency || '').toString().trim() !== '') &&
+                ((r?.service || '').toString().trim() !== '')
+            )
+        );
+
+        // Multiagence en première position, puis reste trié par date
         this.reportData.sort((a, b) => {
-            const dateA = new Date(a.date).getTime();
-            const dateB = new Date(b.date).getTime();
-            return dateB - dateA;
+            const aMulti = this.isPartnerOnlySpecialLine(a) ? 0 : 1;
+            const bMulti = this.isPartnerOnlySpecialLine(b) ? 0 : 1;
+            if (aMulti !== bMulti) {
+                return aMulti - bMulti;
+            }
+            return this.getSortableDateTime(b.date) - this.getSortableDateTime(a.date);
         });
         
         this.syncLastSavedGlpiValues(this.reportData);
+    }
+
+    /**
+     * Consolide le résumé par agence + service + pays (tous jours confondus).
+     * Cumule Transactions / Correspondances / Volume / écarts et
+     * conserve la date la plus récente pour l'affichage.
+     */
+    private consolidateAgencySummaryByAgency(summary: AgencySummaryData[]): AgencySummaryData[] {
+        if (!summary?.length) {
+            return [];
+        }
+
+        const map = new Map<string, AgencySummaryData>();
+        for (const item of summary) {
+            if (!item) {
+                continue;
+            }
+            const agency = (item.agency || '').trim();
+            const day = this.formatDateForSearch(item.date) || (item.date || '');
+            const key = [
+                agency.toUpperCase(),
+                (item.service || '').trim().toUpperCase(),
+                (item.country || '').trim().toUpperCase()
+            ].join('|');
+
+            const existing = map.get(key);
+            if (!existing) {
+                map.set(key, {
+                    agency: agency || item.agency,
+                    service: item.service,
+                    country: item.country,
+                    date: day,
+                    totalVolume: Number(item.totalVolume) || 0,
+                    recordCount: Number(item.recordCount) || 0,
+                    matches: Number(item.matches) || 0,
+                    boOnly: Number(item.boOnly) || 0,
+                    partnerOnly: Number(item.partnerOnly) || 0,
+                    mismatches: Number(item.mismatches) || 0
+                });
+                continue;
+            }
+
+            existing.recordCount = (Number(existing.recordCount) || 0) + (Number(item.recordCount) || 0);
+            existing.totalVolume = (Number(existing.totalVolume) || 0) + (Number(item.totalVolume) || 0);
+            existing.matches = (Number(existing.matches) || 0) + (Number(item.matches) || 0);
+            existing.boOnly = (Number(existing.boOnly) || 0) + (Number(item.boOnly) || 0);
+            existing.partnerOnly = (Number(existing.partnerOnly) || 0) + (Number(item.partnerOnly) || 0);
+            existing.mismatches = (Number(existing.mismatches) || 0) + (Number(item.mismatches) || 0);
+
+            // Garder la date la plus récente
+            if (this.getSortableDateTime(day) > this.getSortableDateTime(existing.date)) {
+                existing.date = day;
+            }
+        }
+
+        return Array.from(map.values()).sort((a, b) => {
+            if (a.agency !== b.agency) {
+                return a.agency.localeCompare(b.agency);
+            }
+            return (a.service || '').localeCompare(b.service || '');
+        });
     }
 
     private buildReportRowFromPrecomputedSummary(
@@ -4515,7 +4662,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const matches = item.matches ?? 0;
         const mismatches = item.mismatches ?? 0;
         const boOnlyOnly = item.boOnly ?? 0;
-        const totalBoOnly = boOnlyOnly + mismatches;
 
         let partnerOnly = 0;
         if (!shouldSkipPartnerOnly && !partnerOnlyAlreadyAttributed && !shouldCreatePartnerOnlyLine) {
@@ -4529,8 +4675,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             partnerOnly = item.partnerOnly ?? 0;
         }
 
-        const totalTransactions = item.recordCount || (matches + totalBoOnly + partnerOnly);
-        const totalEcarts = totalBoOnly + partnerOnly;
+        // recordCount backend = matches + boOnly + mismatches (+ partnerOnly si renseigné)
+        const totalTransactions = item.recordCount || (matches + boOnlyOnly + mismatches + partnerOnly);
+        const totalEcarts = boOnlyOnly + partnerOnly + mismatches;
         const traitementDefault = totalEcarts > 0 ? 'Niveau Support' : 'Responsable CDO';
 
         const reportItem: ReconciliationReportData = {
@@ -4541,15 +4688,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             totalTransactions,
             totalVolume: item.totalVolume,
             matches,
-            boOnly: totalBoOnly,
+            // Écarts BO (sans incohérences) : la colonne "Incohérences" est séparée
+            boOnly: boOnlyOnly,
             partnerOnly,
             mismatches,
             matchRate: totalTransactions > 0 ? (matches / totalTransactions) * 100 : 0,
-            status: this.computeStatusFromCounts(matches, totalBoOnly, partnerOnly, mismatches, totalTransactions),
+            status: this.computeStatusFromCounts(matches, boOnlyOnly, partnerOnly, mismatches, totalTransactions),
             comment: '',
             traitement: traitementDefault
         };
-        this.updateCommentFromCounts(reportItem, matches, totalBoOnly, partnerOnly, mismatches, { force: true });
+        this.updateCommentFromCounts(reportItem, matches, boOnlyOnly, partnerOnly, mismatches, { force: true });
         return reportItem;
     }
 
@@ -4622,13 +4770,26 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
-        const firstRow = normalRows[0] ?? this.reportData[0];
-        const serviceName = (firstRow?.service || '').trim();
+        // Prendre une ligne "normale" avec service renseigné pour alimenter le libellé et la date.
+        const seedRow =
+            normalRows.find(r => (r?.service || '').toString().trim() !== '') ??
+            normalRows[0] ??
+            this.reportData[0];
+
+        const serviceName = (seedRow?.service || '').toString().trim();
         if (!serviceName) {
             return;
         }
 
-        const existing = this.reportData.find(r => r.agency === r.service && r.agency === serviceName);
+        const latestDate = normalRows.reduce((latest, row) => {
+            const day = this.formatDateForSearch(row.date) || row.date || '';
+            return this.getSortableDateTime(day) > this.getSortableDateTime(latest) ? day : latest;
+        }, (seedRow?.date || '').toString().trim() || new Date().toISOString().split('T')[0]);
+
+        const existing = this.reportData.find(r =>
+            (r.agency === r.service && r.agency === serviceName) ||
+            ((r.agency || '').trim().toUpperCase() === 'MULTIAGENCE' && (r.service || '').trim() === serviceName)
+        );
         if (existing) {
             // Si la ligne est en OK, elle est soldée → ne pas la réécrire (commentaire doit rester intact)
             if (existing.status === 'OK') {
@@ -4640,15 +4801,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             existing.boOnly = 0;
             existing.mismatches = 0;
             existing.matchRate = 0;
+            existing.agency = 'Multiagence';
+            existing.service = serviceName;
+            existing.date = latestDate;
+            existing.status = 'NOK';
             // Mettre à jour le commentaire (statut non OK)
             existing.comment = this.buildCommentForCounts(0, 0, totalPartnerOnly, 0, totalPartnerOnly);
             existing.traitement = 'Niveau Support';
         } else {
             const specialLine: ReconciliationReportData = {
-                date: firstRow?.date || new Date().toISOString().split('T')[0],
-                agency: serviceName,
+                date: latestDate,
+                agency: 'Multiagence',
                 service: serviceName,
-                country: firstRow?.country || '',
+                country: seedRow?.country || '',
                 glpiId: '',
                 totalTransactions: totalPartnerOnly,
                 totalVolume: 0,
@@ -4657,17 +4822,27 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 partnerOnly: totalPartnerOnly,
                 mismatches: 0,
                 matchRate: 0,
-                status: this.DEFAULT_STATUS,
+                status: 'NOK',
                 comment: this.buildCommentForCounts(0, 0, totalPartnerOnly, 0, totalPartnerOnly),
                 traitement: 'Niveau Support',
                 username: undefined
             };
-            this.reportData.push(specialLine);
+            this.reportData.unshift(specialLine);
         }
+
+        // Multiagence toujours en tête
+        this.reportData.sort((a, b) => {
+            const aMulti = this.isPartnerOnlySpecialLine(a) ? 0 : 1;
+            const bMulti = this.isPartnerOnlySpecialLine(b) ? 0 : 1;
+            if (aMulti !== bMulti) {
+                return aMulti - bMulti;
+            }
+            return this.getSortableDateTime(b.date) - this.getSortableDateTime(a.date);
+        });
 
         // S'assurer que les lignes normales n'absorbent pas les écarts partenaires quand la ligne spéciale existe
         this.reportData.forEach(r => {
-            if (r.agency !== r.service) {
+            if (!this.isPartnerOnlySpecialLine(r)) {
                 r.partnerOnly = 0;
             }
         });
@@ -4680,11 +4855,20 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      */
     private isPartnerOnlySpecialLine(item: ReconciliationReportData): boolean {
         if (!item) return false;
-        // La ligne spéciale est principalement identifiée par agency === service
-        // et partnerOnly > 0 (ou totalTransactions > 0 si partnerOnly a été modifié à 0)
-        return item.agency === item.service &&
-               item.agency && item.service && // S'assurer que les deux sont définis
-               (item.partnerOnly > 0 || (item.totalTransactions > 0 && item.mismatches === 0));
+        const agency = (item.agency || '').trim();
+        const service = (item.service || '').trim();
+        const agencyNorm = agency.toUpperCase();
+
+        // La ligne spéciale est identifiée soit par agency === service (ancien comportement),
+        // soit par agency === Multiagence (nouvel affichage) avec service renseigné.
+        const matchesLegacyKey = agency && service && agency === service;
+        const matchesMultiAgenceKey = agencyNorm === 'MULTIAGENCE' && !!service;
+        if (!matchesLegacyKey && !matchesMultiAgenceKey) {
+            return false;
+        }
+
+        // partnerOnly > 0 (ou totalTransactions > 0 si partnerOnly a été modifié à 0)
+        return (item.partnerOnly > 0 || (item.totalTransactions > 0 && item.mismatches === 0));
     }
 
     /**
@@ -4728,6 +4912,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
         
         if (!isSpecialLine) return;
+
+        // Avec des écarts partenaires: statut NOK (pas "EN COURS")
+        if ((Number(item.partnerOnly) || 0) > 0 || (Number(item.totalTransactions) || 0) > 0) {
+            if (item.status !== 'OK') {
+                item.status = 'NOK';
+            }
+        }
         
         const originalMatches = item.matches;
         const originalPartnerOnly = item.partnerOnly;
@@ -4893,15 +5084,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 }
             }
             const mismatches = summaryItem.mismatches ?? 0;
-            const totalBoOnly = (summaryItem.boOnly ?? 0) + mismatches;
+            const boOnlyOnly = summaryItem.boOnly ?? 0;
             const matches = summaryItem.matches ?? 0;
-            const totalDetailed = matches + totalBoOnly + finalPartnerOnly;
+            const totalTransactions = summaryItem.recordCount || (matches + boOnlyOnly + mismatches + finalPartnerOnly);
             return {
                 matches,
-                boOnly: totalBoOnly,
+                boOnly: boOnlyOnly,
                 partnerOnly: finalPartnerOnly,
                 mismatches,
-                matchRate: totalDetailed > 0 ? (matches / totalDetailed) * 100 : 0
+                matchRate: totalTransactions > 0 ? (matches / totalTransactions) * 100 : 0
             };
         }
 
@@ -4920,16 +5111,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             finalPartnerOnly = this.partnerOnlyWithoutAgencyCount;
         }
 
-        const totalBoOnly = bucket.boOnly + bucket.mismatches;
-        const totalDetailed = bucket.matches + totalBoOnly + finalPartnerOnly;
-        const matchRate = totalDetailed > 0 ? (bucket.matches / totalDetailed) * 100 : 0;
+        const totalTransactions = summaryItem.recordCount || (bucket.matches + bucket.boOnly + bucket.mismatches + finalPartnerOnly);
 
         return {
             matches: bucket.matches,
-            boOnly: totalBoOnly,
+            boOnly: bucket.boOnly,
             partnerOnly: finalPartnerOnly,
             mismatches: bucket.mismatches,
-            matchRate
+            matchRate: totalTransactions > 0 ? (bucket.matches / totalTransactions) * 100 : 0
         };
     }
 
@@ -5829,11 +6018,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         });
         
         // Trier par date décroissante (les plus récentes en premier)
-        this.filteredReportData.sort((a, b) => {
-            const dateA = new Date(a.date).getTime();
-            const dateB = new Date(b.date).getTime();
-            return dateB - dateA; // Décroissant (plus récent en premier)
-        });
+        this.filteredReportData.sort((a, b) => this.getSortableDateTime(b.date) - this.getSortableDateTime(a.date));
 
         this.refreshKpiSummary();
         
@@ -5879,15 +6064,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     private refreshKpiSummary(): void {
         const rows = this.kpiScopeData || [];
+        // KPIs "Lignes/Agences/Services/Taux moyen/Nbre TRX/Volume" :
+        // on exclut la ligne spéciale multi-agences (écarts Partenaire) pour ne pas fausser les compteurs.
+        const kpiRows = rows.filter(item => !this.isPartnerOnlySpecialLine(item));
         let totalTransactions = 0;
         let totalVolume = 0;
         let inProgressDiscrepancies = 0;
 
+        for (const item of kpiRows) {
+            totalTransactions += Number(item.totalTransactions) || 0;
+            totalVolume += Number(item.totalVolume) || 0;
+        }
+
         for (const item of rows) {
-            if (!this.isPartnerOnlySpecialLine(item)) {
-                totalTransactions += Number(item.totalTransactions) || 0;
-                totalVolume += Number(item.totalVolume) || 0;
-            }
             const status = (item.status || '').trim().toUpperCase();
             if (status !== 'OK') {
                 inProgressDiscrepancies +=
@@ -5898,14 +6087,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
 
         const averageMatchRate =
-            rows.length === 0
+            kpiRows.length === 0
                 ? 0
-                : Math.round((rows.reduce((sum, item) => sum + (Number(item.matchRate) || 0), 0) / rows.length) * 100) / 100;
+                : Math.round((kpiRows.reduce((sum, item) => sum + (Number(item.matchRate) || 0), 0) / kpiRows.length) * 100) / 100;
 
         this.kpiSummary = {
-            lineCount: rows.length,
-            agencies: new Set(rows.map((item) => item.agency).filter(Boolean)).size,
-            services: new Set(rows.map((item) => item.service).filter(Boolean)).size,
+            lineCount: kpiRows.length,
+            agencies: new Set(kpiRows.map((item) => item.agency).filter(Boolean)).size,
+            services: new Set(kpiRows.map((item) => item.service).filter(Boolean)).size,
             averageMatchRate,
             inProgressDiscrepancies,
             totalTransactions,
@@ -5914,12 +6103,27 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     formatDate(dateStr: string): string {
-        try {
-            const date = new Date(dateStr);
-            return date.toLocaleDateString('fr-FR');
-        } catch {
-            return dateStr;
+        const raw = (dateStr ?? '').toString().trim();
+        if (!raw) {
+            return '';
         }
+        const date = new Date(raw);
+        if (isNaN(date.getTime()) || date.toString() === 'Invalid Date') {
+            // Ne jamais afficher "Invalid Date" dans le tableau
+            return raw;
+        }
+        return date.toLocaleDateString('fr-FR');
+    }
+
+    /** Tri stable : date invalide => en bas (timestamp = 0). */
+    private getSortableDateTime(value: string | undefined | null): number {
+        const raw = (value ?? '').toString().trim();
+        if (!raw) {
+            return 0;
+        }
+        const d = new Date(raw);
+        const t = d.getTime();
+        return isNaN(t) ? 0 : t;
     }
 
 
@@ -5934,6 +6138,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // En cours si les données détaillées ne sont pas encore disponibles
         if (!this.response) return 'EN COURS.....';
+
+        // Si on a un écart, statut par défaut = NOK
+        if (boOnly > 0 || partnerOnly > 0 || mismatches > 0) return 'NOK';
 
         // Incomplet si uniquement un côté est présent sans correspondances
         if (matches === 0 && ((boOnly > 0 && partnerOnly === 0) || (partnerOnly > 0 && boOnly === 0))) return 'REPORTING INCOMPLET';
@@ -10244,20 +10451,33 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      */
     private formatDateForSearch(dateStr: string): string {
         if (!dateStr) return '';
+        const value = String(dateStr).trim();
         
         // Extraire la partie date si c'est un format ISO (YYYY-MM-DDTHH:mm:ss)
-        if (dateStr.includes('T')) {
-            return dateStr.split('T')[0];
+        if (value.includes('T')) {
+            return value.split('T')[0];
         }
         
         // Si la date est déjà au format YYYY-MM-DD
-        if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
-            return dateStr.split(' ')[0]; // Enlever l'heure si présente
+        if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+            return value.split(' ')[0]; // Enlever l'heure si présente
+        }
+
+        // dd/MM/yyyy[ HH:mm[:ss]]
+        const dmy = value.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+        if (dmy) {
+            return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+        }
+
+        // dd-MM-yyyy
+        const dmyDash = value.match(/^(\d{2})-(\d{2})-(\d{4})/);
+        if (dmyDash) {
+            return `${dmyDash[3]}-${dmyDash[2]}-${dmyDash[1]}`;
         }
         
         // Essayer de parser la date
         try {
-            const date = new Date(dateStr);
+            const date = new Date(value);
             if (!isNaN(date.getTime())) {
                 const year = date.getFullYear();
                 const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -10268,7 +10488,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             console.error('Erreur lors du formatage de la date:', dateStr, e);
         }
         
-        return dateStr;
+        return value;
     }
 
     /**

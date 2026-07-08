@@ -7,6 +7,7 @@ import { EcartSolde, EcartSoldeFilter } from '../../models/ecart-solde.model';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
 import { PopupService } from '../../services/popup.service';
 import * as XLSX from 'xlsx';
+import { normalizeCountryFilterOptions, countriesMatch } from '../../utils/country-codes.util';
 
 @Component({
   selector: 'app-ecart-solde',
@@ -223,7 +224,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
             ))
           )
           .subscribe({
-            next: (pays) => this.pays = pays,
+            next: (pays) => this.pays = normalizeCountryFilterOptions(pays),
             error: (err) => console.error('Erreur de chargement des pays', err)
           })
       );
@@ -280,7 +281,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
         match = false;
       }
       
-      if (filters.pays && ecart.pays !== filters.pays) {
+      if (filters.pays && !countriesMatch(ecart.pays, filters.pays)) {
         match = false;
       }
       

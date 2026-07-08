@@ -7,6 +7,7 @@ import { AppStateService } from '../../services/app-state.service';
 import { PopupService } from '../../services/popup.service';
 import { FraisTransactionService } from '../../services/frais-transaction.service';
 import { FraisTransaction } from '../../models/frais-transaction.model';
+import { normalizeCountryFilterOptions, countriesMatch } from '../../utils/country-codes.util';
 
 @Component({
   selector: 'app-trx-sf',
@@ -554,7 +555,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
     }
     
     if (filters.pays) {
-      filtered = filtered.filter(item => item.pays === filters.pays);
+      filtered = filtered.filter(item => countriesMatch(item.pays, filters.pays));
     }
     
     if (filters.numeroTransGu) {
@@ -1028,7 +1029,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   }
 
   getUniquePays(): string[] {
-    return [...new Set(this.trxSfData.map(item => item.pays))].sort();
+    return normalizeCountryFilterOptions(this.trxSfData.map(item => item.pays));
   }
 
   getUniqueNumeroTransGUs(): string[] {

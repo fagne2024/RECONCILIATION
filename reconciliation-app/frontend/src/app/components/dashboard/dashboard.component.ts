@@ -36,7 +36,7 @@ import {
     resolveTraitementKind,
     TraitementKind
 } from '../../shared/result8rec-audit-display';
-import { countriesMatch, countryDisplayLabel } from '../../utils/country-codes.util';
+import { countriesMatch, countryDisplayLabel, normalizeCountryFilterOptions } from '../../utils/country-codes.util';
 
 export type DashboardMetric = 'volume' | 'transactions' | 'revenu';
 
@@ -444,11 +444,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
             return ie === 'TOTAL';
         }
         return ie === te || ie === 'TOTAL';
-    }
-
-    /** Pays distincts pour les filtres : libellés complets uniquement (GA → Gabon, etc.). */
-    private normalizeCountryFilterOptions(countries: string[]): string[] {
-        return [...new Set((countries || []).map(c => countryDisplayLabel(c)).filter(c => c))].sort();
     }
 
     /**
@@ -3076,13 +3071,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
                 // Ces listes servent de base pour le cloisonnement du popup
                 this.reconciliationCountryServices = filters.countryServices || {};
                 this.reconciliationCountryEnvServices = filters.countryEnvServices || {};
-                this.releveStatusCountries = this.normalizeCountryFilterOptions(filters.countries || []);
+                this.releveStatusCountries = normalizeCountryFilterOptions(filters.countries || []);
                 this.allReconciliationServices = filters.services || [];
-                this.reconciliationSummaryCountries = this.normalizeCountryFilterOptions(filters.countries || []);
+                this.reconciliationSummaryCountries = normalizeCountryFilterOptions(filters.countries || []);
                 this.reconciliationSummaryServices = filters.services || [];
 
                 if (!this.reconciliationSummaryCountries.length) {
-                    this.reconciliationSummaryCountries = this.normalizeCountryFilterOptions(filters.countries || []);
+                    this.reconciliationSummaryCountries = normalizeCountryFilterOptions(filters.countries || []);
                 }
             },
             error: (err) => {

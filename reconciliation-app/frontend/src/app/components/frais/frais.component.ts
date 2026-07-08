@@ -8,6 +8,7 @@ import { MatSelect } from '@angular/material/select';
 import { PopupService } from '../../services/popup.service';
 import { PaysService } from '../../services/pays.service';
 import { Pays } from '../../models/pays.model';
+import { normalizeCountryFilterOptions, matchesCountryFilter, countriesMatch } from '../../utils/country-codes.util';
 
 interface ExportFraisData {
     'ID'?: number | undefined;
@@ -208,7 +209,7 @@ export class FraisComponent implements OnInit, OnDestroy {
             this.paysService.getPays('Frais').subscribe({
                 next: (pays) => {
                     this.pays = pays;
-                    this.paysList = pays.map(p => p.nom);
+                    this.paysList = normalizeCountryFilterOptions(pays.map(p => p.nom));
                     this.filteredPaysList = this.paysList;
                 },
                 error: (err) => {
