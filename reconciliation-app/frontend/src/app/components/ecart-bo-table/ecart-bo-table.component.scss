@@ -426,7 +426,7 @@ h2 {
   gap: 12px;
   align-items: flex-start;
   position: relative;
-  z-index: 1;
+  z-index: 2147483000;
 }
 
 .search-input {
@@ -445,7 +445,7 @@ h2 {
 
 .export-menu-container {
   position: relative;
-  z-index: 10002;
+  z-index: 2147483001;
   flex-shrink: 0;
 }
 
@@ -489,7 +489,7 @@ h2 {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   min-width: 320px;
   max-width: 400px;
-  z-index: 10004;
+  z-index: 2147483002;
   padding: 16px;
   animation: slideDown 0.2s ease;
   border: 1px solid #e0e0e0;

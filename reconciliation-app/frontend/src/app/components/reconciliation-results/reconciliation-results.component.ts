@@ -6799,11 +6799,11 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 return;
             }
 
-            // Préparer les données selon l'onglet (actif ou forcé)
-            const { rows, columns } = this.prepareDataForExport();
+            // Préparer les données complètes de l'onglet (sans filtre/recherche écran).
+            const { rows, columns } = await this.prepareDataForExport();
             
             if (rows.length === 0) {
-                this.popupService.showWarning('Aucune donnée à exporter avec les filtres actuels.');
+                this.popupService.showWarning('Aucune donnée disponible pour cet export.');
                 this.isExporting = false;
                 return;
             }
@@ -6876,23 +6876,23 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     /**
      * Prépare les données pour l'export selon l'onglet actif
      */
-    private prepareDataForExport(): { rows: any[], columns: string[] } {
+    private async prepareDataForExport(): Promise<{ rows: any[], columns: string[] }> {
         let rows: any[] = [];
         let columns: string[] = [];
 
         switch (this.activeTab) {
             case 'matches': {
-                const filteredMatches = this.getFilteredMatches();
+                const matches = await this.getUnfilteredMatchesForExport();
                 const allBoKeys = new Set<string>();
                 const allPartnerKeys = new Set<string>();
-                filteredMatches.forEach(match => {
+                matches.forEach(match => {
                     Object.keys(match.boData || {}).forEach(k => allBoKeys.add(k));
                     Object.keys(match.partnerData || {}).forEach(k => allPartnerKeys.add(k));
                 });
                 const boKeysArray = Array.from(allBoKeys);
                 const partnerKeysArray = Array.from(allPartnerKeys);
                 columns = ['Clé', ...boKeysArray.map(k => `BO_${k}`), ...partnerKeysArray.map(k => `PARTENAIRE_${k}`)];
-                rows = filteredMatches.map(match => {
+                rows = matches.map(match => {
                     const row: any = { 'Clé': match.key };
                     boKeysArray.forEach(k => { row[`BO_${k}`] = match.boData?.[k] ?? ''; });
                     partnerKeysArray.forEach(k => { row[`PARTENAIRE_${k}`] = match.partnerData?.[k] ?? ''; });
@@ -6902,14 +6902,14 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             }
 
             case 'boOnly': {
-                rows = this.getFilteredBoOnly();
+                rows = await this.getUnfilteredBoOnlyForExport();
                 const allKeysBo = new Set<string>();
                 rows.forEach(record => Object.keys(record).forEach(k => allKeysBo.add(k)));
                 columns = Array.from(allKeysBo);
                 break;
             }
             case 'partnerOnly': {
-                rows = this.getFilteredPartnerOnly();
+                rows = await this.getUnfilteredPartnerOnlyForExport();
                 const allKeysPartner = new Set<string>();
                 rows.forEach(record => Object.keys(record).forEach(k => allKeysPartner.add(k)));
                 columns = Array.from(allKeysPartner);
@@ -6928,6 +6928,68 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         }
 
         return { rows, columns };
+    }
+
+    private getExportSessionId(): string | null {
+        return this.response?.progressSessionId
+            || this.currentJobId
+            || this.reconciliationService.getCurrentJobId();
+    }
+
+    private async ensureAllExportDetailsLoaded(): Promise<void> {
+        const sessionId = this.getExportSessionId();
+        if (!sessionId || !this.response) {
+            return;
+        }
+
+        const details = await this.reconciliationService.loadAllDetailResults(sessionId);
+        this.response = {
+            ...this.response,
+            matches: details.matches || [],
+            boOnly: details.boOnly || [],
+            partnerOnly: details.partnerOnly || [],
+            mismatches: details.mismatches || []
+        };
+    }
+
+    private async getUnfilteredMatchesForExport(): Promise<Match[]> {
+        if ((this.response?.matches?.length ?? 0) === 0 && (this.response?.totalMatches ?? 0) > 0) {
+            await this.ensureAllExportDetailsLoaded();
+        }
+        return this.response?.matches || [];
+    }
+
+    private async getUnfilteredBoOnlyForExport(): Promise<Record<string, string>[]> {
+        const boOnly = this.response?.boOnly || [];
+        const expectedBoOnly = this.getResponseBoOnlyTotal();
+        if (boOnly.length === 0 && expectedBoOnly > 0) {
+            const sessionId = this.getExportSessionId();
+            if (sessionId) {
+                const ecarts = await this.reconciliationService.loadBoEcartsFromSession(sessionId);
+                if (this.response) {
+                    this.response = {
+                        ...this.response,
+                        boOnly: ecarts.boOnly || [],
+                        mismatches: ecarts.mismatches || []
+                    };
+                }
+            }
+        }
+        return this.response?.boOnly || [];
+    }
+
+    private async getUnfilteredPartnerOnlyForExport(): Promise<Record<string, string>[]> {
+        const partnerOnly = this.response?.partnerOnly || [];
+        if (partnerOnly.length === 0 && (this.response?.totalPartnerOnly ?? 0) > 0) {
+            const sessionId = this.getExportSessionId();
+            if (sessionId) {
+                const loaded = await this.reconciliationService.loadPartnerOnlyFromSession(sessionId);
+                if (this.response) {
+                    this.response = { ...this.response, partnerOnly: loaded || [] };
+                }
+            }
+        }
+        return this.response?.partnerOnly || [];
     }
 
     nouvelleReconciliation() {

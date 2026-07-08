@@ -166,9 +166,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
     reconciliationSummaryService: string = '';
     reconciliationSummaryServices: string[] = [];
     readonly reconciliationEnvOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
-    readonly recoValidatedStatusLabel = 'Réconcilié & Validé';
-    readonly recoValidatedStatusLabelPlural = 'Réconciliés & Validés';
-    readonly recoValidatedRateLabel = 'Taux réconcilié & validé';
+    readonly recoValidatedStatusLabel = 'Réconcilié';
+    readonly recoValidatedStatusLabelPlural = 'Réconciliés';
+    readonly recoValidatedRateLabel = 'Taux réconcilié';
     reconciliationSummaryLoading: boolean = false;
     reconciliationSummaryLoadingMore = false;
     private recoSummaryLoadToken = 0;

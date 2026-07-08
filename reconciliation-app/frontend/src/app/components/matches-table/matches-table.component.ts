@@ -603,8 +603,26 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     
     if (button && dropdown) {
       const rect = button.getBoundingClientRect();
-      dropdown.style.top = `${rect.bottom + window.scrollY + 8}px`;
-      dropdown.style.left = `${rect.right - dropdown.offsetWidth}px`;
+      const viewportMargin = 8;
+      const dropdownWidth = dropdown.offsetWidth || 320;
+      const spaceBelow = window.innerHeight - rect.bottom - viewportMargin;
+      const spaceAbove = rect.top - viewportMargin;
+      const openUp = dropdown.offsetHeight > spaceBelow && spaceAbove > spaceBelow;
+      const availableHeight = Math.max(180, (openUp ? spaceAbove : spaceBelow) - viewportMargin);
+      const dropdownHeight = Math.min(dropdown.offsetHeight, availableHeight);
+      const left = Math.min(
+        Math.max(viewportMargin, rect.right - dropdownWidth),
+        window.innerWidth - dropdownWidth - viewportMargin
+      );
+      const top = openUp
+        ? Math.max(viewportMargin, rect.top - dropdownHeight - viewportMargin)
+        : rect.bottom + viewportMargin;
+
+      dropdown.style.position = 'fixed';
+      dropdown.style.top = `${top}px`;
+      dropdown.style.left = `${left}px`;
+      dropdown.style.maxHeight = `${availableHeight}px`;
+      dropdown.style.overflowY = 'auto';
     }
   }
   
