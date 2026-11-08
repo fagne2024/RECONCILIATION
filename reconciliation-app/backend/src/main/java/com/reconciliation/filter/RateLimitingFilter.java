@@ -180,6 +180,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             || path.equals("/api/reconciliation/execute-magic")
             || path.equals("/api/reconciliation/save-summary")
             || path.startsWith("/api/reconciliation/progress")
+            || path.startsWith("/api/reconciliation/live-progress")
             || path.startsWith("/api/reconciliation/results");
     }
 

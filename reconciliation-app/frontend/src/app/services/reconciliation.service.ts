@@ -1,6 +1,6 @@
 import { Injectable, OnInit, OnDestroy } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
-import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout, of, defer, firstValueFrom, Subscription } from 'rxjs';
+import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout, of, defer, firstValueFrom, Subscription, forkJoin } from 'rxjs';
 import { catchError, tap, map, finalize, retry, takeUntil, switchMap, retryWhen, delay, concatMap } from 'rxjs/operators';
 import { ReconciliationRequest } from '../models/reconciliation-request.model';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
@@ -47,7 +47,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
     private static readonly MAX_429_RETRIES = 4;
     private static readonly LAUNCH_WATCHDOG_MS = 30_000;
     private static readonly LAUNCH_WATCHDOG_MAX_MS = 600_000;
-    private static readonly LIVE_PROGRESS_POLL_MS = 4_500;
+    private static readonly LIVE_PROGRESS_POLL_MS = 1_500;
+    private static readonly CHUNK_LIVE_PROGRESS_POLL_MS = 1_000;
     private static readonly MAX_AUTO_RELAUNCH_ATTEMPTS = 2;
     private static readonly BACKEND_PENDING_STEP = 'en attente';
     private apiUrl = '/api/reconciliation';
@@ -782,6 +783,28 @@ export class ReconciliationService implements OnInit, OnDestroy {
     }
 
     /**
+     * Recharge les matches + boOnly complets d'une session (réponse HTTP tronquée).
+     * Utile pour les chunks : le backend cache le résultat complet sous la session du chunk,
+     * on récupère uniquement matches/boOnly (le partnerOnly est suivi côté client).
+     */
+    private async loadChunkPaginatedDetail(
+        sessionId: string,
+        pageSize = 2000
+    ): Promise<{ matches: any[]; boOnly: any[] }> {
+        const [matches, boOnly] = await Promise.all([
+            this.loadAllPaginatedPages(
+                page => firstValueFrom(this.getMatches(sessionId, page, pageSize)),
+                'matches'
+            ),
+            this.loadAllPaginatedPages(
+                page => firstValueFrom(this.getBoOnly(sessionId, page, pageSize)),
+                'boOnly'
+            )
+        ]);
+        return { matches, boOnly };
+    }
+
+    /**
      * Agrège le résumé par agence (serveur en priorité, repli pagination client).
      */
     async loadAgencySummaryAggregated(
@@ -1431,6 +1454,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
         if (!step) {
             return;
         }
+        // Le backend est toujours « En attente » : aucune activité réelle à afficher.
+        // Ne pas écraser l'état local (ex. progression des chunks) avec une étape générique.
+        if (!this.isBackendProgressAcknowledged(step)) {
+            return;
+        }
         const current = this.progressSubject.value;
         this.updateProgress({
             percentage: typeof percentage === 'number' ? percentage : current.percentage,
@@ -1871,7 +1899,10 @@ export class ReconciliationService implements OnInit, OnDestroy {
             if (!key) return;
             partnerKeyCounts.set(key, (partnerKeyCounts.get(key) || 0) + 1);
         });
-        let remainingPartnerData = [...allPartnerData]; // Garder pour compatibilité avec le backend
+        // OPTIMISATION: ne PAS copier allPartnerData au démarrage. remainingPartnerData n'est
+        // jamais muté en place (uniquement réassigné par filter), une simple référence suffit
+        // et évite de dupliquer toute la table partenaire en mémoire pour une exécution.
+        let remainingPartnerData = allPartnerData; // Garder pour compatibilité avec le backend
         let allMatches: any[] = [];
         let allBoOnly: any[] = [];
         const startTime = Date.now(); // Pour calculer le temps d'exécution réel
@@ -1897,6 +1928,93 @@ export class ReconciliationService implements OnInit, OnDestroy {
         const chunkResults = new Map<number, { matches: any[], boOnly: any[], matchedKeyCounts: Map<string, number> }>();
         const processingChunks = new Set<number>();
         let consecutiveErrors = 0; // Compteur d'erreurs consécutives pour réduire la concurrence dynamiquement
+
+        // Suivi temps réel de la progression backend de chaque chunk (lotes de 10k en backend).
+        // Chaque chunk utilise sa propre session (<parent>_chunk<i>) : le backend publie la
+        // progression sous cette session, on la poll pour afficher l'évolution en direct.
+        const activeChunkSessions = new Map<number, string>();
+        const chunkBackendProgress = new Map<number, number>();
+        let liveProgressPollSub: Subscription | null = null;
+
+        const startLiveProgressPolling = () => {
+            if (liveProgressPollSub) {
+                return;
+            }
+            liveProgressPollSub = timer(0, ReconciliationService.CHUNK_LIVE_PROGRESS_POLL_MS).pipe(
+                switchMap(() => {
+                    const inFlight = Array.from(activeChunkSessions.entries());
+                    if (inFlight.length === 0) {
+                        return of([]);
+                    }
+                    return forkJoin(
+                        inFlight.map(([idx, session]) =>
+                            this.pollLiveProgressOnce(session).pipe(
+                                map(res => ({ idx, res }))
+                            )
+                        )
+                    );
+                }),
+                takeUntil(this.destroy$)
+            ).subscribe((results) => {
+                for (const { idx, res } of results) {
+                    if (typeof res.percentage === 'number') {
+                        chunkBackendProgress.set(idx, res.percentage);
+                    }
+                    if (res.acknowledged) {
+                        chunkBackendProgress.set(idx, Math.max(chunkBackendProgress.get(idx) ?? 0, res.percentage ?? 0));
+                    }
+                }
+                emitCombinedChunkProgress();
+                if (completedChunks >= boChunks.length && activeChunkSessions.size === 0) {
+                    stopLiveProgressPolling();
+                }
+            });
+        };
+
+        const stopLiveProgressPolling = () => {
+            if (liveProgressPollSub) {
+                liveProgressPollSub.unsubscribe();
+                liveProgressPollSub = null;
+            }
+        };
+
+        const emitCombinedChunkProgress = () => {
+            if (observer.closed) {
+                stopLiveProgressPolling();
+                return;
+            }
+            const n = boChunks.length;
+            const chunkShare = n > 0 ? 90 / n : 0;
+            let overall = n > 0 ? (completedChunks / n) * 90 : 0;
+            let activeChunk = -1;
+            let maxWithin = 0;
+            for (const [idx, backendPct] of chunkBackendProgress) {
+                const pct = typeof backendPct === 'number' && backendPct >= 0 ? backendPct : 0;
+                const candidate = (completedChunks / n) * 90 + (pct / 100) * chunkShare;
+                if (candidate > overall) {
+                    overall = candidate;
+                    activeChunk = idx;
+                    maxWithin = pct;
+                }
+            }
+
+            let step = `Chunk BO ${completedChunks}/${n} traité`;
+            if (activeChunk >= 0) {
+                step = `Chunk BO ${activeChunk + 1}/${n} en cours — ${Math.round(Math.min(100, maxWithin))}% du chunk traité`;
+            }
+
+            this.progressSubject.next({
+                percentage: Math.min(95, Math.max(0, overall)),
+                processed: activeChunk >= 0 ? Math.max(completedChunks, activeChunk) : completedChunks,
+                total: n,
+                step,
+                currentBoChunk: completedChunks,
+                totalBoChunks: n,
+                matchesCount: allMatches.length,
+                boOnlyCount: allBoOnly.length,
+                partnerRemaining: remainingPartnerData.length
+            });
+        };
         
         // Synchronisation pour éviter les conflits lors du retrait des données Partner
         const lock = { locked: false, queue: [] as Array<() => void> };
@@ -1933,13 +2051,14 @@ export class ReconciliationService implements OnInit, OnDestroy {
             
             const modeText = MAX_CONCURRENT_CHUNKS === 1 ? 'séquentiel' : 'parallèle';
             
-            // Mettre à jour la progression
+            // Mettre à jour la progression (base = chunks déjà terminés, la progression temps
+            // réel du chunk courant est affichée via le polling de /live-progress/<chunkSessionId>)
             this.progressSubject.next({
-                percentage: Math.min(95, ((chunkIndex + 1) / boChunks.length) * 90),
-                processed: chunkIndex + 1,
+                percentage: Math.min(95, (completedChunks / boChunks.length) * 90),
+                processed: chunkIndex,
                 total: boChunks.length,
-                step: `Traitement chunk BO ${chunkIndex + 1}/${boChunks.length} (${modeText})`,
-                currentBoChunk: chunkIndex + 1,
+                step: `Envoi du chunk BO ${chunkIndex + 1}/${boChunks.length} au serveur (${modeText})`,
+                currentBoChunk: completedChunks,
                 totalBoChunks: boChunks.length,
                 matchesCount: allMatches.length,
                 boOnlyCount: allBoOnly.length,
@@ -1948,7 +2067,47 @@ export class ReconciliationService implements OnInit, OnDestroy {
             
             // Acquérir le lock pour lire les données Partner actuelles
             await acquireLock();
-            const currentPartnerData = [...remainingPartnerData]; // Copie pour ce chunk
+            
+            // OPTIMISATION: n'envoyer au serveur que les lignes Partenaire "candidates",
+            // c'est-à-dire celles dont la clé primaire (trimmed) existe parmi les clés du
+            // chunk BO courant. Le backend n'apparie que des lignes Partenaire partageant
+            // exactement la clé composite -> un primaire partagé est un sur-ensemble exact
+            // des lignes matchables, donc aucun match n'est perdu. Cela réduit fortement
+            // la taille JSON de chaque requête et l'indexation côté serveur.
+            // Mode conservateur (envoi de tout le reste) si des règles serveur pourraient
+            // transformer les valeurs de clé : modèle configuré, clés supplémentaires,
+            // ou colonnes spéciales transformées par le backend (IDTransaction / Numéro Trans GU).
+            const specialKeyColumns = ['IDTransaction', 'Numéro Trans GU'];
+            const partnerColumns = allPartnerData.length > 0 ? Object.keys(allPartnerData[0]) : [];
+            const candidateFilterEnabled = !originalRequest.modelId
+                && !(originalRequest.additionalKeys && originalRequest.additionalKeys.length > 0)
+                && !(originalRequest.boColumnFilters || []).some(filter => filter.modelId)
+                && !specialKeyColumns.some(col => partnerColumns.includes(col))
+                && !specialKeyColumns.includes(originalRequest.partnerKeyColumn);
+            
+            let currentPartnerData: any[];
+            if (candidateFilterEnabled) {
+                const boKeySet = new Set<string>();
+                for (const boRow of boChunk) {
+                    const rawKey = boRow?.[originalRequest.boKeyColumn];
+                    if (rawKey === null || rawKey === undefined) continue;
+                    const key = String(rawKey).trim();
+                    if (key) boKeySet.add(key);
+                }
+                // Une passe unique : filtre les candidates SANS copier les lignes non-candidates.
+                currentPartnerData = boKeySet.size > 0
+                    ? remainingPartnerData.filter(partnerRow => {
+                        const rawKey = partnerRow?.[originalRequest.partnerKeyColumn];
+                        if (rawKey === null || rawKey === undefined) return false;
+                        const key = String(rawKey).trim();
+                        return key ? boKeySet.has(key) : false;
+                    })
+                    : [];
+            } else {
+                // Mode conservateur : envoyer les données restantes par référence
+                // (le corps est sérialisé de façon synchrone par HttpClient, pas de copie)
+                currentPartnerData = remainingPartnerData;
+            }
             releaseLock();
             
             // 🔍 DEBUG: Log des clés et exemples de valeurs pour le premier chunk
@@ -2024,10 +2183,24 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 }
             }
             
+            // Chaque chunk doit utiliser une session dédiée : le backend stocke le résultat
+            // paginé sous le progressSessionId de la requête. Un identifiant partagé ferait
+            // écraser chaque chunk par le suivant dans le cache de pagination.
+            const chunkSessionId = originalRequest.progressSessionId
+                ? `${originalRequest.progressSessionId}_chunk${chunkIndex}`
+                : `chunk_${Date.now()}_${chunkIndex}`;
+
+            // Activer le suivi temps réel de ce chunk (le backend publie sa progression
+            // sous cette session pendant le traitement de la requête).
+            activeChunkSessions.set(chunkIndex, chunkSessionId);
+            chunkBackendProgress.set(chunkIndex, 0);
+            startLiveProgressPolling();
+
             const chunkRequest: ReconciliationRequest = {
                 ...originalRequest,
                 boFileContent: boChunk,
-                partnerFileContent: currentPartnerData
+                partnerFileContent: currentPartnerData,
+                progressSessionId: chunkSessionId
             };
             
             // Timeout de 60 minutes pour chaque chunk
@@ -2063,26 +2236,48 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 // Réinitialiser le compteur d'erreurs en cas de succès
                                 consecutiveErrors = Math.max(0, consecutiveErrors - 1);
                                 
+                                // La réponse HTTP peut être tronquée (> 5000 lignes de détail) :
+                                // le backend garde alors le résultat complet en cache sous la session du chunk.
+                                // Dans ce cas, on recharge les pages depuis /results/* pour cette session.
+                                let chunkMatches = response.matches || [];
+                                let chunkBoOnly = response.boOnly || [];
+                                if (response.resultsPaginated || (
+                                    ((response.totalMatches ?? 0) > 0 && chunkMatches.length === 0) ||
+                                    ((response.totalBoOnly ?? 0) > 0 && chunkBoOnly.length === 0)
+                                )) {
+                                    try {
+                                        const full = await this.loadChunkPaginatedDetail(chunkSessionId);
+                                        chunkMatches = full.matches || [];
+                                        chunkBoOnly = full.boOnly || [];
+                                    } catch (loadError) {
+                                        console.warn(`Rechargement paginé du chunk ${chunkIndex} impossible:`, loadError);
+                                    }
+                                }
                                 
                                 // Stocker les résultats pour traitement séquentiel
                                 // IMPORTANT: gérer les doublons -> on compte les occurrences Partner retirées par clé.
                                 // TRXBO/OPPART (SPECIAL_RATIO): partnerData est un map fusionné avec suffixes _PARTNER_1 / _PARTNER_2,
                                 // donc partnerData[colonne] est absent — il faut dériver la clé et compter 2 lignes consommées.
                                 const matchedKeyCounts = this.buildMatchedPartnerKeyCountsFromChunkResponse(
-                                    response.matches,
+                                    chunkMatches,
                                     originalRequest.boKeyColumn,
                                     originalRequest.partnerKeyColumn
                                 );
                                 
                                 chunkResults.set(chunkIndex, {
-                                    matches: response.matches || [],
-                                    boOnly: response.boOnly || [],
+                                    matches: chunkMatches,
+                                    boOnly: chunkBoOnly,
                                     matchedKeyCounts: matchedKeyCounts
                                 });
                                 
                                 // Traiter les résultats de manière séquentielle pour éviter les conflits
                                 await processChunkResults();
-                                
+
+                                // Chunk terminé avec succès : arrêter son suivi temps réel
+                                activeChunkSessions.delete(chunkIndex);
+                                chunkBackendProgress.delete(chunkIndex);
+                                emitCombinedChunkProgress();
+
                                 resolve();
                             } catch (error) {
                                 reject(error);
@@ -2124,6 +2319,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                     boOnly: boChunk,
                                     matchedKeyCounts: new Map()
                                 });
+
+                                // Chunk en échec : arrêter son suivi temps réel
+                                activeChunkSessions.delete(chunkIndex);
+                                chunkBackendProgress.delete(chunkIndex);
+                                emitCombinedChunkProgress();
                                 
                                 processChunkResults().then(() => resolve()).catch(reject);
                             }
@@ -2193,13 +2393,15 @@ export class ReconciliationService implements OnInit, OnDestroy {
                     
                     // Vérifier si tous les chunks sont terminés
                     if (completedChunks >= boChunks.length) {
+                        stopLiveProgressPolling();
                         this.finalizeOptimizedResults(
                             allMatches,
                             allBoOnly,
                             remainingPartnerData,
                             observer,
                             startTime,
-                            allPartnerData.length
+                            allPartnerData.length,
+                            originalRequest.progressSessionId
                         );
                     }
                 }
@@ -2258,7 +2460,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
         remainingPartnerData: any[], 
         observer: any,
         startTime?: number,
-        initialPartnerRowCount?: number
+        initialPartnerRowCount?: number,
+        progressSessionId?: string
     ): void {
         try {
             
@@ -2281,7 +2484,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 totalPartnerOnly: remainingPartnerData.length,
                 executionTimeMs: executionTimeMs,
                 processedRecords: allMatches.length + allBoOnly.length + remainingPartnerData.length,
-                progressPercentage: 100
+                progressPercentage: 100,
+                progressSessionId: progressSessionId,
+                resultsPaginated: false
             };
             
             

@@ -97,6 +97,11 @@ export class AppStateService {
     private selectedMagicServiceSubject = new BehaviorSubject<string>('');
     selectedMagicService$ = this.selectedMagicServiceSubject.asObservable();
 
+    // Response complète multi-services (toutes les cards) posée à la fin de la réconciliation
+    // magique. Conservée séparément car le lazy-load par card écrase la réponse courante.
+    private magicFullResponseSubject = new BehaviorSubject<ReconciliationResponse | null>(null);
+    magicFullResponse$ = this.magicFullResponseSubject.asObservable();
+
     // Gestion de la progression de la réconciliation
     private reconciliationProgressSubject = new BehaviorSubject<boolean>(false);
     private reconciliationStartTimeSubject = new BehaviorSubject<number>(0);
@@ -301,6 +306,7 @@ export class AppStateService {
         this.magicPartnerFileNamesSubject.next([]);
         this.selectedMagicPartnerFileSubject.next('');
         this.selectedMagicServiceSubject.next('');
+        this.magicFullResponseSubject.next(null);
     }
 
     setMagicServiceSummaries(summaries: MagicServiceSummary[]) {
@@ -309,6 +315,14 @@ export class AppStateService {
 
     getMagicServiceSummaries(): MagicServiceSummary[] {
         return this.magicServiceSummariesSubject.value;
+    }
+
+    setMagicFullResponse(response: ReconciliationResponse | null) {
+        this.magicFullResponseSubject.next(response);
+    }
+
+    getMagicFullResponse(): ReconciliationResponse | null {
+        return this.magicFullResponseSubject.value;
     }
 
     setMagicPartnerFileNames(fileNames: string[]) {
@@ -644,7 +658,14 @@ export class AppStateService {
         if (!normalized) {
             return false;
         }
-        return this.normalizedModuleSet.has(normalized);
+        if (this.normalizedModuleSet.has(normalized)) {
+            return true;
+        }
+        // Accepter si un module enfant existe (ex: 'reconciliation · lanceur' pour 'reconciliation')
+        const separator = ' · ';
+        return Array.from(this.normalizedModuleSet).some(m =>
+            m.startsWith(normalized + separator) || m === normalized
+        );
     }
 
     hasModulePermission(module: string, permission: string): boolean {
@@ -735,15 +756,23 @@ export class AppStateService {
 
     private getGrantedPermissionsForModule(normalizedModule: string): string[] {
         const permissions = this.userRights?.permissions ?? {};
+        const allPerms: string[] = [];
+        const separator = ' · ';
         for (const [moduleName, modulePermissions] of Object.entries(permissions)) {
-            if (this.normalizeModuleName(moduleName) !== normalizedModule) {
+            const normalizedName = this.normalizeModuleName(moduleName);
+            if (!normalizedName) {
                 continue;
             }
-            return (modulePermissions || [])
-                .map(candidate => this.normalizePermissionName(candidate))
-                .filter((candidate): candidate is string => !!candidate && candidate !== 'module_associe');
+            // Inclure le module exact et ses modules enfants (ex: 'reconciliation · lanceur' pour 'reconciliation')
+            if (normalizedName === normalizedModule || normalizedName.startsWith(normalizedModule + separator)) {
+                allPerms.push(
+                    ...(modulePermissions || [])
+                        .map(candidate => this.normalizePermissionName(candidate))
+                        .filter((candidate): candidate is string => !!candidate && candidate !== 'module_associe')
+                );
+            }
         }
-        return [];
+        return allPerms;
     }
 
     private isPermissionSatisfiedByGrantedActions(

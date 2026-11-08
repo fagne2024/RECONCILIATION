@@ -215,7 +215,10 @@ public class OperationBancaireController {
             payload.put("errors", res.errors);
             return ResponseEntity.ok(payload);
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("error", e.getMessage());
+            payload.put("detail", e.toString());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(payload);
         }
     }
 

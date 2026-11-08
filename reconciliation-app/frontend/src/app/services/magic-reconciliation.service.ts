@@ -26,6 +26,7 @@ export interface MagicServiceSummary {
   totalPartnerOnly: number;
   totalBoRecords: number;
   totalPartnerRecords: number;
+  jobId?: string;
 }
 
 export interface MagicPartnerInput {
@@ -488,7 +489,8 @@ export class MagicReconciliationService {
         totalBoOnly: result.totalBoOnly,
         totalPartnerOnly: result.totalPartnerOnly,
         totalBoRecords: result.totalBoRecords,
-        totalPartnerRecords: result.totalPartnerRecords
+        totalPartnerRecords: result.totalPartnerRecords,
+        jobId: result.progressSessionId
       });
       this.appendReconcileResult(merged, result, service, partnerFileName);
     }

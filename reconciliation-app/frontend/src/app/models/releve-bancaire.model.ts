@@ -19,6 +19,7 @@ export interface ReleveBancaireRow {
   reconStatus?: 'OK' | 'KO';
   commentaire?: string;
   numeroSerie?: string;
+  banqueCorrigee?: string;
 }
 
 export interface ReleveUploadResponse {

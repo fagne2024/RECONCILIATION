@@ -1,6 +1,33 @@
 import { fixCellEncoding } from './encoding-fixer';
 import { getCanonicalFrenchLabel, resolveCanonicalColumnId } from './bilingual-column.util';
 
+/**
+ * Désambiguïse une liste d'en-têtes (y compris les doublons) en noms de colonnes uniques.
+ * Quand une feuille a deux colonnes portant le même libellé (ex. « N° de Compte », « Wallet »
+ * présents deux fois dans un relevé Orange Money), la 2e occurrence reçoit un suffixe
+ * « (2) », la 3e « (3) », etc. Prise en compte de la casse/dos-doubles pour éviter de
+ * compter deux fois le même libellé exact ; la comparaison se fait de façon normalisée
+ * (accents/casse), mais le nom retourné reste l'original nettoyé.
+ */
+export function deduplicateHeaderNames(headers: string[]): string[] {
+  const seenNormalized = new Map<string, number>(); // normalisé -> compteur
+  const result: string[] = [];
+
+  for (const raw of headers) {
+    const cleaned = (raw || '').trim();
+    if (!cleaned) {
+      result.push(cleaned);
+      continue;
+    }
+    const key = normalizeColumnKey(cleaned);
+    const count = (seenNormalized.get(key) ?? 0) + 1;
+    seenNormalized.set(key, count);
+    result.push(count === 1 ? cleaned : `${cleaned} (${count})`);
+  }
+
+  return result;
+}
+
 /** Normalise un nom de colonne pour comparaison (accents, casse, espaces). */
 export function normalizeColumnKey(columnName: string): string {
   return fixCellEncoding(columnName || '')

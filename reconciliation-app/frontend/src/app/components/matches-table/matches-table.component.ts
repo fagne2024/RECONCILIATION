@@ -1,13 +1,19 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy, HostListener, ElementRef, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { skip } from 'rxjs/operators';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
-import { EcartBoSummaryService, EcartBoSummaryPrefill } from '../../services/ecart-bo-summary.service';
+import { EcartBoSummaryService, EcartBoSummaryPrefill, EcartBoSummaryPendingLine } from '../../services/ecart-bo-summary.service';
 import { ExportOptimizationService, ExportProgress } from '../../services/export-optimization.service';
 import { PopupService } from '../../services/popup.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import {
+    filterMatchBoDataByMagicPartition,
+    resolveMagicPartitionContext,
+    MagicPartitionContext
+} from '../../utils/magic-partition.util';
 
 @Component({
   selector: 'app-matches-table',
@@ -65,6 +71,9 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   /** Signature du dernier résultat traité pour réutiliser le cache sans recharger */
   private lastProcessedSignature: string = '';
 
+  /** Service magique actif (réconciliation magique) — cloisonne l'affichage des correspondances. */
+  magicServiceFilterLocked = '';
+
   // Scroll to top
   showScrollTopBtn = false;
 
@@ -92,6 +101,7 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.syncMagicContextFromAppState();
     this.subscription.add(
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
         if (!response) {
@@ -124,12 +134,51 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
         this.loadMatchesProgressively(matches);
       })
     );
+
+    this.subscription.add(
+      this.appStateService.selectedMagicService$.pipe(skip(1)).subscribe(() => {
+        this.syncMagicContextFromAppState();
+        if (this.response) {
+          this.lastProcessedSignature = '';
+          this.loadMatchesProgressively(this.response.matches || []);
+        }
+      })
+    );
+
     document.addEventListener('click', this.handleDocumentClick.bind(this));
+  }
+
+  private syncMagicContextFromAppState(): void {
+    const service = this.appStateService.getSelectedMagicService();
+    const partnerFile = this.appStateService.getSelectedMagicPartnerFile();
+    if (service || partnerFile) {
+      this.reconciliationTabsService.setMagicViewContext(service, partnerFile);
+      if (service) {
+        this.magicServiceFilterLocked = service;
+      }
+    }
+  }
+
+  private getMagicPartitionContext(): MagicPartitionContext {
+    return resolveMagicPartitionContext({
+      appStateService: this.appStateService.getSelectedMagicService(),
+      appStatePartnerFile: this.appStateService.getSelectedMagicPartnerFile(),
+      tabsContext: this.reconciliationTabsService.getMagicViewContext()
+    });
+  }
+
+  private scopeMatchesToMagic(matches: Match[]): Match[] {
+    const ctx = this.getMagicPartitionContext();
+    if (!ctx.service && !ctx.partnerFile) {
+      return matches;
+    }
+    this.reconciliationTabsService.setMagicViewContext(ctx.service, ctx.partnerFile);
+    return filterMatchBoDataByMagicPartition(matches, ctx.service, ctx.partnerFile);
   }
 
   /** Réutilise les correspondances déjà chargées (ex: retour sur /matches sans nouvelle réconciliation). */
   private applyCachedMatches(cached: Match[]): void {
-    this.filteredMatches = [...cached];
+    this.filteredMatches = this.scopeMatchesToMagic([...cached]);
     this.searchIndex.clear();
     this.buildSearchIndex(this.filteredMatches);
     if (this.filteredMatches.length > 0) {
@@ -152,9 +201,9 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
     
     try {
-      let filtered = matches;
-      if (this.isTRXBOOPPARTReconciliation(matches)) {
-        filtered = matches.filter(match => {
+      let filtered = this.scopeMatchesToMagic(matches);
+      if (this.isTRXBOOPPARTReconciliation(filtered)) {
+        filtered = filtered.filter(match => {
           if (!match.partnerData) return false;
           const typeOperation = this.getTypeOperation(match.partnerData);
           if (!typeOperation) return false;
@@ -947,6 +996,8 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
 
   /**
    * Construit les données de préremplissage pour ecart-bo-summary à partir des correspondances affichées.
+   * Cloisonnement par service : si plusieurs services distincts sont présents, on produit une
+   * ligne par service (montant/nombre agrégés par service). Sinon, une seule ligne globale.
    * Agence : "multiAgence" si plusieurs agences distinctes, sinon l'agence unique.
    */
   getMatchesSummaryForEcartBoSummary(): EcartBoSummaryPrefill | null {
@@ -954,6 +1005,21 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     if (!matches || matches.length === 0) {
       return null;
     }
+    const serviceKeys = [
+      'Service',
+      'service',
+      'SERVICE',
+      'serv',
+      'Serv',
+      'Type Opération',
+      'Type Operation',
+      'Type operation',
+      'type operation',
+      'Type service',
+      'Operation',
+      'Opération',
+      'Service BO'
+    ];
     const agenceKeys = [
       'Agence',
       'agence',
@@ -967,6 +1033,86 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
       'BO agence',
       'BO agence/zone'
     ];
+    const paysKeys = [
+      'Pays',
+      'pays',
+      'PAYS',
+      'country',
+      'Country',
+      'GRX',
+      'grx',
+      'Destination',
+      'destination',
+      'Code pays',
+      'Pays destination',
+      'Country code'
+    ];
+    const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction'];
+
+    // Pré-lecture des valeurs par correspondance (évite de reparcourir plusieurs fois les grands volumes).
+    const rows = matches.map(match => ({
+      service: this.getValueFromMatch(match, serviceKeys),
+      pays: this.getValueFromMatch(match, paysKeys),
+      date: this.getValueFromMatch(match, dateKeys),
+      volume: this.getMatchVolume(match)
+    }));
+    const agencies = new Set<string>();
+    for (const match of matches) {
+      const ag = this.getValueFromMatch(match, agenceKeys);
+      if (ag) agencies.add(ag);
+    }
+    const agence = agencies.size > 1 ? 'multiAgence' : (Array.from(agencies)[0] || '');
+
+    const distinctServices = [...new Set(rows.map(r => (r.service || '').trim()).filter(Boolean))];
+    if (distinctServices.length === 0) {
+      return null;
+    }
+    const firstService = distinctServices[0];
+
+    // Cloisonnement par service : quand plusieurs services, ce sont des lignes en attente
+    // gérées par saveToEcartBoSummary(). Ici on renvoie la ligne du premier service pour
+    // rester rétro-compatible avec un appel unique (cas mono-service).
+    const serviceOnly = firstService;
+    const serviceRows = rows.filter(r => r.service === serviceOnly);
+    const pays = serviceRows.map(r => r.pays).find(Boolean) || '';
+    const date = serviceRows.map(r => r.date).find(Boolean) || '';
+    const volume = serviceRows.reduce((sum, r) => sum + r.volume, 0);
+    const nombre = serviceRows.length;
+
+    if (!pays) {
+      return null;
+    }
+
+    let dateFormatted = date;
+    if (dateFormatted) {
+      try {
+        const d = new Date(dateFormatted);
+        if (!isNaN(d.getTime())) {
+          dateFormatted = d.toISOString().split('T')[0];
+        }
+      } catch {
+        dateFormatted = new Date().toISOString().split('T')[0];
+      }
+    } else {
+      dateFormatted = new Date().toISOString().split('T')[0];
+    }
+
+    return {
+      date: dateFormatted,
+      agence,
+      service: serviceOnly,
+      pays,
+      nombre,
+      volume
+    };
+  }
+
+  /** Renvoie les lignes en attente par service (montant + nombre agrégés par service), ou null si données insuffisantes. */
+  private buildMatchesPendingLinesByService(): EcartBoSummaryPendingLine[] | null {
+    const matches = this.filteredMatches;
+    if (!matches || matches.length === 0) {
+      return null;
+    }
     const serviceKeys = [
       'Service',
       'service',
@@ -998,56 +1144,113 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     ];
     const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction'];
 
-    const agencies = new Set<string>();
-    let service = '';
-    let pays = '';
-    let date = '';
+    const rows = matches.map(match => ({
+      service: (this.getValueFromMatch(match, serviceKeys) || '').trim(),
+      pays: this.getValueFromMatch(match, paysKeys) || '',
+      date: this.getValueFromMatch(match, dateKeys) || '',
+      volume: this.getMatchVolume(match)
+    }));
 
-    for (const match of matches) {
-      const ag = this.getValueFromMatch(match, agenceKeys);
-      if (ag) agencies.add(ag);
-      if (!service) service = this.getValueFromMatch(match, serviceKeys);
-      if (!pays) pays = this.getValueFromMatch(match, paysKeys);
-      if (!date) date = this.getValueFromMatch(match, dateKeys);
+    const byService = new Map<string, { pays: string; date: string; nombre: number; volume: number }>();
+    for (const r of rows) {
+      if (!r.service) continue;
+      const agg = byService.get(r.service) || { pays: '', date: '', nombre: 0, volume: 0 };
+      agg.nombre += 1;
+      agg.volume += r.volume;
+      if (!agg.pays && r.pays) agg.pays = r.pays;
+      if (!agg.date && r.date) agg.date = r.date;
+      byService.set(r.service, agg);
     }
 
-    const agence = agencies.size > 1 ? 'multiAgence' : (Array.from(agencies)[0] || '');
-    const volume = this.calculateTotalVolume();
-    const nombre = matches.length;
-
-    if (!agence || !service || !pays) {
-      return null;
-    }
-
-    let dateFormatted = date;
-    if (dateFormatted) {
-      try {
+    const lines: EcartBoSummaryPendingLine[] = [];
+    for (const [service, agg] of byService) {
+      if (!agg.pays) continue;
+      let dateFormatted = agg.date;
+      if (dateFormatted) {
         const d = new Date(dateFormatted);
         if (!isNaN(d.getTime())) {
           dateFormatted = d.toISOString().split('T')[0];
         }
-      } catch {
+      } else {
         dateFormatted = new Date().toISOString().split('T')[0];
       }
-    } else {
-      dateFormatted = new Date().toISOString().split('T')[0];
+      lines.push({
+        agence: 'multiAgence',
+        service,
+        pays: agg.pays,
+        montant: agg.volume,
+        date: dateFormatted,
+        statut: 'en cours',
+        nombreTransactions: agg.nombre
+      });
     }
+    return lines.length > 0 ? lines : null;
+  }
 
-    return {
-      date: dateFormatted,
-      agence,
-      service,
-      pays,
-      nombre,
-      volume
-    };
+  /** Montant/volume associé à une correspondance (BO puis partenaire). */
+  private getMatchVolume(match: Match): number {
+    const boData = match.boData || {};
+    const volumeKeys = ['montant', 'Montant', 'MONTANT', 'Volume', 'volume', 'amount', 'Amount'];
+    for (const key of volumeKeys) {
+      const originalKey = this.getOriginalKey(boData, key);
+      const raw = boData[originalKey];
+      if (raw) {
+        const value = parseFloat(String(raw));
+        if (!isNaN(value)) return value;
+      }
+    }
+    const partnerData = match.partnerData || {};
+    for (const key of volumeKeys) {
+      const originalKey = this.getOriginalKey(partnerData, key);
+      const raw = partnerData[originalKey];
+      if (raw) {
+        const value = parseFloat(String(raw));
+        if (!isNaN(value)) return value;
+      }
+    }
+    return 0;
   }
 
   /**
-   * Enregistre les données des correspondances pour préremplir le formulaire ecart-bo-summary,
-   * puis navigue vers /ecart-bo-summary (le formulaire "Ajouter une nouvelle ligne" s'ouvrira prérempli).
+   * Enregistre les données des correspondances pour préremplir ecart-bo-summary, puis navigue vers /ecart-bo-summary.
+   * Cloisonnement par service : si plusieurs services sont présents, on enregistre une ligne en attente
+   * par service (à valider puis sauvegarder sur la page de destination). Sinon, formulaire prérempli unique.
    */
   saveToEcartBoSummary(): void {
+    const matches = this.filteredMatches;
+    const serviceKeys = [
+      'Service',
+      'service',
+      'SERVICE',
+      'serv',
+      'Serv',
+      'Type Opération',
+      'Type Operation',
+      'Type operation',
+      'type operation',
+      'Type service',
+      'Operation',
+      'Opération',
+      'Service BO'
+    ];
+    const distinctServices = matches
+      ? [...new Set(matches.map(m => this.getValueFromMatch(m, serviceKeys)).map(v => (v || '').trim()).filter(Boolean))]
+      : [];
+    const multipleServices = distinctServices.length > 1;
+
+    if (multipleServices) {
+      const lines = this.buildMatchesPendingLinesByService();
+      if (!lines || lines.length === 0) {
+        this.popupService.showWarning('Impossible de préparer les données : vérifiez que les correspondances contiennent le Service et le Pays.');
+        return;
+      }
+      this.ecartBoSummaryService.setPendingLinesFromEcartBo(lines, 'matches');
+      this.popupService.showSuccess(`${lines.length} ligne(s) par service prête(s). Validez puis utilisez « Sauvegarder » sur la page Écart BO Summary.`);
+      this.router.navigate(['/ecart-bo-summary']);
+      this.cdr.markForCheck();
+      return;
+    }
+
     const prefill = this.getMatchesSummaryForEcartBoSummary();
     if (!prefill) {
       this.popupService.showWarning('Impossible de préparer les données : vérifiez que des correspondances sont chargées et contiennent Agence, Service et Pays.');

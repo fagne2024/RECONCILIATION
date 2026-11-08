@@ -64,7 +64,16 @@ public class OperationBancaireEntity {
     
     @Column(name = "traitement")
     private String traitement;
-    
+
+    @Column(name = "groupe")
+    private String groupe;
+
+    @Column(name = "demandeur")
+    private String demandeur;
+
+    @Column(name = "valideur")
+    private String valideur;
+
     // Constructeurs
     public OperationBancaireEntity() {}
     
@@ -237,9 +246,33 @@ public class OperationBancaireEntity {
     public String getTraitement() {
         return traitement;
     }
-    
+
     public void setTraitement(String traitement) {
         this.traitement = traitement;
+    }
+
+    public String getGroupe() {
+        return groupe;
+    }
+
+    public void setGroupe(String groupe) {
+        this.groupe = groupe;
+    }
+
+    public String getDemandeur() {
+        return demandeur;
+    }
+
+    public void setDemandeur(String demandeur) {
+        this.demandeur = demandeur;
+    }
+
+    public String getValideur() {
+        return valideur;
+    }
+
+    public void setValideur(String valideur) {
+        this.valideur = valideur;
     }
 }
 

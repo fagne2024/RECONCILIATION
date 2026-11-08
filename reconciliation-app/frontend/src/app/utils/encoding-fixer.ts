@@ -112,9 +112,30 @@ function applyPreMojibakeFixes(text: string): string {
   return out;
 }
 
+/**
+ * Motifs ASCII (sans accent) corrigés par fixGarbledCharacters : si aucun de ces motifs
+ * n'est présent ET qu'il n'y a aucun caractère non-ASCII, fixGarbledCharacters ne modifiera
+ * jamais la chaîne. Permet de retourner la cellule telle quelle au lieu d'enchaîner ~40
+ * regex + TextDecoder (très coûteux par cellule sur les fichiers volumineux).
+ */
+const ASCII_ACRONYM_FIX_RE = /Expditeur|Bnficiaire|Opration|opration|rgularisation|rseau|rfrence|Numro|numro|aprs|crdit|dbit|tlphone|diteur|nficiaire|pration|gularisation|T\s+te\s+de\s+r\s+seau/i;
+
+function needsEncodingFix(text: string): boolean {
+  if (!/[\u0080-\u00FF]|\uFFFD|ï¿½|Ã.|Â./.test(text)) {
+    return ASCII_ACRONYM_FIX_RE.test(text);
+  }
+  return true;
+}
+
 export function fixGarbledCharacters(text: string | null | undefined): string {
   if (!text) {
     return '';
+  }
+
+  // Accélération : la grande majorité des cellules est en ASCII propre et n'est jamais
+  // modifiée par le nettoyage ci-dessous → on évite tous les regex + le Uint8Array/TextDecoder.
+  if (!needsEncodingFix(text)) {
+    return text;
   }
 
   let fixedText = applyPreMojibakeFixes(text);

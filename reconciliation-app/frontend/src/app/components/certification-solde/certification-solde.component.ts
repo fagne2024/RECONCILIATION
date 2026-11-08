@@ -12,6 +12,7 @@ import {
   EcartAggregateRow
 } from '../../services/certification-solde.service';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
+import { ReconciliationService } from '../../services/reconciliation.service';
 import { PopupService } from '../../services/popup.service';
 import { FraisTransactionService } from '../../services/frais-transaction.service';
 import { FraisTransaction } from '../../models/frais-transaction.model';
@@ -32,21 +33,29 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
   variation: number | null = null;
   ecartCertification: number | null = null;
 
+  readonly Math = Math;
+
   numeroCompte = '';
   dateCertificationDe = '';
   dateCertificationAu = '';
   commentaire = '';
+  reconciliationTitle = 'Réconciliation TRXBO / OPPART';
   isSaving = false;
   isLoadingSoldes = false;
   isExportingExcel = false;
   isExportingPdf = false;
+  isLoadingDetail = false;
+  pdfLogoDataUrl: string | null = null;
 
   private fraisConfigs: FraisTransaction[] = [];
   private subscription = new Subscription();
+  private detailSessionLoaded: string | null = null;
+  private pdfLogoPromise: Promise<string | null> | null = null;
 
   constructor(
     private router: Router,
     private appState: AppStateService,
+    private reconciliationService: ReconciliationService,
     private certificationService: CertificationSoldeService,
     private fraisTransactionService: FraisTransactionService,
     private popupService: PopupService,
@@ -62,8 +71,63 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
       this.appState.reconciliationResult$.subscribe(result => {
         this.response = result;
         this.refreshComputed();
+        void this.loadPaginatedDetailIfNeeded();
       })
     );
+  }
+
+  /**
+   * Quand les résultats sont paginés côté serveur, les tableaux matches/boOnly/partnerOnly/mismatches
+   * sont vides (seuls les totaux sont fournis). On recharge le détail complet depuis la session pour
+   * alimenter les agrégats des écarts (nombre + volume + frais) et la synthèse.
+   */
+  private async loadPaginatedDetailIfNeeded(): Promise<void> {
+    if (!this.response) {
+      return;
+    }
+
+    const needsDetail =
+      this.response.resultsPaginated === true ||
+      ((this.response.totalMatches ?? 0) > 0 && !(this.response.matches?.length)) ||
+      ((this.response.totalBoOnly ?? 0) > 0 && !(this.response.boOnly?.length)) ||
+      ((this.response.totalPartnerOnly ?? 0) > 0 && !(this.response.partnerOnly?.length));
+
+    if (!needsDetail) {
+      return;
+    }
+
+    const jobId = this.reconciliationService.getCurrentJobId();
+    if (!jobId) {
+      return;
+    }
+
+    if (this.detailSessionLoaded === jobId) {
+      return;
+    }
+
+    this.isLoadingDetail = true;
+    this.cdr.markForCheck();
+    try {
+      const detail = await this.reconciliationService.loadAllDetailResults(jobId, 5000);
+      if (!this.response) {
+        return;
+      }
+      this.response = {
+        ...this.response,
+        matches: detail.matches,
+        boOnly: detail.boOnly,
+        partnerOnly: detail.partnerOnly,
+        mismatches: detail.mismatches,
+        resultsPaginated: false
+      };
+      this.detailSessionLoaded = jobId;
+      this.refreshComputed();
+    } catch (e) {
+      console.error('Erreur lors du chargement du détail des agrégats:', e);
+    } finally {
+      this.isLoadingDetail = false;
+      this.cdr.markForCheck();
+    }
   }
 
   private loadFraisConfigs(): void {
@@ -83,6 +147,13 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
 
   hasRegularisationDetails(row: EcartAggregateRow): boolean {
     return this.certificationService.hasRegularisationDetails(row);
+  }
+
+  get regularisationAggregates(): EcartAggregateRow[] {
+    if (!this.computed) {
+      return [];
+    }
+    return this.computed.aggregates.filter(a => this.hasRegularisationDetails(a));
   }
 
   ngOnDestroy(): void {
@@ -111,78 +182,47 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
       workbook.created = new Date();
 
       const wsCert = workbook.addWorksheet('Certification');
-      this.styleExcelHeaderRow(wsCert.addRow(['Certification de solde TRXBO / OPPART']));
+      this.styleExcelHeaderRow(wsCert.addRow([this.reconciliationTitle]));
       wsCert.mergeCells('A1:B1');
-      wsCert.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF1A2332' } };
+      wsCert.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF282E5E' } };
 
       wsCert.addRow([]);
       this.addExcelKeyValueRows(wsCert, [
-        ['Période de certification (du)', this.formatDateTimeDe() || '—'],
-        ['Période de certification (au)', this.formatDateTimeAu() || '—'],
         ['Numéro de compte', this.numeroCompte || '—'],
         ['Date export', this.formatExportTimestamp()],
         ['Solde d\'ouverture', this.soldeOuverture],
-        ['Horodatage ouverture', this.formatDateTimeDe() || '—'],
         ['Solde de clôture', this.soldeCloture],
-        ['Horodatage clôture', this.formatDateTimeAu() || '—'],
         ['Suggestion OPPART ouverture', this.computed.soldeOuvertureOppart],
         ['Suggestion OPPART clôture', this.computed.soldeClotureOppart],
         ['Variation', this.variation],
         ['Mouvement net OPPART', this.computed.mouvementNetOppart],
+        ['Frais attendu', this.computed.fraisAttendu ?? ''],
+        ['Total Débit', this.computed.totalDebit],
+        ['Total Crédit', this.computed.totalCredit],
         ['Écart de certification', this.ecartCertification]
       ]);
 
       wsCert.getColumn(1).width = 32;
       wsCert.getColumn(2).width = 22;
 
-      const wsAgg = workbook.addWorksheet('Agrégats écarts');
-      const aggHeader = wsAgg.addRow(['Type', 'Nombre', 'Volume', 'Frais', 'À régulariser']);
-      this.styleExcelHeaderRow(aggHeader);
-      for (const row of this.computed.aggregates) {
-        wsAgg.addRow([
-          row.label,
-          row.count,
-          row.volume,
-          row.frais || '',
-          row.montantARegulariser || ''
-        ]);
-      }
-      wsAgg.addRow([]);
-      wsAgg.addRow([
-        'Volume correspondances',
-        this.computed.totals.matches,
-        this.computed.volumeMatches,
-        '',
-        ''
-      ]);
-      wsAgg.columns = [{ width: 40 }, { width: 14 }, { width: 16 }, { width: 14 }, { width: 16 }];
-
-      if (this.computed.regularisationDetails.length) {
+      if (this.regularisationAggregates.length) {
         const wsDetail = workbook.addWorksheet('Détail régularisation');
-        const detailHeader = wsDetail.addRow([
-          'Type', 'Source', 'N° Trans GU', 'Service', 'Agence', 'Date', 'ID Transaction',
-          'Montant OPPART/BO', 'Montant TRXBO', 'Frais', 'À régulariser', 'Commentaire'
-        ]);
+        const detailHeader = wsDetail.addRow(['Type', 'Nombre', 'Montant', 'Frais', 'À régulariser']);
         this.styleExcelHeaderRow(detailHeader);
-        for (const line of this.computed.regularisationDetails) {
-          wsDetail.addRow([
-            line.type,
-            line.source,
-            line.numeroTransGu,
-            line.service,
-            line.agence,
-            line.date,
-            line.idTransaction,
-            line.montant,
-            line.montantBo ?? '',
-            line.frais,
-            line.montantARegulariser,
-            line.commentaire
+        for (const row of this.regularisationAggregates) {
+          const r = wsDetail.addRow([
+            row.label,
+            row.count,
+            row.volume,
+            row.frais || '',
+            row.montantARegulariser || ''
           ]);
+          r.getCell(3).numFmt = '#,##0';
+          r.getCell(4).numFmt = '#,##0';
+          r.getCell(5).numFmt = '#,##0';
         }
         wsDetail.columns = [
-          { width: 10 }, { width: 22 }, { width: 16 }, { width: 14 }, { width: 18 },
-          { width: 18 }, { width: 14 }, { width: 12 }, { width: 14 }
+          { width: 36 }, { width: 12 }, { width: 16 }, { width: 14 }, { width: 16 }
         ];
       }
 
@@ -198,6 +238,48 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
         ['Volume écarts Partenaire', this.computed.volumeEcartPartner],
         ['Volume correspondances', this.computed.volumeMatches]
       ]);
+
+      if (this.computed.oppartOperationBreakdown.hasData) {
+        const oppart = this.computed.oppartOperationBreakdown;
+        wsSynth.addRow([]);
+        wsSynth.addRow(["Types d'opérations"]);
+        wsSynth.getRow(wsSynth.rowCount).getCell(1).font = { bold: true, color: { argb: 'FF282E5E' }, size: 11 };
+        const rVolume = wsSynth.addRow(['Volume (IMPACT_COMPTE_GENERAL)', oppart.volume]);
+        rVolume.getCell(2).numFmt = '#,##0';
+        const rFrais = wsSynth.addRow(['Frais (FRAIS_TRANSACTION)', oppart.frais]);
+        rFrais.getCell(2).numFmt = '#,##0';
+        if (this.computed.fraisAttendu != null) {
+          const rEcartFrais = wsSynth.addRow(['Écart frais', Math.abs(this.computed.fraisAttendu) - Math.abs(oppart.frais)]);
+          rEcartFrais.getCell(2).numFmt = '#,##0';
+          rEcartFrais.getCell(1).font = { bold: true, color: { argb: 'FFC0392B' } };
+          rEcartFrais.getCell(2).font = { bold: true, color: { argb: 'FFC0392B' } };
+        }
+        if (oppart.otherTypes.length) {
+          wsSynth.addRow(['Autres types', '']);
+          wsSynth.getRow(wsSynth.rowCount).getCell(1).font = { bold: true, italic: true, color: { argb: 'FF444444' }, size: 10 };
+        }
+        for (const t of oppart.otherTypes) {
+          const r = wsSynth.addRow([t.type, t.volume]);
+          r.getCell(2).numFmt = '#,##0';
+        }
+      }
+
+      if (this.computed.trxboServiceBreakdown.hasData) {
+        const trxbo = this.computed.trxboServiceBreakdown;
+        wsSynth.addRow([]);
+        wsSynth.addRow(["TRXBO par service"]);
+        wsSynth.getRow(wsSynth.rowCount).getCell(1).font = { bold: true, color: { argb: 'FF282E5E' }, size: 11 };
+        for (const s of trxbo.rows) {
+          const r = wsSynth.addRow([`${s.service} (${s.count})`, s.volume]);
+          r.getCell(2).numFmt = '#,##0';
+        }
+        if (trxbo.rows.length > 1) {
+          const r = wsSynth.addRow([`Total (${trxbo.totalCount})`, trxbo.totalVolume]);
+          r.getCell(2).numFmt = '#,##0';
+          r.getCell(1).font = { bold: true };
+        }
+      }
+
       wsSynth.getColumn(1).width = 34;
       wsSynth.getColumn(2).width = 18;
 
@@ -228,38 +310,57 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
 
     this.isExportingPdf = true;
     this.cdr.markForCheck();
-    await new Promise<void>(resolve => setTimeout(resolve, 150));
+    await Promise.all([
+      new Promise<void>(resolve => setTimeout(resolve, 150)),
+      this.ensurePdfLogo()
+    ]);
 
     try {
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      });
-
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const pdfW = pdf.internal.pageSize.getWidth();
       const pdfH = pdf.internal.pageSize.getHeight();
-      const margin = 10;
+      const margin = 6;
       const pageW = pdfW - 2 * margin;
-      const pageH = pdfH - 2 * margin;
-      const imgW = canvas.width;
-      const imgH = canvas.height;
-      const ratio = pageW / imgW;
-      const scaledH = imgH * ratio;
-      const imgData = canvas.toDataURL('image/png');
+      const contentPerPage = pdfH - 2 * margin;
+      const gapBetweenBlocks = 2;
 
-      let heightLeft = scaledH;
-      let position = margin;
-      pdf.addImage(imgData, 'PNG', margin, position, pageW, scaledH);
-      heightLeft -= pageH;
+      const blocks: HTMLElement[] = [];
+      const headerEl = element.querySelector<HTMLElement>('.pdf-export-header');
+      const bannerEl = element.querySelector<HTMLElement>('.pdf-solde-banner');
+      if (headerEl) {
+        blocks.push(headerEl);
+      }
+      if (bannerEl) {
+        blocks.push(bannerEl);
+      }
+      blocks.push(...Array.from(element.querySelectorAll<HTMLElement>('.pdf-export-section')));
 
-      while (heightLeft > 0) {
-        pdf.addPage();
-        position = margin - (scaledH - heightLeft);
-        pdf.addImage(imgData, 'PNG', margin, position, pageW, scaledH);
-        heightLeft -= pageH;
+      const rendered: { canvas: HTMLCanvasElement; heightPx: number; ratio: number }[] = [];
+      for (const block of blocks) {
+        const blockCanvas = await html2canvas(block, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+        rendered.push({
+          canvas: blockCanvas,
+          heightPx: blockCanvas.height,
+          ratio: pageW / blockCanvas.width
+        });
+      }
+
+      const totalHeightMm = rendered.reduce((sum, b) => sum + b.heightPx * b.ratio, 0)
+        + gapBetweenBlocks * (rendered.length - 1);
+      const fitScale = Math.min(1, contentPerPage / totalHeightMm);
+
+      let y = margin;
+      for (const block of rendered) {
+        const blockHeightMm = block.heightPx * block.ratio * fitScale;
+        const blockWidthMm = pageW * fitScale;
+        const x = margin + (pageW - blockWidthMm) / 2;
+        pdf.addImage(block.canvas.toDataURL('image/png'), 'PNG', x, y, blockWidthMm, blockHeightMm);
+        y += blockHeightMm + gapBetweenBlocks * fitScale;
       }
 
       const fileName = `${this.buildExportFileBase()}.pdf`;
@@ -271,6 +372,37 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
     } finally {
       this.isExportingPdf = false;
       this.cdr.markForCheck();
+    }
+  }
+
+  private async ensurePdfLogo(): Promise<string | null> {
+    if (this.pdfLogoDataUrl) {
+      return this.pdfLogoDataUrl;
+    }
+    if (!this.pdfLogoPromise) {
+      this.pdfLogoPromise = this.loadPdfLogoAsDataUrl().then(dataUrl => {
+        this.pdfLogoDataUrl = dataUrl;
+        return dataUrl;
+      });
+    }
+    return this.pdfLogoPromise;
+  }
+
+  private async loadPdfLogoAsDataUrl(): Promise<string | null> {
+    try {
+      const response = await fetch('assets/point-touch-logo.png');
+      if (!response.ok) {
+        return null;
+      }
+      const blob = await response.blob();
+      return await new Promise<string | null>(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
     }
   }
 
@@ -287,7 +419,7 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FF3498DB' }
+        fgColor: { argb: 'FF282E5E' }
       };
       cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -473,10 +605,7 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
 
   formatDateRangeLabel(): string {
     if (!this.dateCertificationDe || !this.dateCertificationAu) return '—';
-    if (this.dateCertificationDe === this.dateCertificationAu) {
-      return `${this.formatDateTimeDe()} → ${this.formatDateTimeAu()}`;
-    }
-    return `Du ${this.formatDateTimeDe()} au ${this.formatDateTimeAu()}`;
+    return `${this.formatDateFr(this.dateCertificationDe)} au ${this.formatDateFr(this.dateCertificationAu)}`;
   }
 
   private formatDateInput(date: Date): string {
@@ -484,5 +613,39 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
+  }
+
+  formatPdfSoldeBanner(): string {
+    if (!this.dateCertificationDe || !this.dateCertificationAu) return '';
+    const [yDe, mDe, dDe] = this.dateCertificationDe.split('-').map(Number);
+    const [yAu, mAu, dAu] = this.dateCertificationAu.split('-').map(Number);
+    const months = [
+      'JANVIER', 'FÉVRIER', 'MARS', 'AVRIL', 'MAI', 'JUIN',
+      'JUILLET', 'AOÛT', 'SEPTEMBRE', 'OCTOBRE', 'NOVEMBRE', 'DÉCEMBRE'
+    ];
+
+    const firstDayOfMonth = dDe === 1 && mDe === mAu && yDe === yAu;
+    const lastDays: Record<number, number> = {
+      1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30,
+      7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31
+    };
+    const isLeap = (y: number) => (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
+    if (mDe === 2 && isLeap(yDe)) lastDays[2] = 29;
+    const lastDayOfMonth = dAu === lastDays[mAu] && mDe === mAu && yDe === yAu;
+
+    const isFullYear = dDe === 1 && mDe === 1 && dAu === 31 && mAu === 12 && yDe === yAu;
+
+    let label: string;
+    if (isFullYear) {
+      label = `SOLDE DE L'ANNÉE ${yDe}`;
+    } else if (firstDayOfMonth && lastDayOfMonth) {
+      label = `SOLDE DU MOIS DE ${months[mDe - 1]} ${yDe}`;
+    } else {
+      label = `SOLDE AU ${this.formatDateFr(this.dateCertificationAu)}`;
+    }
+
+    const compte = this.numeroCompte || '—';
+    const solde = this.formatNumber(this.soldeCloture);
+    return `${label} — COMPTE ${compte} — ${solde}`;
   }
 }

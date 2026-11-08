@@ -892,6 +892,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     this.appStateService.setSelectedMagicPartnerFile((result.partnerFileNames ?? [])[0] ?? '');
     this.appStateService.setMagicServiceSummaries(result.serviceSummaries);
     this.appStateService.setReconciliationResults(result.response);
+    this.appStateService.setMagicFullResponse(result.response);
     this.appStateService.setCurrentStep(4);
 
     let successMsg =

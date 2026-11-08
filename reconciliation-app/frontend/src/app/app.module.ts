@@ -68,6 +68,7 @@ import { DashboardReconciliationService } from './services/dashboard-reconciliat
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
 import { BanqueComponent } from './components/banque/banque.component';
+import { DestinationPopupComponent } from './components/banque/destination-popup.component';
 import { ExcelAnalysisComponent } from './components/excel-analysis/excel-analysis.component';
 import { ReconciliationLauncherComponent } from './components/reconciliation-launcher/reconciliation-launcher.component';
 import { ModernPopupComponent } from './components/modern-popup/modern-popup.component';
@@ -102,12 +103,12 @@ import { RapportReconciliationBoPartenaireComponent } from './components/rapport
 import { ControleInterneBoPartenaireComponent } from './components/controle-interne-bo-partenaire/controle-interne-bo-partenaire.component';
 import { StatsReportComponent } from './components/stats-report/stats-report.component';
 import { StatsReportGraphComponent } from './components/stats-report-graph/stats-report-graph.component';
+import { TraitementJobBannerComponent } from './components/traitement-job-banner/traitement-job-banner.component';
 
 @NgModule({
     declarations: [
         AppComponent,
-        FileUploadComponent,
-        ReconciliationResultsComponent,
+        
         ReconciliationComponent,
         StatsComponent,
         DashboardComponent,
@@ -140,7 +141,8 @@ import { StatsReportGraphComponent } from './components/stats-report-graph/stats
                 ExcelAnalysisComponent,
                 ModernPopupComponent,
                 ProgressIndicatorComponent,
-                ReconciliationReportComponent,
+                TraitementJobBannerComponent,
+               
                 ReportDashboardComponent,
                 DashboardReconciliationComponent,
                 ReconciliationGlobalPreviewComponent,
@@ -160,10 +162,7 @@ import { StatsReportGraphComponent } from './components/stats-report-graph/stats
                 GuideUtilisationComponent,
                 MatchesTableComponent,
                 PartnerMatchesTableComponent,
-                EcartBoTableComponent,
-                EcartPartnerTableComponent,
                 SuiviDesEcartsComponent,
-                EcartBoSummaryComponent,
                 CertificationSoldeComponent,
                 RedevanceLoterieComponent,
                 RapportReconciliationBoPartenaireComponent,
@@ -201,7 +200,14 @@ import { StatsReportGraphComponent } from './components/stats-report-graph/stats
         DragDropModule,
         ColumnSelectionComponent,
         AgencySummaryComponent,
-        ReconciliationLauncherComponent
+        ReconciliationLauncherComponent,
+        EcartBoSummaryComponent,
+        ReconciliationReportComponent,
+        ReconciliationResultsComponent,
+        EcartBoTableComponent,
+        EcartPartnerTableComponent,
+        FileUploadComponent,
+        DestinationPopupComponent
     ],
     providers: [
         ReconciliationService, 

@@ -38,7 +38,10 @@ public class ReconciliationJobService {
     private final ConcurrentHashMap<String, ReconciliationResponse> resultCache = new ConcurrentHashMap<>();
     /** Cache léger boOnly/mismatches — évite de re-sérialiser les matches pour ecart-bo-summary */
     private final ConcurrentHashMap<String, EcartsSlice> ecartsSliceCache = new ConcurrentHashMap<>();
-    private static final int RESULT_CACHE_MAX_SIZE = 50;
+    /** Timestamps d'accès pour implémenter une éviction LRU basée sur le temps */
+    private final ConcurrentHashMap<String, Long> cacheAccessTimes = new ConcurrentHashMap<>();
+    private static final int RESULT_CACHE_MAX_SIZE = 20;
+    private static final long CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
 
     public record EcartsSlice(List<Map<String, String>> boOnly, List<Map<String, String>> mismatches) {}
     
@@ -198,6 +201,7 @@ public class ReconciliationJobService {
         }
         resultCache.put(sessionId, result);
         cacheEcartsSlice(sessionId, result);
+        updateCacheAccess(sessionId);
         evictResultCacheIfNeeded();
         log.info("Resultat sync mis en cache pour pagination: session={}, matches={}",
                 sessionId, result.getMatches() != null ? result.getMatches().size() : 0);
@@ -213,12 +217,13 @@ public class ReconciliationJobService {
         ecartsSliceCache.put(sessionId, new EcartsSlice(boOnly, mismatches));
     }
 
-    /**
+/**
      * Écarts BO légers (sans charger / sérialiser les matches).
      */
     public Optional<EcartsSlice> getCachedEcarts(String jobId) {
         EcartsSlice cached = ecartsSliceCache.get(jobId);
         if (cached != null) {
+            updateCacheAccess(jobId);
             return Optional.of(cached);
         }
         return getCachedResult(jobId).map(result -> {
@@ -226,10 +231,11 @@ public class ReconciliationJobService {
             return ecartsSliceCache.get(jobId);
         });
     }
-
+    
     public Optional<ReconciliationResponse> getCachedResult(String jobId) {
         ReconciliationResponse cached = resultCache.get(jobId);
         if (cached != null) {
+            updateCacheAccess(jobId);
             return Optional.of(cached);
         }
         Optional<ReconciliationJob> jobOpt = jobRepository.findByJobId(jobId);
@@ -240,6 +246,7 @@ public class ReconciliationJobService {
             ReconciliationResponse result = objectMapper.readValue(jobOpt.get().getResultJson(), ReconciliationResponse.class);
             resultCache.put(jobId, result);
             cacheEcartsSlice(jobId, result);
+            updateCacheAccess(jobId);
             evictResultCacheIfNeeded();
             return Optional.of(result);
         } catch (JsonProcessingException e) {
@@ -249,14 +256,39 @@ public class ReconciliationJobService {
     }
     
     private void evictResultCacheIfNeeded() {
+        long now = System.currentTimeMillis();
+        
+        // Éviction basée sur le TTL (entrées expirées)
+        List<String> expiredKeys = cacheAccessTimes.entrySet().stream()
+            .filter(entry -> now - entry.getValue() > CACHE_TTL_MS)
+            .map(Map.Entry::getKey)
+            .toList();
+        
+        for (String key : expiredKeys) {
+            resultCache.remove(key);
+            ecartsSliceCache.remove(key);
+            cacheAccessTimes.remove(key);
+            log.debug("Entrée de cache expirée supprimée: {}", key);
+        }
+        
+        // Éviction LRU si encore trop d'entrées
         while (resultCache.size() > RESULT_CACHE_MAX_SIZE) {
-            String oldest = resultCache.keySet().stream().findFirst().orElse(null);
+            String oldest = cacheAccessTimes.entrySet().stream()
+                .min(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(null);
             if (oldest == null) {
                 break;
             }
             resultCache.remove(oldest);
             ecartsSliceCache.remove(oldest);
+            cacheAccessTimes.remove(oldest);
+            log.debug("Entrée de cache LRU supprimée: {}", oldest);
         }
+    }
+    
+    private void updateCacheAccess(String jobId) {
+        cacheAccessTimes.put(jobId, System.currentTimeMillis());
     }
     
     /**

@@ -132,34 +132,50 @@
 
     <div class="banque-section" *ngIf="activeSection === 'rapports'">
       <div class="releve-header">
-        <h2>📋 Relevé bancaire - Import</h2>
         <div class="actions">
-          <label class="file-btn">
-            <input type="file" (change)="onReleveFileSelected($event)" accept=".xlsx,.xls,.csv" />
-            <i class="fas fa-file-upload"></i> Choisir un fichier
-          </label>
-          <button class="btn-primary" [disabled]="releveUploading || !releveSelectedFile" (click)="uploadReleve()">
-            <i class="fas fa-upload" [class.spin]="releveUploading"></i> Importer
-          </button>
-          <button class="btn-primary" (click)="downloadReleveTemplate()" title="Télécharger le modèle">
-            <i class="fas fa-file-excel"></i> Modèle
-          </button>
-          <button class="btn-primary" (click)="exportReleveCSV()" [disabled]="!(filteredReleveRowsForImport && filteredReleveRowsForImport.length)" title="Exporter le relevé (CSV ;)">
-            <i class="fas fa-file-export"></i> Export CSV
-          </button>
-          <button class="btn-success" (click)="openCreateOperation()" title="Créer une nouvelle opération bancaire">
-            <i class="fas fa-plus"></i> Créer Opération
-          </button>
-          <button class="btn-primary" (click)="toggleCommentColumn()" [class.active]="showCommentColumn" title="Afficher/Masquer la colonne commentaire">
-            <i class="fas" [class.fa-comment]="!showCommentColumn" [class.fa-comment-slash]="showCommentColumn"></i>
-            {{ showCommentColumn ? 'Masquer Commentaires' : 'Afficher Commentaires' }}
-          </button>
-          <div class="filter-group" style="margin-left:12px; display: none;">
-            <label>Lot</label>
-            <select [(ngModel)]="releveSelectedBatchId" (change)="relevePage = 1">
-              <option value="ALL">Tous les lots</option>
-              <option *ngFor="let b of releveBatchOptions" [value]="b.id">{{ b.label }}</option>
-            </select>
+          <!-- Ligne 1 : Toggle + boutons d'action (toujours visibles, taille fixe) -->
+          <div class="traitement-toolbar">
+            <button type="button" class="btn-toggle-traitement" (click)="toggleTraitementPanel()" title="Afficher/Masquer le panneau de traitement automatique">
+              <i class="fas" [ngClass]="showTraitementPanel ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+              {{ showTraitementPanel ? 'Masquer le traitement' : 'Afficher le traitement' }}
+            </button>
+
+            <!-- Boutons d'action séparés -->
+            <div class="traitement-action-buttons">
+              <button class="btn-primary" (click)="downloadReleveTemplate()" title="Télécharger le modèle">
+                <i class="fas fa-file-excel"></i> Modèle
+              </button>
+              <button class="btn-success" (click)="openCreateOperation()" title="Créer une nouvelle opération bancaire">
+                <i class="fas fa-plus"></i> Créer Opération
+              </button>
+              <button class="btn-primary" (click)="toggleCommentColumn()" [class.active]="showCommentColumn" title="Afficher/Masquer la colonne commentaire">
+                <i class="fas" [class.fa-comment]="!showCommentColumn" [class.fa-comment-slash]="showCommentColumn"></i>
+                {{ showCommentColumn ? 'Masquer Commentaires' : 'Afficher Commentaires' }}
+              </button>
+              <button class="btn-primary" title="Charger un relevé directement" (click)="releveFileInput.click()">
+                <i class="fas fa-upload"></i> Charger directement
+              </button>
+              <input type="file" #releveFileInput accept=".xlsx,.xls,.csv" (change)="onReleveFileSelected($event)" style="display:none;" />
+              <button class="btn-primary" [disabled]="!releveSelectedFile" (click)="uploadReleve()" title="Importer le fichier sélectionné">
+                <i class="fas fa-cloud-upload-alt"></i> Importer
+              </button>
+              <div class="filter-group" style="margin-left:12px; display: none;">
+                <label>Lot</label>
+                <select [(ngModel)]="releveSelectedBatchId" (change)="relevePage = 1">
+                  <option value="ALL">Tous les lots</option>
+                  <option *ngFor="let b of releveBatchOptions" [value]="b.id">{{ b.label }}</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ligne 2 : Panneau de traitement automatique (masqué par défaut, pleine largeur) -->
+          <div class="traitement-panel-wrapper" *ngIf="showTraitementPanel">
+            <app-file-upload
+              embedTraitementSection="true"
+              suppressEmbedSuccessPopup="true"
+              (embedTraitementResult)="onReleveTraitementResult($event)"
+            ></app-file-upload>
           </div>
         </div>
       </div>
@@ -210,15 +226,14 @@
                 <th>Numéro de compte</th>
                 <th>Nom du compte</th>
                 <th>BANQUE</th>
+                <th>Banque Corrigée</th>
                 <th>Date comptable</th>
                 <th>Date de valeur</th>
                 <th>Libellé / Narration</th>
                 <th class="right">Débit</th>
                 <th class="right">Crédit</th>
                 <th class="right">Montant</th>
-                <th>Chèque</th>
                 <th>Devise</th>
-                <th>Numéro de série</th>
                 <th>Statut Réconciliation</th>
                 <th *ngIf="showCommentColumn">Commentaire</th>
                 <th class="actions-col" *ngIf="showActionsColumn">Actions</th>
@@ -229,19 +244,18 @@
                 <td><code>{{ r.numeroCompte || '-' }}</code></td>
                 <td>{{ r.nomCompte || '-' }}</td>
                 <td>{{ r.banque || '-' }}</td>
+                <td>{{ r.banqueCorrigee || '-' }}</td>
                 <td>{{ r.dateComptable ? (r.dateComptable | date:'dd/MM/yyyy') : '-' }}</td>
                 <td>{{ r.dateValeur ? (r.dateValeur | date:'dd/MM/yyyy') : '-' }}</td>
                 <td class="libelle-cell" [title]="r.libelle">{{ r.libelle || '-' }}</td>
                 <td class="right"><span class="amount debit">{{ r.debit !== null && r.debit !== undefined ? (r.debit | number:'1.0-0') : '-' }}</span></td>
                 <td class="right"><span class="amount credit">{{ r.credit !== null && r.credit !== undefined ? (r.credit | number:'1.0-0') : '-' }}</span></td>
                 <td class="right"><span class="amount" [class.debit]="!!r.montant && r.montant < 0" [class.credit]="!!r.montant && r.montant > 0">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</span></td>
-                <td>{{ r.numeroCheque || '-' }}</td>
-              <td>{{ r.devise || '-' }}</td>
-              <td>{{ r.numeroSerie || '-' }}</td>
-              <td>
-                <span class="badge status-ok" *ngIf="getReleveReconStatus(r)==='OK'">OK</span>
-                <span class="badge status-ko" *ngIf="getReleveReconStatus(r)==='KO'">KO</span>
-              </td>
+                <td>{{ r.devise || '-' }}</td>
+                <td>
+                  <span class="badge status-ok" *ngIf="getReleveReconStatus(r)==='OK'">OK</span>
+                  <span class="badge status-ko" *ngIf="getReleveReconStatus(r)==='KO'">KO</span>
+                </td>
               <td *ngIf="showCommentColumn" class="comment-cell">
                 <div class="comment-display" [class.empty]="!r.commentaire">
                   <span *ngIf="r.commentaire; else noComment">{{ r.commentaire }}</span>
@@ -453,15 +467,10 @@
                        title="Sélectionner/Désélectionner la page">
               </th>
               <th>Pays</th>
-              <th>Code Pays</th>
-              <th>Mois</th>
               <th>Date Opération</th>
               <th>Agence</th>
               <th>Type Opération</th>
-              <th>Nom du Bénéficiaire</th>
-              <th>Compte</th>
               <th>Montant</th>
-              <th>Mode de Paiement</th>
               <th>Référence</th>
               <th>ID TICKET</th>
               <th>Banque</th>
@@ -474,15 +483,10 @@
                 <input type="checkbox" [checked]="isOpSelected(op)" (change)="toggleOpSelection(op)">
               </td>
               <td>{{ op.pays }}</td>
-              <td>{{ op.codePays }}</td>
-              <td>{{ op.mois }}</td>
               <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
               <td>{{ op.agence }}</td>
               <td>{{ op.typeOperation }}</td>
-              <td>{{ op.nomBeneficiaire }}</td>
-              <td>{{ op.compteADebiter }}</td>
               <td>{{ op.montant | currency:'XAF':'symbol':'1.0-0' }}</td>
-              <td>{{ op.modePaiement }}</td>
               <td>{{ op.reference }}</td>
               <td>{{ op.idGlpi || '-' }}</td>
               <td>{{ op.bo }}</td>
@@ -499,15 +503,14 @@
               <th>Numéro de compte</th>
               <th>Nom du compte</th>
               <th>Banque</th>
+              <th>Banque Corrigée</th>
               <th>Date comptable</th>
               <th>Date de valeur</th>
               <th>Libellé / Narration</th>
               <th class="right">Débit</th>
               <th class="right">Crédit</th>
               <th class="right">Montant</th>
-              <th>Chèque</th>
               <th>Devise</th>
-              <th>Numéro de série</th>
             </tr>
           </thead>
           <tbody>
@@ -515,15 +518,14 @@
               <td><code>{{ r.numeroCompte || '-' }}</code></td>
               <td>{{ r.nomCompte || '-' }}</td>
               <td>{{ r.banque || '-' }}</td>
+              <td>{{ r.banqueCorrigee || '-' }}</td>
               <td>{{ r.dateComptable ? (r.dateComptable | date:'dd/MM/yyyy') : '-' }}</td>
               <td>{{ r.dateValeur ? (r.dateValeur | date:'dd/MM/yyyy') : '-' }}</td>
               <td class="libelle-cell" [title]="r.libelle">{{ r.libelle || '-' }}</td>
               <td class="right">{{ r.debit !== null && r.debit !== undefined ? (r.debit | number:'1.0-0') : '-' }}</td>
               <td class="right">{{ r.credit !== null && r.credit !== undefined ? (r.credit | number:'1.0-0') : '-' }}</td>
               <td class="right">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</td>
-              <td>{{ r.numeroCheque || '-' }}</td>
               <td>{{ r.devise || '-' }}</td>
-              <td>{{ r.numeroSerie || '-' }}</td>
             </tr>
           </tbody>
         </table>
@@ -533,19 +535,15 @@
             <tr>
               <th style="width:34px;"></th>
               <th>Pays</th>
-              <th>Code Pays</th>
-              <th>Mois</th>
               <th>Date Opération</th>
               <th>Agence</th>
               <th>Type Opération</th>
-              <th>Nom du Bénéficiaire</th>
-              <th>Compte</th>
               <th>Montant</th>
-              <th>Mode de Paiement</th>
               <th>Référence</th>
               <th>ID TICKET</th>
               <th>Banque</th>
               <th>Statut</th>
+              <th>Groupé</th>
               <th>Statut Réconciliation</th>
             </tr>
           </thead>
@@ -555,19 +553,15 @@
                 <input type="checkbox" [checked]="isKeySelected(op.key)" (change)="toggleSelectKey(op.key)">
               </td>
               <td>{{ op.pays }}</td>
-              <td>{{ op.codePays }}</td>
-              <td>{{ op.mois }}</td>
               <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
               <td>{{ op.agence }}</td>
               <td>{{ op.typeOperation }}</td>
-              <td>{{ op.nomBeneficiaire }}</td>
-              <td>{{ op.compteADebiter }}</td>
               <td>{{ op.montant | currency:'XAF':'symbol':'1.0-0' }}</td>
-              <td>{{ op.modePaiement }}</td>
               <td>{{ op.reference }}</td>
               <td>{{ op.idGlpi || '-' }}</td>
               <td>{{ op.bo }}</td>
               <td>{{ op.statut }}</td>
+              <td><span class="badge badge-grouped">{{ op.groupe || 'Non' }}</span></td>
               <td class="right">
                 <span class="badge status-ok" *ngIf="getReconStatusByKey(op.key, 'OK')==='OK'">OK</span>
                 <span class="badge status-ko" *ngIf="getReconStatusByKey(op.key, 'OK')==='KO'">KO</span>
@@ -586,16 +580,16 @@
               <th>Numéro de compte</th>
               <th>Nom du compte</th>
               <th>Banque</th>
+              <th>Banque Corrigée</th>
               <th>Date comptable</th>
               <th>Date de valeur</th>
               <th>Libellé / Narration</th>
               <th class="right">Débit</th>
               <th class="right">Crédit</th>
               <th class="right">Montant</th>
-              <th>Chèque</th>
               <th>Devise</th>
-              <th>Numéro de série</th>
               <th>Statut Réconciliation</th>
+              <th>Groupé</th>
             </tr>
           </thead>
           <tbody>
@@ -606,15 +600,15 @@
               <td><code>{{ r.numeroCompte || '-' }}</code></td>
               <td>{{ r.nomCompte || '-' }}</td>
               <td>{{ r.banque || '-' }}</td>
+              <td>{{ r.banqueCorrigee || '-' }}</td>
               <td>{{ r.dateComptable ? (r.dateComptable | date:'dd/MM/yyyy') : '-' }}</td>
               <td>{{ r.dateValeur ? (r.dateValeur | date:'dd/MM/yyyy') : '-' }}</td>
               <td class="libelle-cell" [title]="r.libelle">{{ r.libelle || '-' }}</td>
               <td class="right">{{ r.debit !== null && r.debit !== undefined ? (r.debit | number:'1.0-0') : '-' }}</td>
               <td class="right">{{ r.credit !== null && r.credit !== undefined ? (r.credit | number:'1.0-0') : '-' }}</td>
               <td class="right">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</td>
-              <td>{{ r.numeroCheque || '-' }}</td>
               <td>{{ r.devise || '-' }}</td>
-              <td>{{ r.numeroSerie || '-' }}</td>
+              <td><span class="badge badge-grouped">{{ r.groupe || 'Non' }}</span></td>
               <td class="right">
                 <span class="badge status-ok" *ngIf="getReconStatusByKey(r.key, 'OK')==='OK'">OK</span>
                 <span class="badge status-ko" *ngIf="getReconStatusByKey(r.key, 'OK')==='KO'">KO</span>
@@ -933,30 +927,49 @@
 
       <!-- Import / Modèle / Export -->
       <div class="releve-header" style="margin-bottom: 12px;">
-        <h3>Gestion des opérations (Import/Export Excel/CSV)</h3>
         <div class="actions">
-          <label class="file-btn">
-            <input type="file" (change)="onOpbFileSelected($event)" accept=".xlsx,.xls,.csv" />
-            <i class="fas fa-file-upload"></i> Choisir un fichier
-          </label>
-          <button class="btn-primary" [disabled]="opbUploading || !opbSelectedFile" (click)="uploadOpb()">
-            <i class="fas fa-upload" [class.spin]="opbUploading"></i> Importer
-          </button>
-          <button class="btn-primary" (click)="downloadOpbTemplate()" title="Télécharger le modèle">
-            <i class="fas fa-file-excel"></i> Modèle
-          </button>
-          <button class="btn-success" (click)="exportOperations()" [disabled]="filteredOperations.length === 0" title="Exporter (Excel)">
-            <i class="fas fa-file-excel"></i> Exporter
-          </button>
-          <button class="btn-primary" (click)="toggleActionsColumn()" [class.active]="showActionsColumn" title="Afficher/Masquer les colonnes Actions">
-            <i class="fas" [class.fa-eye]="!showActionsColumn" [class.fa-eye-slash]="showActionsColumn"></i>
-            {{ showActionsColumn ? 'Masquer Actions' : 'Afficher Actions' }}
-          </button>
-          <button class="btn-primary" (click)="toggleSelectionModeMain()" [class.active]="isSelectionModeMain" title="Sélection multiple">
-            <i class="fas fa-check-square"></i>
-            {{ isSelectionModeMain ? 'Quitter la sélection' : 'Sélection multiple' }}
-            <span *ngIf="isSelectionModeMain && hasSelectedMainOps" class="badge" style="margin-left:6px;">{{ selectedMainOpIds.size }}</span>
-          </button>
+          <!-- Ligne 1 : Toggle + boutons d'action (toujours visibles, taille fixe) -->
+          <div class="traitement-toolbar">
+            <button type="button" class="btn-toggle-traitement" (click)="toggleTraitementPanel()" title="Afficher/Masquer le panneau de traitement automatique">
+              <i class="fas" [ngClass]="showTraitementPanel ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+              {{ showTraitementPanel ? 'Masquer le traitement' : 'Afficher le traitement' }}
+            </button>
+
+            <!-- Boutons d'action séparés -->
+            <div class="traitement-action-buttons">
+              <button class="btn-primary" (click)="downloadOpbTemplate()" title="Télécharger le modèle">
+                <i class="fas fa-file-excel"></i> Modèle
+              </button>
+              <button class="btn-success" (click)="exportOperations()" [disabled]="filteredOperations.length === 0" title="Exporter (Excel)">
+                <i class="fas fa-file-excel"></i> Exporter
+              </button>
+              <button class="btn-primary" (click)="toggleActionsColumn()" [class.active]="showActionsColumn" title="Afficher/Masquer les colonnes Actions">
+                <i class="fas" [class.fa-eye]="!showActionsColumn" [class.fa-eye-slash]="showActionsColumn"></i>
+                {{ showActionsColumn ? 'Masquer Actions' : 'Afficher Actions' }}
+              </button>
+              <button class="btn-primary" title="Charger un fichier d'opérations directement" (click)="opbFileInput.click()">
+                <i class="fas fa-upload"></i> Charger directement
+              </button>
+              <input type="file" #opbFileInput accept=".xlsx,.xls,.csv" (change)="onOpbFileSelected($event)" style="display:none;" />
+              <button class="btn-primary" [disabled]="!opbSelectedFile" (click)="uploadOpb()" title="Importer le fichier sélectionné">
+                <i class="fas fa-cloud-upload-alt"></i> Importer
+              </button>
+              <button class="btn-primary" (click)="toggleSelectionModeMain()" [class.active]="isSelectionModeMain" title="Sélection multiple">
+                <i class="fas fa-check-square"></i>
+                {{ isSelectionModeMain ? 'Quitter la sélection' : 'Sélection multiple' }}
+                <span *ngIf="isSelectionModeMain && hasSelectedMainOps" class="badge" style="margin-left:6px;">{{ selectedMainOpIds.size }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Ligne 2 : Panneau de traitement automatique (masqué par défaut, pleine largeur) -->
+          <div class="traitement-panel-wrapper" *ngIf="showTraitementPanel">
+            <app-file-upload
+              embedTraitementSection="true"
+              suppressEmbedSuccessPopup="true"
+              (embedTraitementResult)="onOpbTraitementResult($event)"
+            ></app-file-upload>
+          </div>
         </div>
       </div>
 
@@ -1055,20 +1068,17 @@
                        title="Sélectionner/Désélectionner la page">
               </th>
               <th>Pays</th>
-              <th>Code Pays</th>
-              <th>Mois</th>
               <th>Date Opération</th>
               <th>Agence</th>
               <th>Type Opération</th>
-              <th>Nom du Bénéficiaire</th>
-              <th>Compte</th>
               <th>Montant</th>
-              <th>Mode de Paiement</th>
               <th>Référence</th>
               <th>ID TICKET</th>
               <th>Banque</th>
               <th>Statut</th>
               <th>Traitement</th>
+              <th>Demandeur</th>
+              <th>Valideur</th>
               <th *ngIf="showActionsColumn">Actions</th>
               <th>Statut Réconciliation</th>
             </tr>
@@ -1079,8 +1089,6 @@
                 <input type="checkbox" [checked]="isMainOpSelected(operation)" (change)="toggleMainOpSelection(operation)">
               </td>
               <td>{{ getPaysDisplay(operation) }}</td>
-              <td>{{ operation.codePays }}</td>
-              <td>{{ operation.mois }}</td>
               <td>{{ operation.dateOperation | date:'dd/MM/yyyy' }}</td>
               <td>{{ operation.agence }}</td>
               <td>
@@ -1088,10 +1096,7 @@
                   {{ operation.typeOperation }}
                 </span>
               </td>
-              <td>{{ operation.nomBeneficiaire }}</td>
-              <td>{{ operation.compteADebiter }}</td>
               <td>{{ operation.montant | currency:'XAF':'symbol':'1.0-0' }}</td>
-              <td>{{ operation.modePaiement }}</td>
               <td>{{ operation.reference }}</td>
               <td class="glpi-cell">
                 <button 
@@ -1129,6 +1134,8 @@
                   </select>
                 </ng-template>
               </td>
+              <td>{{ operation.demandeur || '-' }}</td>
+              <td>{{ operation.valideur || '-' }}</td>
               <td class="actions" *ngIf="showActionsColumn">
                 <button class="btn-icon" (click)="viewOperation(operation)" title="Voir">
                   <i class="fas fa-eye"></i>
@@ -1205,14 +1212,6 @@
             <span>{{ selectedOperation.pays || 'Non renseigné' }}</span>
           </div>
           <div class="detail-item">
-            <label><i class="fas fa-flag"></i> Code Pays</label>
-            <span>{{ selectedOperation.codePays || 'Non renseigné' }}</span>
-          </div>
-          <div class="detail-item">
-            <label><i class="fas fa-calendar"></i> Mois</label>
-            <span>{{ selectedOperation.mois || 'Non renseigné' }}</span>
-          </div>
-          <div class="detail-item">
             <label><i class="fas fa-clock"></i> Date Opération</label>
             <span>{{ selectedOperation.dateOperation | date:'dd/MM/yyyy HH:mm' }}</span>
           </div>
@@ -1225,24 +1224,20 @@
             <span class="badge">{{ selectedOperation.typeOperation }}</span>
           </div>
           <div class="detail-item">
-            <label><i class="fas fa-user"></i> Nom Bénéficiaire</label>
-            <span>{{ selectedOperation.nomBeneficiaire || 'Non renseigné' }}</span>
-          </div>
-          <div class="detail-item">
-            <label><i class="fas fa-credit-card"></i> Compte</label>
-            <span>{{ selectedOperation.compteADebiter || 'Non renseigné' }}</span>
-          </div>
-          <div class="detail-item">
             <label><i class="fas fa-money-bill-wave"></i> Montant</label>
             <span class="montant">{{ selectedOperation.montant | currency:'XAF':'symbol':'1.0-0' }}</span>
           </div>
           <div class="detail-item">
-            <label><i class="fas fa-wallet"></i> Mode de Paiement</label>
-            <span>{{ selectedOperation.modePaiement || 'Non renseigné' }}</span>
-          </div>
-          <div class="detail-item">
             <label><i class="fas fa-hashtag"></i> Référence</label>
             <span>{{ selectedOperation.reference || 'Non renseignée' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-user"></i> Demandeur</label>
+            <span>{{ selectedOperation.demandeur || 'Non renseigné' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-user-check"></i> Valideur</label>
+            <span>{{ selectedOperation.valideur || 'Non renseigné' }}</span>
           </div>
           <div class="detail-item">
             <label><i class="fas fa-ticket-alt"></i> ID TICKET</label>
@@ -1348,8 +1343,8 @@
               <input type="text" [(ngModel)]="releveEditForm.banque" name="rv_banque">
             </div>
             <div class="form-group">
-              <label>Chèque</label>
-              <input type="text" [(ngModel)]="releveEditForm.numeroCheque" name="rv_numeroCheque">
+              <label>Banque Corrigée</label>
+              <input type="text" [(ngModel)]="releveEditForm.banqueCorrigee" name="rv_banqueCorrigee">
             </div>
           </div>
           <div class="form-row">
@@ -1380,10 +1375,6 @@
             <div class="form-group">
               <label>Devise</label>
               <input type="text" [(ngModel)]="releveEditForm.devise" name="rv_devise">
-            </div>
-            <div class="form-group">
-              <label>Numéro de série</label>
-              <input type="text" [(ngModel)]="releveEditForm.numeroSerie" name="rv_numero_serie">
             </div>
           </div>
           <div class="form-row">
@@ -1650,4 +1641,9 @@
   </div>
   </div><!-- .banque-container -->
   </div><!-- .main -->
+  <app-destination-popup
+    [show]="showDestinationPopup"
+    (choice)="onDestinationChoice($event)"
+    (close)="showDestinationPopup = false"
+  ></app-destination-popup>
 </div><!-- .banque-page -->

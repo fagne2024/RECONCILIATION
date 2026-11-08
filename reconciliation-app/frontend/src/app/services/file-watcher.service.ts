@@ -118,7 +118,7 @@ export class FileWatcherService {
 
   analyzeFile(fileName: string): Observable<any> {
     console.log('🔍 [FileWatcherService] analyzeFile() appelé pour:', fileName);
-    return this.http.get<any>(`${this.apiUrl}/file-watcher/analyze/${fileName}`)
+    return this.http.post<any>(`${this.apiUrl}/file-watcher/analyze-file`, { filePath: fileName })
       .pipe(
         tap(response => {
           console.log('📊 [FileWatcherService] analyzeFile() réponse:', response);

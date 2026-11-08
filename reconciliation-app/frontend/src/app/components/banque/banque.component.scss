@@ -338,14 +338,14 @@
 .banque-section {
   background: white;
   border-radius: 12px;
-  padding: 24px;
+  padding: 8px 16px 8px 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   width: 100%;
 
   h2 {
     color: #2e7d32;
     font-size: 1.5rem;
-    margin: 0 0 20px 0;
+    margin: 0 0 8px 0;
     font-weight: 600;
   }
 }
@@ -1806,6 +1806,17 @@
       font-weight: 600;
     }
 
+    .badge-grouped {
+      background: linear-gradient(135deg, #e8eaf6 0%, #c5cae9 100%);
+      color: #303f9f;
+      border: 1px solid #7986cb;
+      box-shadow: 0 1px 3px rgba(48, 63, 159, 0.2);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
       // Styles pour la cellule GLPI
       .glpi-cell {
         .btn-glpi-create {
@@ -2941,5 +2952,95 @@
     i {
       color: #ffc107;
     }
+  }
+}
+
+// ============================================================
+// Panneau de traitement automatique - styles spécifiques banque
+// ============================================================
+
+// Conteneur actions : wrap pour éviter la compression des boutons quand le panneau s'affiche
+.releve-header .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+// Bouton d'affichage/masquage du traitement
+.btn-toggle-traitement {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+  margin-bottom: 12px;
+
+  &:hover {
+    background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  i {
+    font-size: 12px;
+  }
+}
+
+// Conteneur du panneau de traitement (animé à l'affichage, pleine largeur)
+.traitement-panel-wrapper {
+  animation: slideDown 0.3s ease-out;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  width: 100%;
+}
+
+// Barre d'outils : toggle + boutons d'action sur la même ligne
+.traitement-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+// Conteneur des boutons d'action séparés du panneau de traitement
+.traitement-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
+
+  .btn-primary,
+  .btn-success {
+    margin-bottom: 0;
+    flex: none;
+    min-width: 150px;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

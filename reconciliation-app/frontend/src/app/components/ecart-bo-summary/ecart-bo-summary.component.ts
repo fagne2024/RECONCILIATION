@@ -23,6 +23,7 @@ import {
   RECONCILIATION_ENV_OPTIONS,
   normalizeReconciliationReportEnv
 } from '../../constants/reconciliation-env-options';
+import { SharedModule } from '../../shared/shared.module';
 
 export interface EcartBoSummaryItem {
   id?: number; // ID si l'item est sauvegardé
@@ -61,6 +62,8 @@ type SummaryGroupAccumulator = {
 
 @Component({
   selector: 'app-ecart-bo-summary',
+  standalone: true,
+  imports: [SharedModule],
   templateUrl: './ecart-bo-summary.component.html',
   styleUrls: ['./ecart-bo-summary.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -180,7 +183,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     nombre: 0,
     volume: 0,
     statut: 'en cours',
-    env: 'PARTENAIRE',
+    env: 'BO',
     envCode: '',
     token: ''
   };
@@ -354,6 +357,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   private applyPendingLinesFromEcartBo(pending: EcartBoSummaryPendingLine[]): void {
     this.savedDataMode = false;
     this.lastSavedFetchKey = '';
+    const defaultEnv = this.ecartBoSummaryService.getDefaultEnvForAddModal();
     this.summaryItems = pending.map(line => ({
       selectionKey: this.createSelectionKey('pending'),
       date: line.date || new Date().toISOString().split('T')[0],
@@ -363,7 +367,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       nombre: line.nombreTransactions ?? 1,
       montant: line.montant ?? 0,
       statut: 'en cours' as const,
-      env: 'BO' as const,
+      env: defaultEnv as 'BO' | 'PARTENAIRE',
       envCode: this.getEnvCodeForNewRows(),
       originalRecords: [],
       token: undefined
@@ -374,7 +378,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
     this.refreshUniqueEnvCodes();
-    this.markAndFilterDuplicateSummaryItems(false);
+    this.markAndFilterDuplicateSummaryItems(true);
     this.applyFilters();
     this.cdr.markForCheck();
   }
@@ -548,7 +552,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
     this.refreshUniqueEnvCodes();
-    this.markAndFilterDuplicateSummaryItems(false);
+    this.markAndFilterDuplicateSummaryItems(true);
     this.linkMatchingPairs(true);
   }
 
@@ -807,7 +811,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
     this.selectedRowKeys.clear();
     this.summaryItems = items;
-    this.markAndFilterDuplicateSummaryItems(false);
+    this.markAndFilterDuplicateSummaryItems(true);
 
     this.uniqueAgencies = [...new Set(this.summaryItems.map(item => item.agence).filter(Boolean))].sort();
     this.uniqueServices = [...new Set(this.summaryItems.map(item => item.service).filter(Boolean))].sort();
@@ -1222,6 +1226,16 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
     if (removeDuplicates && duplicateCount > 0) {
       this.summaryItems = nextItems;
+      // Purger les sélections devenues invalides (lignes doublons supprimées) pour ne pas
+      // conserver de clés de sélection référant à des lignes retirées de la liste.
+      if (this.selectedRowKeys.size > 0) {
+        const validKeys = new Set(this.summaryItems.map(i => i.selectionKey));
+        for (const key of Array.from(this.selectedRowKeys)) {
+          if (!validKeys.has(key)) {
+            this.selectedRowKeys.delete(key);
+          }
+        }
+      }
     } else if (!removeDuplicates) {
       this.summaryItems = nextItems;
     }

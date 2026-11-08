@@ -2,6 +2,7 @@ package com.reconciliation.controller;
 
 import com.reconciliation.dto.ReconciliationRequest;
 import com.reconciliation.dto.ReconciliationResponse;
+import com.reconciliation.dto.ColumnComparison;
 import com.reconciliation.service.CsvReconciliationService;
 import com.reconciliation.service.MagicReconciliationService;
 import com.reconciliation.service.KeyDiscoveryService;
@@ -294,6 +295,128 @@ public class ReconciliationController {
             n += response.getMismatches().size();
         }
         return n;
+    }
+
+    @PostMapping(value = "/reconcile-streaming", consumes = "multipart/form-data")
+    public ResponseEntity<ReconciliationResponse> reconcileStreaming(
+            @RequestParam("boFile") MultipartFile boFile,
+            @RequestParam("partnerFile") MultipartFile partnerFile,
+            @RequestParam(value = "boKeyColumn", required = false) String boKeyColumn,
+            @RequestParam(value = "partnerKeyColumn", required = false) String partnerKeyColumn,
+            @RequestParam(value = "modelId", required = false) String modelId,
+            @RequestParam(value = "reconciliationType", required = false) String reconciliationType,
+            @RequestParam(value = "comparisonColumns", required = false) String comparisonColumnsJson,
+            @RequestParam(value = "additionalKeys", required = false) String additionalKeysJson,
+            @RequestParam(value = "boColumnFilters", required = false) String boColumnFiltersJson,
+            HttpServletRequest httpRequest) throws Exception {
+        
+        long startTime = System.currentTimeMillis();
+        String userId = extractUserId(httpRequest);
+        String lockKey = "reconcile_streaming_" + userId + "_" + System.currentTimeMillis();
+        
+        try {
+            log.info("🚀 === REQUÊTE DE RÉCONCILIATION STREAMING REÇUE ===");
+            log.info("📁 Fichier BO: {} ({} bytes)", boFile.getOriginalFilename(), boFile.getSize());
+            log.info("📁 Fichier Partenaire: {} ({} bytes)", partnerFile.getOriginalFilename(), partnerFile.getSize());
+            log.info("👤 User ID: {}", userId);
+            
+            boolean lockAcquired = lockService.acquireLock(lockKey, ReconciliationLockService.LOCK_TYPE_USER, userId, null, 60);
+            
+            if (!lockAcquired) {
+                log.warn("⚠️ Impossible d'acquérir le verrou - Une autre réconciliation en cours");
+            }
+            
+            try {
+                String progressSessionId = UUID.randomUUID().toString();
+                progressService.createJob(progressSessionId, "Démarrage de la réconciliation streaming...");
+                
+                // Parser les fichiers CSV directement (streaming, sans JSON)
+                List<Map<String, String>> boData = parseCsvFile(boFile);
+                List<Map<String, String>> partnerData = parseCsvFile(partnerFile);
+                
+                log.info("📊 Données BO parsées: {} enregistrements", boData.size());
+                log.info("📊 Données Partenaire parsées: {} enregistrements", partnerData.size());
+                
+                // Détection automatique des colonnes clés si non fournies
+                if (boKeyColumn == null || boKeyColumn.isBlank()) {
+                    boKeyColumn = keyDiscoveryService.discoverBestKey(boData, partnerData, "bo");
+                    log.info("🔍 Clé BO détectée automatiquement: {}", boKeyColumn);
+                }
+                if (partnerKeyColumn == null || partnerKeyColumn.isBlank()) {
+                    partnerKeyColumn = keyDiscoveryService.discoverBestKey(boData, partnerData, "partner");
+                    log.info("🔍 Clé Partenaire détectée automatiquement: {}", partnerKeyColumn);
+                }
+                
+                // Construire la requête
+                ReconciliationRequest request = new ReconciliationRequest();
+                request.setBoFileContent(boData);
+                request.setPartnerFileContent(partnerData);
+                request.setBoKeyColumn(boKeyColumn);
+                request.setPartnerKeyColumn(partnerKeyColumn);
+                request.setModelId(modelId);
+                request.setReconciliationType(reconciliationType != null ? reconciliationType : "1-1");
+                request.setProgressSessionId(progressSessionId);
+                
+                // Parser les colonnes de comparaison si fournies
+                if (comparisonColumnsJson != null && !comparisonColumnsJson.isBlank()) {
+                    try {
+                        List<ColumnComparison> comparisonColumns = objectMapper.readValue(
+                            comparisonColumnsJson, 
+                            objectMapper.getTypeFactory().constructCollectionType(List.class, ColumnComparison.class)
+                        );
+                        request.setComparisonColumns(comparisonColumns);
+                    } catch (Exception e) {
+                        log.warn("⚠️ Erreur parsing comparisonColumns: {}", e.getMessage());
+                    }
+                }
+                
+                // Parser les clés supplémentaires si fournies
+                if (additionalKeysJson != null && !additionalKeysJson.isBlank()) {
+                    try {
+                        List<ReconciliationRequest.AdditionalKey> additionalKeys = objectMapper.readValue(
+                            additionalKeysJson,
+                            objectMapper.getTypeFactory().constructCollectionType(List.class, ReconciliationRequest.AdditionalKey.class)
+                        );
+                        request.setAdditionalKeys(additionalKeys);
+                    } catch (Exception e) {
+                        log.warn("⚠️ Erreur parsing additionalKeys: {}", e.getMessage());
+                    }
+                }
+                
+                // Parser les filtres BO si fournis
+                if (boColumnFiltersJson != null && !boColumnFiltersJson.isBlank()) {
+                    try {
+                        List<ReconciliationRequest.BOColumnFilter> filters = objectMapper.readValue(
+                            boColumnFiltersJson,
+                            objectMapper.getTypeFactory().constructCollectionType(List.class, ReconciliationRequest.BOColumnFilter.class)
+                        );
+                        request.setBoColumnFilters(filters);
+                    } catch (Exception e) {
+                        log.warn("⚠️ Erreur parsing boColumnFilters: {}", e.getMessage());
+                    }
+                }
+                
+                ReconciliationResponse response = reconciliationService.reconcile(request);
+                
+                long totalTime = System.currentTimeMillis() - startTime;
+                log.info("✅ Réconciliation streaming terminée en {} ms", totalTime);
+                
+                ReconciliationResponse httpResponse = prepareHttpResponse(response, progressSessionId);
+                return ResponseEntity.ok(httpResponse);
+                
+            } finally {
+                if (lockAcquired) {
+                    lockService.releaseLock(lockKey, ReconciliationLockService.LOCK_TYPE_USER);
+                }
+            }
+        } catch (Exception e) {
+            long totalTime = System.currentTimeMillis() - startTime;
+            log.error("❌ Erreur réconciliation streaming après {} ms: {}", totalTime, e.getMessage());
+            log.error("🔍 Stack trace:", e);
+            
+            lockService.releaseLock(lockKey, ReconciliationLockService.LOCK_TYPE_USER);
+            throw e;
+        }
     }
 
     @PostMapping("/reconcile")

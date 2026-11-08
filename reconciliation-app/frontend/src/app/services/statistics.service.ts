@@ -47,17 +47,19 @@ export class StatisticsService {
 
   // Récupérer les statistiques par date
   getStatisticsByDate(date: string): Observable<Statistics[]> {
-    return this.http.get<Statistics[]>(`${this.apiUrl}/by-date/${date}`);
+    const params = new HttpParams().set('date', date);
+    return this.http.get<Statistics[]>(`${this.apiUrl}/by-date`, { params });
   }
 
   // Récupérer les statistiques par agence et service
   getStatisticsByAgencyAndService(agency: string, service: string): Observable<Statistics[]> {
-    return this.http.get<Statistics[]>(`${this.apiUrl}/agency/${agency}/service/${service}`);
+    const params = new HttpParams().set('agency', agency).set('service', service);
+    return this.http.get<Statistics[]>(`${this.apiUrl}/by-filters`, { params });
   }
 
   // Récupérer toutes les statistiques
   getAllStatistics(): Observable<Statistics[]> {
-    return this.http.get<Statistics[]>(`${this.apiUrl}`);
+    return this.http.get<Statistics[]>(`${this.apiUrl}/by-filters`);
   }
 
   // Sauvegarder des statistiques

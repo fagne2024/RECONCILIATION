@@ -1074,6 +1074,18 @@
   margin-top: 12px;
   font-size: 0.85rem;
   color: var(--rd-text2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 18px;
+  flex: 1 1 100%;
+}
+
+.reco-chart-legend-detail > div {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
 }
 
 .reco-chart-legend-detail .reco-legend-dot {

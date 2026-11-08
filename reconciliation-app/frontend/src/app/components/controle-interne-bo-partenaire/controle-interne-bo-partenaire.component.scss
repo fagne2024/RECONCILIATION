@@ -481,6 +481,17 @@
   color: var(--rd-amber);
 }
 
+.ci-day-hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--rd-text2);
+}
+
+.ci-day-hint i {
+  color: var(--rd-amber);
+  margin-right: 4px;
+}
+
 .ci-validated-tag {
   color: var(--rd-green);
   font-size: 12px;

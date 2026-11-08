@@ -23,7 +23,7 @@
   <div class="page-header-report">
     <div class="ph-report-left">
       <div class="ph-eyebrow"><span></span>Contrôle Interne</div>
-      <h1 class="ph-title-report">Agrégation <em>mensuelle</em></h1>
+      <h1 class="ph-title-report">Agrégation <em>{{ isDateRangeActive ? 'par intervalle' : 'mensuelle' }}</em></h1>
       <p class="ci-subtitle">{{ subtitle }}</p>
     </div>
   </div>
@@ -41,16 +41,43 @@
         </label>
         <label>
           <span>Année</span>
-          <select [(ngModel)]="selectedYear" (ngModelChange)="appliquerFiltres()">
+          <select [(ngModel)]="selectedYear" (ngModelChange)="onPeriodFilterChange()">
             <option *ngFor="let y of yearOptions" [value]="y">{{ y }}</option>
           </select>
         </label>
         <label>
           <span>Mois</span>
-          <select [(ngModel)]="selectedMonth" (ngModelChange)="appliquerFiltres()">
+          <select [(ngModel)]="selectedMonth" (ngModelChange)="onPeriodFilterChange()">
             <option *ngFor="let m of monthOptions" [value]="m.value">{{ m.label }}</option>
           </select>
         </label>
+        <label class="ci-date-range">
+          <span>Du</span>
+          <input
+            type="date"
+            [(ngModel)]="rapportDateDebut"
+            (change)="onDateRangeChange()"
+            [max]="rapportDateFin || null"
+          />
+        </label>
+        <label class="ci-date-range">
+          <span>Au</span>
+          <input
+            type="date"
+            [(ngModel)]="rapportDateFin"
+            (change)="onDateRangeChange()"
+            [min]="rapportDateDebut || null"
+          />
+        </label>
+        <button
+          type="button"
+          class="ci-date-range-clear"
+          *ngIf="isDateRangeActive"
+          (click)="clearDateRange()"
+          title="Revenir au filtre mois / année"
+        >
+          <i class="fas fa-times"></i> Effacer les dates
+        </button>
         <label>
           <span>ENV</span>
           <select [(ngModel)]="selectedEnv" (ngModelChange)="appliquerFiltres()">
@@ -65,6 +92,12 @@
           </select>
         </label>
       </div>
+      <p class="ci-day-hint" *ngIf="isDateRangeActive">
+        <i class="fas fa-calendar-alt"></i>
+        Intervalle actif : les indicateurs sont calculés
+        {{ subtitlePeriodHint }}.
+        La validation du contrôle interne reste mensuelle.
+      </p>
       <p class="ci-perm-hint" *ngIf="!canShowValidationActions && !canShowCommentSection">
         Consultation seule — les actions disponibles dépendent des permissions cochées dans votre profil.
       </p>
@@ -108,7 +141,7 @@
       <div class="ci-section">
         <div class="ci-section-head">
           <div>
-            <h2>Vue agrégée par mois et service</h2>
+            <h2>Vue agrégée par {{ isDateRangeActive ? 'période' : 'mois' }} et service</h2>
             <p class="ci-hint">
               Données issues du rapport BO vs Partenaire. Statut contrôle interne par défaut :
               <strong>En cours de validation</strong>.
@@ -119,7 +152,7 @@
             {{ showEcartColumns ? 'Masquer écarts' : 'Écarts & taux' }}
           </button>
         </div>
-        <div class="ci-env-validation-bar" *ngIf="envValidationTotalCount">
+        <div class="ci-env-validation-bar" *ngIf="envValidationTotalCount && !isDateRangeActive">
           <div class="ci-env-validation-status">
             <span class="ci-env-validation-title">
               <i class="fas fa-layer-group"></i>
@@ -352,13 +385,13 @@
         <ng-template #noMonthly>
           <p class="ci-empty" *ngIf="emptyScopeHint; else noMonthlyFilters">{{ emptyScopeHint }}</p>
           <ng-template #noMonthlyFilters>
-            <p class="ci-empty">Aucune donnée pour ce périmètre (pays / mois / ENV / service).</p>
+            <p class="ci-empty">Aucune donnée pour ce périmètre (pays / période / ENV / service).</p>
           </ng-template>
         </ng-template>
       </div>
 
       <div class="ci-section ci-tickets-section" *ngIf="ticketsByMonth.length">
-        <h2>ID tickets par mois</h2>
+        <h2>ID tickets par {{ isDateRangeActive ? 'période' : 'mois' }}</h2>
         <p class="ci-hint">Cliquez sur le nombre de tickets pour afficher la liste et ouvrir GLPI.</p>
         <div class="ci-month-tickets-grid">
           <div class="ci-month-tickets-card" *ngFor="let block of ticketsByMonth">

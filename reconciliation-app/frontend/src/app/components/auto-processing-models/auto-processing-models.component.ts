@@ -54,6 +54,25 @@ export class AutoProcessingModelsComponent implements OnInit {
   showColumnRulesSection = false;
   editingRule: ColumnProcessingRule | null = null;
   ruleForm: FormGroup;
+
+  // OPTIMISATION: regroupement des modèles par catégorie précalculé une seule fois
+  // par filtrage (au lieu de le recalculer à chaque cycle de détection de changement).
+  modelsByCategory: { [category: string]: AutoProcessingModel[] } = {
+    'Partenaire CASHIN': [],
+    'Partenaire PAIEMENT': [],
+    'Back Office': []
+  };
+  filteredCategories: string[] = [];
+
+  // OPTIMISATION: cache des colonnes pré-traitées (getPreProcessingColumns est appelé
+  // ~15 fois par cycle de CD). Invalidé automatiquement car les tableaux sources sont
+  // réassignés (jamais mutés en place) : la comparaison de références suffit.
+  private preProcessingColumnsCache?: {
+    templateRef: string[];
+    forTemplateRef: string[];
+    availableRef: string[];
+    columns: string[];
+  };
   
   // Propriétés pour la configuration des modèles autonomes
   showReconciliationLogicSection = false;
@@ -343,6 +362,7 @@ export class AutoProcessingModelsComponent implements OnInit {
           console.warn('La réponse getAllModels n\'est pas un tableau:', models);
           this.models = [];
           this.filteredModels = [];
+          this.recomputeModelGroups();
           this.errorMessage = 'Format de réponse invalide pour les modèles';
         }
     }).catch(error => {
@@ -350,6 +370,7 @@ export class AutoProcessingModelsComponent implements OnInit {
         this.errorMessage = 'Erreur lors du chargement des modèles';
         this.models = [];
         this.filteredModels = [];
+        this.recomputeModelGroups();
     });
   }
 
@@ -457,6 +478,9 @@ export class AutoProcessingModelsComponent implements OnInit {
       return true;
     });
     
+    // OPTIMISATION: précalculer le regroupement par catégorie une seule fois
+    this.recomputeModelGroups();
+    
     console.log('✅ Filtrage appliqué:', {
       totalModels: this.models.length,
       filteredModels: this.filteredModels.length,
@@ -493,9 +517,31 @@ export class AutoProcessingModelsComponent implements OnInit {
   }
 
   /**
-   * Obtient les modèles filtrés par catégorie
+   * Obtient les modèles filtrés par catégorie (précalculé dans recomputeModelGroups)
    */
   getFilteredModelsByCategory(): { [category: string]: AutoProcessingModel[] } {
+    return this.modelsByCategory;
+  }
+
+  /**
+   * Obtient les catégories actives parmi les modèles filtrés (précalculé)
+   */
+  getActiveFilteredCategories(): string[] {
+    return this.filteredCategories;
+  }
+
+  /**
+   * Obtient le nombre de modèles filtrés par catégorie (précalculé)
+   */
+  getFilteredCategoryCount(category: string): number {
+    return this.modelsByCategory[category]?.length || 0;
+  }
+
+  /**
+   * OPTIMISATION: précalcule le regroupement des modèles par catégorie.
+   * À appeler après chaque modification de filteredModels.
+   */
+  private recomputeModelGroups(): void {
     const groupedModels: { [category: string]: AutoProcessingModel[] } = {
       'Partenaire CASHIN': [],
       'Partenaire PAIEMENT': [],
@@ -504,55 +550,71 @@ export class AutoProcessingModelsComponent implements OnInit {
 
     this.filteredModels.forEach(model => {
       const category = this.getModelCategory(model);
-      groupedModels[category].push(model);
+      if (groupedModels[category]) {
+        groupedModels[category].push(model);
+      }
     });
 
-    return groupedModels;
+    this.modelsByCategory = groupedModels;
+    this.filteredCategories = Object.keys(groupedModels).filter(category => groupedModels[category].length > 0);
   }
 
   /**
-   * Obtient les catégories actives parmi les modèles filtrés
+   * trackBy pour les listes de règles (évite de re-rendre toutes les règles à chaque appui)
    */
-  getActiveFilteredCategories(): string[] {
-    const groupedModels = this.getFilteredModelsByCategory();
-    return Object.keys(groupedModels).filter(category => groupedModels[category].length > 0);
+  trackByRule(index: number, rule: ColumnProcessingRule): any {
+    return rule?.id ?? `${rule?.sourceColumn}_${rule?.targetColumn}_${rule?.ruleOrder}`;
   }
 
   /**
-   * Obtient le nombre de modèles filtrés par catégorie
+   * trackBy pour les listes de chaînes (colonnes, catégories)
    */
-  getFilteredCategoryCount(category: string): number {
-    const groupedModels = this.getFilteredModelsByCategory();
-    return groupedModels[category]?.length || 0;
+  trackByString(index: number, value: string): string {
+    return value;
+  }
+
+  /**
+   * trackBy pour la liste des modèles
+   */
+  trackByModel(index: number, model: AutoProcessingModel): any {
+    return model?.modelId ?? model?.id;
   }
 
   // Charger les règles de traitement des colonnes pour un modèle
-  loadColumnProcessingRules(modelId: string): void {
+  loadColumnProcessingRules(modelId: string, embeddedRules?: ColumnProcessingRule[]): void {
+    // OPTIMISATION: si les règles sont déjà embarquées dans la liste /models (avec
+    // findAllWithRules), on évite un aller-retour /models/{id}/column-rules redondant.
+    if (Array.isArray(embeddedRules)) {
+      this.applyLoadedRules(embeddedRules, false);
+      return;
+    }
     this.autoProcessingService.getColumnProcessingRules(modelId, AutoProcessingService.MODELES_MODULE)
-      .then(rules => {
-        // Trier les règles par ruleOrder pour garantir l'ordre d'application
-        this.columnProcessingRules = rules.sort((a, b) => {
-          const orderA = a.ruleOrder !== undefined ? a.ruleOrder : 0;
-          const orderB = b.ruleOrder !== undefined ? b.ruleOrder : 0;
-          return orderA - orderB;
-        });
-        
-        // Vérifier que stringToRemove est bien chargé depuis la base
-        console.log('🔍 [DEBUG] Règles chargées depuis la base de données (triées par ruleOrder):');
-        this.columnProcessingRules.forEach((rule, index) => {
-          console.log(`  Règle ${index} (ruleOrder: ${rule.ruleOrder}):`, {
-            sourceColumn: rule.sourceColumn,
-            stringToRemove: rule.stringToRemove || '(aucun)',
-            removeSpecialChars: rule.removeSpecialChars,
-            removeAccents: rule.removeAccents,
-            id: rule.id
-          });
-        });
-      })
+      .then(rules => this.applyLoadedRules(rules, true))
       .catch(error => {
         console.error('Erreur lors du chargement des règles:', error);
         this.columnProcessingRules = [];
       });
+  }
+
+  private applyLoadedRules(rules: ColumnProcessingRule[], fromDb: boolean): void {
+    // Trier les règles par ruleOrder pour garantir l'ordre d'application
+    this.columnProcessingRules = rules.sort((a, b) => {
+      const orderA = a.ruleOrder !== undefined ? a.ruleOrder : 0;
+      const orderB = b.ruleOrder !== undefined ? b.ruleOrder : 0;
+      return orderA - orderB;
+    });
+    
+    const source = fromDb ? 'base de données' : 'liste des modèles (embarquées)';
+    console.log(`🔍 [DEBUG] Règles chargées depuis la ${source} (triées par ruleOrder):`);
+    this.columnProcessingRules.forEach((rule, index) => {
+      console.log(`  Règle ${index} (ruleOrder: ${rule.ruleOrder}):`, {
+        sourceColumn: rule.sourceColumn,
+        stringToRemove: rule.stringToRemove || '(aucun)',
+        removeSpecialChars: rule.removeSpecialChars,
+        removeAccents: rule.removeAccents,
+        id: rule.id
+      });
+    });
   }
 
   private preloadBOModelColumns(): void {
@@ -1381,7 +1443,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     if (isDuplicate) {
       this.loadColumnProcessingRulesForDuplicate(model, sourceModel.columnProcessingRules);
     } else {
-      this.loadColumnProcessingRules(model.modelId || model.id!);
+      this.loadColumnProcessingRules(model.modelId || model.id!, model.columnProcessingRules);
     }
 
     // Charger les configurations autonomes
@@ -3529,12 +3591,28 @@ export class AutoProcessingModelsComponent implements OnInit {
   }
 
   getPreProcessingColumns(): string[] {
+    // OPTIMISATION: le tableau est réassigné (jamais muté en place) à chaque changement,
+    // une comparaison de références suffit donc pour servir un résultat en cache.
+    const template = this.availableTemplateColumns;
+    const forTemplate = this.availableColumnsForTemplate;
+    const available = this.availableColumns;
+    const cache = this.preProcessingColumnsCache;
+    if (cache && cache.templateRef === template && cache.forTemplateRef === forTemplate && cache.availableRef === available) {
+      return cache.columns;
+    }
     const columns = [
-      ...this.availableTemplateColumns,
-      ...this.availableColumnsForTemplate,
-      ...this.availableColumns
+      ...template,
+      ...forTemplate,
+      ...available
     ];
-    return [...new Set(columns.filter(column => !!column))];
+    const result = [...new Set(columns.filter(column => !!column))];
+    this.preProcessingColumnsCache = {
+      templateRef: template,
+      forTemplateRef: forTemplate,
+      availableRef: available,
+      columns: result
+    };
+    return result;
   }
 
   addModelRowFilter(): void {

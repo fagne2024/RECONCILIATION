@@ -47,6 +47,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Ne pas valider de token sur les endpoints d'authentification :
+        // un ancien token (expiré/invalide) présent dans le navigateur ne doit
+        // pas bloquer la connexion (401 sans corps -> message générique côté front).
+        final String path = request.getRequestURI();
+        if (path != null && isPublicAuthEndpoint(path)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         final String authHeader = request.getHeader("Authorization");
 
         // Si pas d'Authorization header ou ne commence pas par "Bearer ", continuer sans authentification
@@ -100,6 +109,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Endpoints accessibles sans token : la presence d'un ancien token
+     * (expire/invalide) dans le navigateur ne doit pas les faire echouer.
+     */
+    private boolean isPublicAuthEndpoint(String path) {
+        return path.equals("/api/auth/login")
+                || path.equals("/api/auth/verify-2fa")
+                || path.equals("/api/auth/logout")
+                || path.equals("/health");
     }
 }
 

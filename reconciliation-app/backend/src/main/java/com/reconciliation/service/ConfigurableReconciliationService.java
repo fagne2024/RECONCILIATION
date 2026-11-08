@@ -21,6 +21,11 @@ public class ConfigurableReconciliationService {
     private AutoProcessingModel cachedPartnerModel = null;
     private ReconciliationRequest cachedRequest = null;
 
+    // Cache local de la détection TRXBO/OPPART : éviter de rescanner tout le contenu
+    // plusieurs fois dans la même requête (détection appelée jusqu'à 3 fois par requête)
+    private boolean cachedTRXBOOPPARTResult = false;
+    private ReconciliationRequest cachedTRXBOOPPARTRequest = null;
+
     /**
      * Détermine la logique de réconciliation à utiliser basée sur les modèles
      */
@@ -240,8 +245,21 @@ public class ConfigurableReconciliationService {
 
     /**
      * Détection automatique du contenu TRXBO/OPPART
+     * Mémoïsée par requête : le même objet de requête est traité plusieurs fois
+     * (determineReconciliationLogic, getDefaultCorrespondenceRules), inutile de resscanner
+     * tout le contenu à chaque appel.
      */
     public boolean detectTRXBOOPPARTContent(ReconciliationRequest request) {
+        if (cachedTRXBOOPPARTRequest == request) {
+            return cachedTRXBOOPPARTResult;
+        }
+        boolean result = detectTRXBOOPPARTContentInternal(request);
+        cachedTRXBOOPPARTRequest = request;
+        cachedTRXBOOPPARTResult = result;
+        return result;
+    }
+
+    private boolean detectTRXBOOPPARTContentInternal(ReconciliationRequest request) {
         log.info("🔍 Début de la détection TRXBO/OPPART");
         
         // EXCLUSION EXPLICITE DE USSDPART

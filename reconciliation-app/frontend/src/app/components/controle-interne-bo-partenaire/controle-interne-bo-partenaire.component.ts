@@ -136,11 +136,11 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
   /** Vide = tous les services. */
   selectedService = '';
 
-  /** Période héritée du rapport BO vs Partenaire (query params). */
+  /** Intervalle de dates (query params). Prioritaire sur le mois quand renseigné. */
 
-  private rapportDateDebut = '';
+  rapportDateDebut = '';
 
-  private rapportDateFin = '';
+  rapportDateFin = '';
 
 
 
@@ -184,6 +184,14 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
   ];
 
 
+
+  /** Vrai lorsqu'un intervalle de dates est actif (filtre prioritaire sur le mois). */
+
+  get isDateRangeActive(): boolean {
+
+    return !!(this.rapportDateDebut || this.rapportDateFin);
+
+  }
 
   monthlyRows: ControleInterneDisplayRow[] = [];
 
@@ -394,7 +402,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
         this.rapportDateFin = qp['dateFin'] || '';
 
-        if (this.rapportDateDebut && this.rapportDateFin) {
+        if (this.rapportDateDebut || this.rapportDateFin) {
 
           this.selectedMonth = '';
 
@@ -630,7 +638,11 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     const monthLabel = this.selectedMonthLabel;
 
-    const period = monthLabel ? `${monthLabel} ${this.selectedYear}` : String(this.selectedYear);
+    const period = this.isDateRangeActive
+
+      ? this.formatDateRangeLabel()
+
+      : monthLabel ? `${monthLabel} ${this.selectedYear}` : String(this.selectedYear);
 
     const cacheHint = this.dataFromRapportCache ? ' · données rapport' : '';
 
@@ -652,6 +664,13 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   }
 
+  /** Libellé « du jj/mm/aaaa au jj/mm/aaaa » pour l'en-tête. */
+  private formatDateRangeLabel(): string {
+    const debut = this.rapportDateDebut ? this.formatFrShort(this.rapportDateDebut) : '…';
+    const fin = this.rapportDateFin ? this.formatFrShort(this.rapportDateFin) : '…';
+    return `du ${debut} au ${fin}`;
+  }
+
 
 
   retourRapportBo(): void {
@@ -664,17 +683,33 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   appliquerFiltres(): void {
 
-    this.rapportDateDebut = '';
-
-    this.rapportDateFin = '';
-
     this.syncQueryParams();
 
   }
 
+  /** Changement d'année / de mois : repasse en mode mensuel et recharge. */
+  onPeriodFilterChange(): void {
+    this.rapportDateDebut = '';
+    this.rapportDateFin = '';
+    this.appliquerFiltres();
+  }
+
+  /** Changement d'intervalle de dates : prioritaire sur le mois sélectionné. */
+  onDateRangeChange(): void {
+    if (this.rapportDateDebut && this.rapportDateFin && this.rapportDateDebut > this.rapportDateFin) {
+      this.rapportDateFin = this.rapportDateDebut;
+    }
+    if (this.rapportDateDebut || this.rapportDateFin) {
+      this.selectedMonth = '';
+    } else {
+      this.applyDefaultMonthForYear();
+    }
+    this.syncQueryParams();
+  }
+
   onServiceFilterChange(): void {
 
-    this.syncQueryParams(false);
+    this.syncQueryParams();
 
     this.rebuildDisplay({ resetPage: true });
 
@@ -716,7 +751,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
 
 
-  private syncQueryParams(resetRapportDates = true): void {
+  private syncQueryParams(): void {
 
     this.router.navigate([], {
 
@@ -734,9 +769,9 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
         service: this.selectedService || null,
 
-        dateDebut: resetRapportDates ? null : this.rapportDateDebut || null,
+        dateDebut: this.rapportDateDebut || null,
 
-        dateFin: resetRapportDates ? null : this.rapportDateFin || null
+        dateFin: this.rapportDateFin || null
 
       },
 
@@ -1168,6 +1203,8 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
         Périmètre: this.subtitle,
         Pays: this.selectedCountry,
         ENV: this.selectedEnv,
+        Du: this.rapportDateDebut || 'Tous',
+        Au: this.rapportDateFin || 'Tous',
         Service: this.selectedService || 'Tous',
         Commentaire: this.commentaire || ''
       }];
@@ -1188,7 +1225,10 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
     const pays = (this.selectedCountry || 'pays').replace(/\s+/g, '-');
     const env = (this.selectedEnv || 'ENV').replace(/\s+/g, '-');
     const month = this.selectedMonth || 'tous';
-    return `Controle-interne-${pays}-${env}-${this.selectedYear}-${month}`;
+    const range = this.isDateRangeActive
+      ? `-${this.rapportDateDebut || 'debut'}_${this.rapportDateFin || 'fin'}`
+      : '';
+    return `Controle-interne-${pays}-${env}-${this.selectedYear}-${month}${range}`;
   }
 
   libelleTauxTotal(taux: number | null): string {
@@ -1610,7 +1650,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
           this.validatingKey = null;
 
-          this.popupService.showSuccess(`Ligne validée : ${row.service} · ${row.monthLabel}`);
+          this.popupService.showSuccess(`Ligne validée : ${row.service} · ${this.aggregationService.formatMonthLabel(row.monthYyyyMm)}`);
 
           this.cdr.markForCheck();
 
@@ -1666,7 +1706,7 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
           this.validatingKey = null;
 
-          this.popupService.showSuccess(`Validation annulée : ${row.service} · ${row.monthLabel}`);
+          this.popupService.showSuccess(`Validation annulée : ${row.service} · ${this.aggregationService.formatMonthLabel(row.monthYyyyMm)}`);
 
           this.cdr.markForCheck();
 
@@ -2388,17 +2428,21 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
 
 
-    if (this.rapportDateDebut && this.rapportDateFin) {
+    if (this.rapportDateDebut || this.rapportDateFin) {
 
-      const startMonth = this.rapportDateDebut.substring(0, 7);
+      const startDate = this.rapportDateDebut || `${year}-01-01`;
 
-      const endMonth = this.rapportDateFin.substring(0, 7);
+      const endDate = this.rapportDateFin || `${year}-12-31`;
+
+      const startMonth = startDate.substring(0, 7);
+
+      const endMonth = endDate.substring(0, 7);
 
       return {
 
-        startDate: this.rapportDateDebut,
+        startDate,
 
-        endDate: this.rapportDateFin,
+        endDate,
 
         startMonth,
 

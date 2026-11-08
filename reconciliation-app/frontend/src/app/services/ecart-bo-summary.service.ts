@@ -68,7 +68,7 @@ export class EcartBoSummaryService {
   /** Lignes en attente depuis écarts BO (multi-agence) : affichées sur ecart-bo-summary, enregistrées uniquement au clic sur Sauvegarder. */
   private pendingLinesFromEcartBo: EcartBoSummaryPendingLine[] | null = null;
   /** ENV par défaut dans le formulaire "Ajouter" : BO si on vient des écarts BO, PARTENAIRE si on vient des correspondances. */
-  private defaultEnvForAddModal: 'BO' | 'PARTENAIRE' = 'PARTENAIRE';
+  private defaultEnvForAddModal: 'BO' | 'PARTENAIRE' = 'BO';
 
   constructor(
     private http: HttpClient,
@@ -108,11 +108,13 @@ export class EcartBoSummaryService {
     }
   }
 
-  /** Définit les lignes en attente depuis écarts BO (aucun enregistrement : l'utilisateur sauvegarde sur ecart-bo-summary). */
+  /** Définit les lignes en attente depuis écarts BO ou correspondances (aucun enregistrement : l'utilisateur sauvegarde sur ecart-bo-summary). */
   setPendingLinesFromEcartBo(lines: EcartBoSummaryPendingLine[], source?: EcartBoSummarySource): void {
     this.pendingLinesFromEcartBo = lines;
     if (source === 'ecart-bo') {
       this.defaultEnvForAddModal = 'BO';
+    } else if (source === 'matches') {
+      this.defaultEnvForAddModal = 'PARTENAIRE';
     }
   }
 

@@ -8,8 +8,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -173,37 +178,66 @@ public class ColumnProcessingRuleService {
         AutoProcessingModel model = autoProcessingModelRepository.findByModelId(modelId)
             .orElseThrow(() -> new IllegalArgumentException("Modèle non trouvé avec l'ID: " + modelId));
 
-        invalidateCache(modelId);
-        model.getColumnProcessingRules().clear();
-        autoProcessingModelRepository.saveAndFlush(model);
+        // OPTIMISATION: upsert différentiel au lieu de "clear + réinsertion complète".
+        // Les règles existantes conservent leur id (UPDATE), seules les nouvelles sont créées
+        // (INSERT) et seules les absentes du payload sont supprimées (orphanRemoval).
+        List<ColumnProcessingRule> currentRules = model.getColumnProcessingRules();
+
+        // Indexer les règles persistées par id (force l'initialisation de la collection lazy)
+        Map<Long, ColumnProcessingRule> existingById = new HashMap<>();
+        for (ColumnProcessingRule rule : currentRules) {
+            existingById.put(rule.getId(), rule);
+        }
 
         if (rules == null || rules.isEmpty()) {
+            currentRules.clear();
+            autoProcessingModelRepository.saveAndFlush(model);
+            invalidateCache(modelId);
             return List.of();
         }
 
+        List<ColumnProcessingRule> finalRules = new ArrayList<>();
+        Set<Long> incomingIds = new HashSet<>();
+
         for (int i = 0; i < rules.size(); i++) {
             ColumnProcessingRule incoming = rules.get(i);
-            ColumnProcessingRule rule = new ColumnProcessingRule();
+            Long incomingId = incoming.getId();
+            if (incomingId != null) {
+                incomingIds.add(incomingId);
+            }
 
-            rule.setSourceColumn(incoming.getSourceColumn() != null ? incoming.getSourceColumn() : "");
-            rule.setTargetColumn(incoming.getTargetColumn() != null ? incoming.getTargetColumn() : "");
-            rule.setFormatType(incoming.getFormatType() != null ? incoming.getFormatType() : "string");
-            rule.setToUpperCase(incoming.isToUpperCase());
-            rule.setToLowerCase(incoming.isToLowerCase());
-            rule.setTrimSpaces(incoming.isTrimSpaces());
-            rule.setRemoveSpecialChars(incoming.isRemoveSpecialChars());
-            rule.setRemoveAccents(incoming.isRemoveAccents());
-            rule.setPadZeros(incoming.isPadZeros());
-            rule.setRegexReplace(incoming.getRegexReplace());
-            rule.setStringToRemove(incoming.getStringToRemove());
-            rule.setSpecialCharReplacementMap(incoming.getSpecialCharReplacementMap());
-            rule.setRuleOrder(incoming.getRuleOrder() != null ? incoming.getRuleOrder() : i);
-            rule.setAutoProcessingModel(model);
-            model.getColumnProcessingRules().add(rule);
+            // Réutiliser l'entité existante (UPDATE) ou en créer une nouvelle (INSERT)
+            ColumnProcessingRule rule = existingById.get(incomingId);
+            if (rule == null) {
+                rule = new ColumnProcessingRule();
+                rule.setAutoProcessingModel(model);
+            }
+            applyRuleFields(rule, incoming, i);
+            finalRules.add(rule);
         }
+
+        // Synchroniser le graphe : les règles absentes du payload sont supprimées de la base
+        currentRules.clear();
+        currentRules.addAll(finalRules);
 
         autoProcessingModelRepository.saveAndFlush(model);
         invalidateCache(modelId);
-        return List.copyOf(model.getColumnProcessingRules());
+        return List.copyOf(currentRules);
+    }
+
+    private void applyRuleFields(ColumnProcessingRule target, ColumnProcessingRule incoming, int orderIndex) {
+        target.setSourceColumn(incoming.getSourceColumn() != null ? incoming.getSourceColumn() : "");
+        target.setTargetColumn(incoming.getTargetColumn() != null ? incoming.getTargetColumn() : "");
+        target.setFormatType(incoming.getFormatType() != null ? incoming.getFormatType() : "string");
+        target.setToUpperCase(incoming.isToUpperCase());
+        target.setToLowerCase(incoming.isToLowerCase());
+        target.setTrimSpaces(incoming.isTrimSpaces());
+        target.setRemoveSpecialChars(incoming.isRemoveSpecialChars());
+        target.setRemoveAccents(incoming.isRemoveAccents());
+        target.setPadZeros(incoming.isPadZeros());
+        target.setRegexReplace(incoming.getRegexReplace());
+        target.setStringToRemove(incoming.getStringToRemove());
+        target.setSpecialCharReplacementMap(incoming.getSpecialCharReplacementMap());
+        target.setRuleOrder(incoming.getRuleOrder() != null ? incoming.getRuleOrder() : orderIndex);
     }
 }

@@ -1695,6 +1695,20 @@ public class CsvReconciliationService implements DisposableBean {
         
         // Fallback: règles hardcodées si aucun modelId ou en cas d'erreur
         logger.debug("Utilisation des règles hardcodées (fallback)");
+        
+        // OPTIMISATION: si aucune des colonnes transformées par les règles hardcodées
+        // n'est présente, retourner la liste d'origine sans copier chaque ligne.
+        // Les appels suivants ne mutent jamais les maps de cette liste (lecture seule),
+        // donc éviter les nouvelles HashMap par ligne réduit fortement l'empreinte mémoire
+        // et le CPU sur de gros fichiers.
+        if (data.isEmpty()) {
+            return data;
+        }
+        Map<String, String> firstRow = data.get(0);
+        if (!firstRow.containsKey("IDTransaction") && !firstRow.containsKey("Numéro Trans GU")) {
+            return data;
+        }
+        
         List<Map<String, String>> processedData = new ArrayList<>();
         
         for (Map<String, String> row : data) {

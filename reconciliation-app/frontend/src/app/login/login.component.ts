@@ -28,6 +28,7 @@ export class LoginComponent implements OnInit {
   qrCodeBase64: string | null = null; // QR code en base64
   secret: string | null = null; // Clé secrète
   otpAuthUrl: string | null = null; // URL OTP Auth
+  appVersion = '1.0.0'; // Version de l'application affichée sur l'écran de login
 
   constructor(
     private fb: FormBuilder,

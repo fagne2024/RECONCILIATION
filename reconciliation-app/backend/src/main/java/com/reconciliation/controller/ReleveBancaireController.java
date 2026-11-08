@@ -201,6 +201,7 @@ public class ReleveBancaireController {
         entity.setNumeroCompte(payload.getNumeroCompte());
         entity.setNomCompte(payload.getNomCompte());
         entity.setBanque(payload.getBanque());
+        entity.setBanqueCorrigee(payload.getBanqueCorrigee());
         entity.setDateComptable(payload.getDateComptable());
         entity.setDateValeur(payload.getDateValeur());
         entity.setLibelle(payload.getLibelle());
@@ -249,8 +250,8 @@ public class ReleveBancaireController {
             org.apache.poi.ss.usermodel.Workbook wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
             org.apache.poi.ss.usermodel.Sheet sheet = wb.createSheet("Releve");
             String[] headers = new String[] {
-                "Numero de compte", "Nom du compte", "Date comptable", "Date de valeur",
-                "Libelle", "Debit", "Credit", "Montant", "Numero cheque", "Devise"
+                "Numero de compte", "Nom du compte", "Banque", "Banque Corrigée", "Date comptable", "Date de valeur",
+                "Libelle", "Debit", "Credit", "Montant", "Devise"
             };
             org.apache.poi.ss.usermodel.Row row0 = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {

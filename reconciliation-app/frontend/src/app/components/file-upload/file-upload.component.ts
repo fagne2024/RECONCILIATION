@@ -1,9 +1,12 @@
 import { Component, EventEmitter, Input, Output, ChangeDetectorRef, NgZone, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, AutoProcessingModel, ENV_COLUMN_NAME, ENV_COLUMN_OPTIONS, EnvColumnOption, ProcessingResult, ColumnProcessingRule } from '../../services/auto-processing.service';
 import { PartnerConditionalKeysService } from '../../services/partner-conditional-keys.service';
 import { ModelPreProcessingService } from '../../services/model-preprocessing.service';
 import { ExportOptimizationService } from '../../services/export-optimization.service';
+import { TraitementBackgroundService } from '../../services/traitement-background.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import { fixGarbledCharacters, fixCellEncoding, fixCellEncodingIfNeeded } from '../../utils/encoding-fixer';
 import {
@@ -17,7 +20,7 @@ import {
   getCanonicalFrenchLabel,
   resolveCanonicalColumnId
 } from '../../utils/bilingual-column.util';
-import { resolveColumnKeyInRow } from '../../utils/row-column.util';
+import { resolveColumnKeyInRow, deduplicateHeaderNames } from '../../utils/row-column.util';
 import { stripAllWhitespace } from '../../utils/concat.util';
 import { hasCommaSeparatedSearchFilter, matchesCommaSeparatedFilter } from '../../utils/search-filter.util';
 import {
@@ -44,6 +47,8 @@ import { formatGridCellAsString, isTransactionIdPreserveColumn, isMsisdnPreserve
 
 @Component({
     selector: 'app-file-upload',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
     templateUrl: './file-upload.component.html',
     styleUrls: ['./file-upload.component.scss']
 })
@@ -61,8 +66,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     /** Section embarquée sur /traitement : panneau « Traitement Automatique » sans UI de réconciliation. */
     @Input() embedTraitementSection = false;
+    /** Supprime l'affichage du popup de succès intégré quand le parent gère déjà la destination (ex: popup de choix). */
+    @Input() suppressEmbedSuccessPopup = false;
     /** Progression du traitement automatique (section embarquée /traitement). */
     @Output() embedTraitementProgress = new EventEmitter<string>();
+    /** Résultat du traitement (section embarquée) : lignes traitées prêtes à être rechargées par le parent. */
+    @Output() embedTraitementResult = new EventEmitter<{
+        rows: Record<string, string>[];
+        outputName: string;
+        lineCount: number;
+        modelName: string;
+    }>();
 
     /** Page /upload : Option 1 uniquement (mode manuel). */
     manualOnly = false;
@@ -118,6 +132,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     private availableTemplateFiles: Array<{ fileName: string; columns?: string[] }> | null = null;
     private treatmentProgressLastUi = 0;
     private traitementColumnRulesCache = new Map<string, ColumnProcessingRule[]>();
+    private traitementViewDestroyed = false;
 
     /** Modèle partenaire mémorisé après traitement assisté (évite la re-détection par nom de fichier). */
     assistedPartnerReconciliationModelId: string | null = null;
@@ -274,6 +289,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         private popupService: PopupService,
         private progressIndicatorService: ProgressIndicatorService,
         private exportOptimizationService: ExportOptimizationService,
+        private traitementBackgroundService: TraitementBackgroundService,
         private modelPreProcessingService: ModelPreProcessingService,
         private partnerConditionalKeysService: PartnerConditionalKeysService,
         private fileWatcherService: FileWatcherService,
@@ -1143,9 +1159,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return;
         }
 
+        this.traitementViewDestroyed = false;
         this.traitementProcessing = true;
         this.treatmentProgressLastUi = 0;
         this.traitementColumnRulesCache.clear();
+        this.traitementBackgroundService.beginTraitement(models[0]?.name || 'Traitement multiple', files.map(f => f.name));
 
         const successes: string[] = [];
         const skipped: string[] = [];
@@ -1162,18 +1180,31 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     successes.push(
                         `${model.name} → ${result.outputName} (${result.lineCount?.toLocaleString('fr-FR') ?? 0} ligne(s))`
                     );
+                    this.embedTraitementResult.emit({
+                        rows: result.exportRows || [],
+                        outputName: result.outputName,
+                        lineCount: result.lineCount || 0,
+                        modelName: model.name
+                    });
                 } else if (result.warningMessage) {
                     skipped.push(`${model.name} : ${result.warningMessage}`);
                 }
             }
 
             if (!successes.length) {
-                await this.popupService.showWarning(
+                this.traitementBackgroundService.failTraitement(
                     skipped.length
-                        ? `Aucun fichier produit.\n\n${skipped.join('\n')}`
-                        : 'Aucun fichier produit.',
-                    'Traitement multiple'
+                        ? `Aucun fichier produit. ${skipped.join(' ; ')}`
+                        : 'Aucun fichier produit.'
                 );
+                if (!this.traitementViewDestroyed) {
+                    await this.popupService.showWarning(
+                        skipped.length
+                            ? `Aucun fichier produit.\n\n${skipped.join('\n')}`
+                            : 'Aucun fichier produit.',
+                        'Traitement multiple'
+                    );
+                }
                 return;
             }
 
@@ -1182,23 +1213,30 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 message += `\n\nNon produit(s) :\n${skipped.join('\n')}`;
             }
             this.resetTraitementPanel();
-            await this.popupService.showSuccess(message, 'Traitement multiple terminé');
+            if (!this.traitementViewDestroyed && !this.suppressEmbedSuccessPopup) {
+                await this.popupService.showSuccess(message, 'Traitement multiple terminé');
+            }
         } catch (error: any) {
-            await this.popupService.showError(
-                `Erreur lors du traitement multiple : ${error?.message || error}`,
-                'Erreur'
-            );
+            this.traitementBackgroundService.failTraitement(error?.message || 'Erreur lors du traitement multiple.');
+            if (!this.traitementViewDestroyed) {
+                await this.popupService.showError(
+                    `Erreur lors du traitement multiple : ${error?.message || error}`,
+                    'Erreur'
+                );
+            }
         } finally {
             this.traitementProcessing = false;
             this.traitementProgressMessage = '';
-            this.ngZone.run(() => this.cd.detectChanges());
+            this.safeTraitementDetectChanges();
         }
     }
 
     private async applySingleModelTraitement(model: AutoProcessingModel, files: File[]): Promise<void> {
+        this.traitementViewDestroyed = false;
         this.traitementProcessing = true;
         this.treatmentProgressLastUi = 0;
         this.traitementColumnRulesCache.clear();
+        this.traitementBackgroundService.beginTraitement(model.name, files.map(f => f.name));
         const perf = this.startTreatmentPerf(
             this.embedTraitementSection ? 'Traitement automatique (/traitement)' : 'Traitement assisté',
             {
@@ -1211,7 +1249,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         try {
             const result = await this.runAssistedFileTreatmentForModel(model, files);
             if (!result.success) {
-                if (result.warningMessage) {
+                this.traitementBackgroundService.failTraitement(result.warningMessage || 'Traitement sans résultat.');
+                if (result.warningMessage && !this.traitementViewDestroyed) {
                     await this.popupService.showWarning(result.warningMessage, 'Traitement');
                 }
                 return;
@@ -1233,10 +1272,22 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     lignes: result.lineCount,
                     fichier: result.outputName
                 });
-                await this.popupService.showSuccess(
-                    `Fichier traité et téléchargé (${result.outputName}).${duplicateSummary}${preProcessingSuccess}`,
-                    'Traitement terminé'
-                );
+                this.embedTraitementResult.emit({
+                    rows: result.exportRows || [],
+                    outputName: result.outputName || '',
+                    lineCount: result.lineCount || 0,
+                    modelName: model.name
+                });
+                if (!this.traitementViewDestroyed && !this.suppressEmbedSuccessPopup) {
+                    await this.popupService.showSuccess(
+                        `Fichier traité et téléchargé (${result.outputName}).${duplicateSummary}${preProcessingSuccess}`,
+                        'Traitement terminé'
+                    );
+                }
+                return;
+            }
+
+            if (this.traitementViewDestroyed) {
                 return;
             }
 
@@ -1268,24 +1319,29 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             const bothReady = this.canProceedAuto();
             perf.end('Traitement terminé', { lignes: result.lineCount, fichier: result.outputName });
             await this.yieldToMainThread(true);
-            await this.popupService.showSuccess(
-                `Fichier traité et téléchargé (${result.outputName}).${duplicateSummary}${preProcessingSuccess}` +
-                (bothReady
-                    ? '\n\nBO et Partenaire sont prêts : vous pouvez lancer la réconciliation.'
-                    : '\n\nChargez ou traitez l\'autre fichier (BO ou Partenaire) puis lancez la réconciliation.'),
-                'Traitement terminé'
-            );
+            if (!this.traitementViewDestroyed && !this.suppressEmbedSuccessPopup) {
+                await this.popupService.showSuccess(
+                    `Fichier traité et téléchargé (${result.outputName}).${duplicateSummary}${preProcessingSuccess}` +
+                    (bothReady
+                        ? '\n\nBO et Partenaire sont prêts : vous pouvez lancer la réconciliation.'
+                        : '\n\nChargez ou traitez l\'autre fichier (BO ou Partenaire) puis lancez la réconciliation.'),
+                    'Traitement terminé'
+                );
+            }
         } catch (error: any) {
             perf.end('Traitement échoué', { erreur: error?.message || String(error) });
-            this.closeTraitementModal(true);
-            await this.popupService.showError(
-                `Erreur lors du traitement : ${error?.message || error}`,
-                'Erreur'
-            );
+            this.traitementBackgroundService.failTraitement(error?.message || 'Erreur lors du traitement.');
+            if (!this.traitementViewDestroyed) {
+                this.closeTraitementModal(true);
+                await this.popupService.showError(
+                    `Erreur lors du traitement : ${error?.message || error}`,
+                    'Erreur'
+                );
+            }
         } finally {
             this.traitementProcessing = false;
             this.traitementProgressMessage = '';
-            this.ngZone.run(() => this.cd.detectChanges());
+            this.safeTraitementDetectChanges();
         }
     }
 
@@ -1313,6 +1369,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         await this.updateTraitementProgress(
             `Lecture terminée (${compiled.rows.length.toLocaleString('fr-FR')} ligne(s)) — ${model.name}...`
         );
+        console.error('[DIAG-TRAITEMENT] APRÈS LECTURE:', compiled.rows.length);
 
         if (!compiled.rows.length) {
             return {
@@ -1332,10 +1389,21 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     `${model.name} — colonnes : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}...`
                 )
             );
+            console.error('[DIAG-TRAITEMENT] APRÈS ENRICHISSEMENT:', workingRows.length);
         }
 
         let preProcessingResultMessage = '';
         const effectivePreProcessingConfig = this.buildEffectivePreProcessingConfig(model);
+        console.error(
+            '[DIAG-TRAITEMENT] ROW-FILTERS MODELE APPLIQUES:',
+            JSON.stringify(
+                (effectivePreProcessingConfig?.rowFilters ?? []).map((f: { column?: string; selectedValues?: string[]; enabled?: boolean }) => ({
+                    column: f.column,
+                    enabled: f.enabled,
+                    selectedValues: f.selectedValues
+                }))
+            )
+        );
         if (this.modelPreProcessingService.hasPreProcessing(effectivePreProcessingConfig)) {
             const rowsBeforePreProcessing = workingRows.length;
             workingRows = await this.modelPreProcessingService.applyPreProcessingAsync(
@@ -1371,6 +1439,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     warningMessage: 'Aucune ligne restante après pré-traitement du modèle.'
                 };
             }
+            console.error('[DIAG-TRAITEMENT] APRÈS PRÉ-TRAITEMENT:', workingRows.length);
         }
 
         await this.updateTraitementProgress(
@@ -1397,6 +1466,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         if (!processed?.length) {
             return { success: false, warningMessage: 'Aucun résultat après application des règles.' };
         }
+        console.error('[DIAG-TRAITEMENT] APRÈS RÈGLES:', processed.length);
 
         const { rows: mergedRows } = mergeBilingualColumnsInRows(processed, expectedHeaderColumns);
 
@@ -1441,6 +1511,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         if (!finalExportRows.length) {
             return { success: false, warningMessage: 'Aucune ligne unique après déduplication.' };
         }
+        console.error('[DIAG-TRAITEMENT] APRÈS DÉDUP:', finalExportRows.length, '— supprimés:', dedupResult.duplicatesRemoved, '— clé:', dedupResult.dedupColumns);
 
         if (dedupResult.duplicatesRemoved > 0) {
             await this.updateTraitementProgress(
@@ -1456,6 +1527,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         await this.downloadProcessedTreatmentFile(finalExportRows, outputName, {
             skipNormalize: true,
             columns: finalExportColumns.length ? finalExportColumns : undefined
+        });
+
+        // Publier le résultat dans le service de fond (re-téléchargement possible depuis une autre page)
+        this.traitementBackgroundService.addResult({
+            outputName,
+            lineCount: finalExportRows.length,
+            duplicatesRemoved: dedupResult.duplicatesRemoved,
+            exportRows: finalExportRows,
+            exportColumns: finalExportColumns.length ? finalExportColumns : Object.keys(finalExportRows[0] ?? {})
         });
 
         return {
@@ -1556,8 +1636,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         referenceFile: File;
     }> {
         const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-        this.traitementProgressMessage = `Lecture ultra-rapide : ${file.name} (${fileSizeMB} Mo)`;
-        this.cd.detectChanges();
+        this.setTraitementProgressNoUi(`Lecture ultra-rapide : ${file.name} (${fileSizeMB} Mo)`);
 
         const parsed = await this.readAssistedTreatmentFileRows(file, expectedHeaderColumns);
         const headerInfo = parsed.headerLine >= 0
@@ -1589,9 +1668,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-            this.traitementProgressMessage =
-                `Fusion ultra-rapide ${i + 1}/${files.length} : ${file.name} (${fileSizeMB} Mo)`;
-            this.cd.detectChanges();
+            this.setTraitementProgressNoUi(
+                `Fusion ultra-rapide ${i + 1}/${files.length} : ${file.name} (${fileSizeMB} Mo)`
+            );
 
             const parsed = await this.readAssistedTreatmentFileRows(file, expectedHeaderColumns);
             if (parsed.rows.length) {
@@ -1618,23 +1697,28 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     /** Fusionne des lignes sans spread (évite « Maximum call stack size exceeded » sur gros fichiers). */
     private appendRowsSafely(target: Record<string, string>[], source: Record<string, string>[]): void {
-        for (let i = 0; i < source.length; i++) {
-            target.push(source[i]);
+        if (!source.length) {
+            return;
         }
+        if (target.length === 0) {
+            (target as Record<string, string>[]).push(...source);
+            return;
+        }
+        (target as Record<string, string>[]).push(...source);
     }
 
     /** Paramètres de traitement par chunks (alignés sur la zone glisser-déposer /traitement). */
     private getAssistedCompilationBatchConfig(dataRowCount: number): { yieldEvery: number } {
         if (dataRowCount > 500000) {
-            return { yieldEvery: 15000 };
+            return { yieldEvery: 60000 };
         }
         if (dataRowCount > 100000) {
-            return { yieldEvery: 2500 };
+            return { yieldEvery: 25000 };
         }
         if (dataRowCount > 10000) {
-            return { yieldEvery: 500 };
+            return { yieldEvery: 8000 };
         }
-        return { yieldEvery: 1000 };
+        return { yieldEvery: 4000 };
     }
 
     /** Normalise uniquement la zone utile à la détection d'en-têtes (max 300 lignes). */
@@ -1653,6 +1737,30 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         for (let index = 0; index < headers.length; index++) {
             const value = rowData[index];
             row[headers[index]] = value !== undefined && value !== null
+                ? fixCellEncodingIfNeeded(String(value).trim())
+                : '';
+        }
+        return row;
+    }
+
+    /**
+     * Construit une ligne en alignant les cellules sur les en-têtes DÉTECTÉS de la feuille
+     * (au lieu d'un simple index positionnel). Évite le décalage des colonnes (débit/crédit, etc.)
+     * sur les feuilles 2, 3… lorsque le tableau n'est pas exactement au même décalage que la feuille 1.
+     */
+    private buildAssistedRowFromCellMapping(
+        columnToHeader: (string | null)[],
+        rowData: any[]
+    ): Record<string, string> {
+        const row: Record<string, string> = {};
+        const length = Math.min(columnToHeader.length, rowData.length);
+        for (let column = 0; column < length; column++) {
+            const header = columnToHeader[column];
+            if (!header) {
+                continue;
+            }
+            const value = rowData[column];
+            row[header] = value !== undefined && value !== null
                 ? fixCellEncodingIfNeeded(String(value).trim())
                 : '';
         }
@@ -2050,17 +2158,17 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             processedDataRows++;
 
             if (processedDataRows % yieldEvery === 0) {
-                this.traitementProgressMessage =
-                    `${progressLabel} : ${processedDataRows.toLocaleString('fr-FR')} / ${dataRowCount.toLocaleString('fr-FR')} ligne(s)...`;
-                this.cd.detectChanges();
+                this.setTraitementProgressNoUi(
+                    `${progressLabel} : ${processedDataRows.toLocaleString('fr-FR')} / ${dataRowCount.toLocaleString('fr-FR')} ligne(s)...`
+                );
                 await this.yieldToMainThread(true);
             }
         }
 
         if (processedDataRows > 0) {
-            this.traitementProgressMessage =
-                `${progressLabel} : ${processedDataRows.toLocaleString('fr-FR')} / ${dataRowCount.toLocaleString('fr-FR')} ligne(s) — finalisation...`;
-            this.cd.detectChanges();
+            this.setTraitementProgressNoUi(
+                `${progressLabel} : ${processedDataRows.toLocaleString('fr-FR')} / ${dataRowCount.toLocaleString('fr-FR')} ligne(s) — finalisation...`
+            );
             await this.yieldToMainThread(true);
         }
 
@@ -2082,6 +2190,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         headerLine: number;
         removedLines: number;
     }> {
+        const fusionStart = performance.now();
         const sheetNames = this.getWorkbookSheetNamesWithData(workbook);
         if (!sheetNames.length) {
             return { rows: [], headerLine: 0, removedLines: 0 };
@@ -2097,32 +2206,70 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return { rows: [], headerLine: 0, removedLines: 0 };
         }
 
-        const firstParse = await this.parseAssistedTreatmentGridAsync(
-            firstGrid,
-            multiSheet ? 'Fusion feuille 1' : 'Lecture Excel',
-            expectedHeaderColumns
-        );
-        if (!multiSheet) {
-            return firstParse;
-        }
-
+        // Détecte l'en-tête (scan limité à ~300 lignes) AVANT de parser les données, pour
+        // décider du meilleur chemin en un seul passage (évite de parser la feuille 1 deux fois).
         const assistedHeader = this.detectAssistedTreatmentHeader(
             this.buildAssistedHeaderDetectionGrid(firstGrid),
             expectedHeaderColumns
         );
         const headerRow = assistedHeader.headerRow.map(h => this.normalizeColumnName(h || ''));
-        const headers = firstParse.rows.length
-            ? Object.keys(firstParse.rows[0])
-            : headerRow.filter(h => h.length > 0);
-        const mergedRows: Record<string, string>[] = [];
-        this.appendRowsSafely(mergedRows, firstParse.rows);
-        let removedLines = firstParse.removedLines;
+        const hasRealHeaders = headerRow.filter(h => h.length > 0).length > 1;
+        const dedupHeaders = hasRealHeaders ? deduplicateHeaderNames(headerRow) : [];
+        const needsDedup = dedupHeaders.length > 0 && dedupHeaders.some(h => / \(\d+\)$/.test(h));
 
+        let headers: string[];
+        let firstRows: Record<string, string>[];
+        let headerLine: number;
+        let removedLines: number;
+
+        if (needsDedup) {
+            // Chemin rapide : un seul passage avec la mappe désambiguïsée (17 colonnes).
+            headers = dedupHeaders;
+            const startIndex = assistedHeader.headerRowIndex >= 0
+                ? assistedHeader.headerRowIndex + 1
+                : 1;
+            const compiled = this.compileAssistedGridWithMapping(
+                firstGrid,
+                headers as (string | null)[],
+                startIndex,
+                headers,
+                false
+            );
+            firstRows = compiled.rows;
+            headerLine = assistedHeader.headerRowIndex;
+            removedLines = startIndex;
+        } else {
+            const firstParse = await this.parseAssistedTreatmentGridAsync(
+                firstGrid,
+                multiSheet ? 'Fusion feuille 1' : 'Lecture Excel',
+                expectedHeaderColumns
+            );
+            firstRows = firstParse.rows;
+            headerLine = firstParse.headerLine;
+            removedLines = firstParse.removedLines;
+            headers = firstRows.length
+                ? Object.keys(firstRows[0])
+                : headerRow.filter(h => h.length > 0);
+        }
+
+        console.error(
+            `[DIAG-FEUILLE] Feuille 1 "${sheetNames[0]}": ${firstRows.length} ligne(s) ${this.diagSheetStatsSuffix(firstRows)}`
+        );
+        if (!multiSheet) {
+            return { rows: firstRows, headerLine, removedLines };
+        }
+
+        const mergedRows: Record<string, string>[] = [];
+        this.appendRowsSafely(mergedRows, firstRows);
+
+        console.error(
+            `[DIAG-FEUILLE] Feuille 1 "${sheetNames[0]}" — colonnes de référence (${headers.length}): ` +
+            headers.map((h, i) => `${i}=${h || '∅'}`).join('|')
+        );
 
         for (let i = 1; i < sheetNames.length; i++) {
             const sheetName = sheetNames[i];
-            this.traitementProgressMessage = `Fusion feuille ${i + 1}/${sheetNames.length} : ${sheetName}`;
-            this.cd.detectChanges();
+            this.setTraitementProgressNoUi(`Fusion feuille ${i + 1}/${sheetNames.length} : ${sheetName}`);
 
             const sheet = workbook.Sheets?.[sheetName];
             if (!sheet) {
@@ -2140,20 +2287,56 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             );
             this.appendRowsSafely(mergedRows, continuation.rows);
             removedLines += continuation.removedLines;
+            console.error(
+                `[DIAG-FEUILLE] Feuille ${i + 1} "${sheetName}": ${continuation.rows.length} ligne(s) ${this.diagSheetStatsSuffix(continuation.rows)}`
+            );
             await this.yieldToMainThread();
         }
 
+        const fusionMs = performance.now() - fusionStart;
+        console.error(
+            `[DIAG-TRAITEMENT] Fusion des ${sheetNames.length} feuilles : ${mergedRows.length.toLocaleString('fr-FR')} ligne(s) en ${Math.round(fusionMs)} ms`
+        );
         return {
             rows: mergedRows,
-            headerLine: firstParse.headerLine,
+            headerLine,
             removedLines
         };
     }
 
+    private diagSheetStatsSuffix(rows: Record<string, string>[]): string {
+        const statut = new Map<string, number>();
+        const paiement = new Map<string, number>();
+        let succStatut = 0;
+        let transacPaiement = 0;
+        let both = 0;
+        for (const row of rows) {
+            const sKey = resolveColumnKeyInRow(row, 'Statut');
+            const pKey = resolveColumnKeyInRow(row, 'Paiement');
+            const sVal = sKey ? String(row[sKey] ?? '') : '';
+            const pVal = pKey ? String(row[pKey] ?? '') : '';
+            if (sKey) {
+                statut.set(sVal, (statut.get(sVal) ?? 0) + 1);
+            }
+            if (pKey) {
+                paiement.set(pVal, (paiement.get(pVal) ?? 0) + 1);
+            }
+            if (sVal === 'Succès') {
+                succStatut++;
+            }
+            if (pVal === 'Transaction') {
+                transacPaiement++;
+            }
+            if (sVal === 'Succès' && pVal === 'Transaction') {
+                both++;
+            }
+        }
+        const fmt = (m: Map<string, number>) =>
+            [...m.entries()].map(([k, v]) => `"${k}"=${v}`).join(', ') || '∅';
+        return `| Statut: ${fmt(statut)} | Paiement: ${fmt(paiement)} | Succès=${succStatut} Transaction=${transacPaiement} BOTH=${both}`;
+    }
+
     private async workbookSheetToGridAsync(worksheet: XLSX.WorkSheet): Promise<any[][]> {
-        this.traitementProgressMessage = 'Extraction des cellules Excel...';
-        this.cd.detectChanges();
-        await this.yieldToMainThread(true);
         const extractStart = performance.now();
         const grid = XLSX.utils.sheet_to_json(worksheet, {
             header: 1,
@@ -2190,36 +2373,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return { rows: [], removedLines: 0 };
         }
 
-        const startIndex = this.findContinuationSheetDataStart(jsonData, referenceHeaderRow);
-        const rows: Record<string, string>[] = [];
-        let removedLines = startIndex;
-        const dataRowCount = jsonData.length - startIndex;
-        const { yieldEvery } = this.getAssistedCompilationBatchConfig(dataRowCount);
-        let processedDataRows = 0;
-
-        for (let i = startIndex; i < jsonData.length; i++) {
-            const rowData = this.resolveAssistedGridRow(jsonData[i] as any[]);
-            if (!rowData || rowData.length === 0) {
-                removedLines++;
-                continue;
-            }
-
-            const row = this.buildAssistedRowFromGridCells(headers, rowData);
-
-            if (!this.isUsefulAssistedTreatmentRow(row, headers)) {
-                removedLines++;
-                continue;
-            }
-
-            rows.push(row);
-            processedDataRows++;
-
-            if (processedDataRows % yieldEvery === 0) {
-                await this.yieldToMainThread(true);
-            }
-        }
-
-        return { rows, removedLines };
+        const mapping = this.detectContinuationSheetMapping(jsonData, headers, referenceHeaderRow);
+        return this.compileAssistedGridWithMappingAsync(
+            jsonData,
+            mapping.columnToHeader,
+            mapping.dataStartIndex,
+            headers,
+            'Fusion feuille',
+            false
+        );
     }
 
     private parseAssistedTreatmentContinuationSheetSync(
@@ -2231,60 +2393,276 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return { rows: [], removedLines: 0 };
         }
 
-        const startIndex = this.findContinuationSheetDataStart(jsonData, referenceHeaderRow);
+        const mapping = this.detectContinuationSheetMapping(jsonData, headers, referenceHeaderRow);
+        const compiled = this.compileAssistedGridWithMapping(
+            jsonData,
+            mapping.columnToHeader,
+            mapping.dataStartIndex,
+            headers,
+            false
+        );
+        return {
+            rows: compiled.rows,
+            removedLines: mapping.dataStartIndex
+        };
+    }
+
+    /**
+     * Compilation rapide en un seul passage d'une grille vers des lignes mappées.
+     * Pré-calcule une liste compacte des colonnes mappées (une seule fois) puis traite
+     * chaque ligne dans une boucle serrée — évite les allocations/contrôles répétés par
+     * colonne (String/trim, if(header)) qui ralentissaient la fusion des grandes feuilles.
+     */
+    private compileAssistedGridWithMapping(
+        grid: any[][],
+        columnToHeader: (string | null)[],
+        dataStartIndex: number,
+        headers: string[],
+        enrich = true
+    ): { rows: Record<string, string>[] } {
+        const mappedCols: { idx: number; header: string }[] = [];
+        for (let c = 0; c < columnToHeader.length; c++) {
+            const h = columnToHeader[c];
+            if (h && h.length > 0) {
+                mappedCols.push({ idx: c, header: h });
+            }
+        }
+        const colCount = mappedCols.length;
         const rows: Record<string, string>[] = [];
-        let removedLines = startIndex;
 
-        for (let i = startIndex; i < jsonData.length; i++) {
-            const rowData = jsonData[i] as any[];
-            if (!rowData || rowData.length === 0) {
-                removedLines++;
+        for (let i = dataStartIndex; i < grid.length; i++) {
+            const raw = grid[i];
+            if (!Array.isArray(raw) || raw.length === 0) {
                 continue;
             }
-
             const row: Record<string, string> = {};
-            headers.forEach((header, index) => {
-                this.assignExcelCellValue(row, header, rowData[index]);
-            });
+            for (let m = 0; m < colCount; m++) {
+                const { idx, header } = mappedCols[m];
+                const v = raw[idx];
+                row[header] = v !== undefined && v !== null
+                    ? fixCellEncodingIfNeeded(String(v).trim())
+                    : '';
+            }
+            if (colCount === 0 || this.isUsefulAssistedTreatmentRow(row, headers)) {
+                rows.push(enrich ? enrichRowWithCanonicalFrenchColumns(row) : row);
+            }
+        }
+        return { rows };
+    }
 
-            if (!this.isUsefulAssistedTreatmentRow(row, headers)) {
+    /** Version async : même compilation, mais avec rendu (yield) toutes les N lignes. */
+    private async compileAssistedGridWithMappingAsync(
+        grid: any[][],
+        columnToHeader: (string | null)[],
+        dataStartIndex: number,
+        headers: string[],
+        progressLabel: string,
+        enrich = true
+    ): Promise<{ rows: Record<string, string>[]; removedLines: number }> {
+        const mappedCols: { idx: number; header: string }[] = [];
+        for (let c = 0; c < columnToHeader.length; c++) {
+            const h = columnToHeader[c];
+            if (h && h.length > 0) {
+                mappedCols.push({ idx: c, header: h });
+            }
+        }
+        const colCount = mappedCols.length;
+        const rows: Record<string, string>[] = [];
+        let removedLines = dataStartIndex;
+        const dataRowCount = grid.length - dataStartIndex;
+        const { yieldEvery } = this.getAssistedCompilationBatchConfig(dataRowCount);
+        let processedDataRows = 0;
+
+        for (let i = dataStartIndex; i < grid.length; i++) {
+            const raw = grid[i];
+            if (!Array.isArray(raw) || raw.length === 0) {
                 removedLines++;
                 continue;
             }
+            const row: Record<string, string> = {};
+            for (let m = 0; m < colCount; m++) {
+                const { idx, header } = mappedCols[m];
+                const v = raw[idx];
+                row[header] = v !== undefined && v !== null
+                    ? fixCellEncodingIfNeeded(String(v).trim())
+                    : '';
+            }
+            if (colCount > 0 && !this.isUsefulAssistedTreatmentRow(row, headers)) {
+                removedLines++;
+                continue;
+            }
+            if (colCount > 0) {
+                rows.push(enrich ? enrichRowWithCanonicalFrenchColumns(row) : row);
+            } else {
+                rows.push(row);
+            }
+            processedDataRows++;
 
-            rows.push(enrichRowWithCanonicalFrenchColumns(row));
+            if (processedDataRows % yieldEvery === 0) {
+                this.setTraitementProgressNoUi(
+                    `${progressLabel} : ${processedDataRows.toLocaleString('fr-FR')} / ${dataRowCount.toLocaleString('fr-FR')} ligne(s)...`
+                );
+                await this.yieldToMainThread(true);
+            }
         }
 
         return { rows, removedLines };
     }
 
-    private findContinuationSheetDataStart(grid: any[][], referenceHeaderRow: string[]): number {
+    /**
+     * Détecte la ligne d'en-tête propre à la feuille (2, 3…) puis aligne chaque en-tête par NOM
+     * (et non par index) : les colonnes débit/crédit restent alignées même si le tableau de la
+     * feuille ne démarre pas au même décalage de colonnes que la feuille 1.
+     */
+    private detectContinuationSheetMapping(
+        grid: any[][],
+        headers: string[],
+        referenceHeaderRow: string[]
+    ): { dataStartIndex: number; columnToHeader: (string | null)[] } {
+        const headerKeyNorm = headers.map(h => this.normalizeColumnName(h).toLowerCase());
         const refNorm = referenceHeaderRow
             .map(h => this.normalizeColumnName(h).toLowerCase())
             .filter(h => h.length > 0);
 
-        if (!refNorm.length) {
-            return 0;
-        }
+        const minMatches = Math.min(3, headerKeyNorm.length);
 
+        const matchesHeaderKey = (cell: string): number => {
+            if (!cell || !headerKeyNorm.length) {
+                return 0;
+            }
+            if (headerKeyNorm.includes(cell)) {
+                return 2;
+            }
+            return headerKeyNorm.some(h => h.includes(cell) || cell.includes(h)) ? 1 : 0;
+        };
+
+        // Stratégie 1 : meilleure ligne à partir des clés de la feuille 1 (exact ou sous-chaîne).
+        let bestHeaderIndex = -1;
+        let bestMatchCount = 0;
+        let bestRowCells: string[] = [];
         for (let i = 0; i < Math.min(grid.length, 35); i++) {
             const rowCells = this.extractAssistedGridRowStrings(grid[i])
-                .map(h => this.normalizeColumnName(h).toLowerCase())
-                .filter(h => h.length > 0);
-            if (!rowCells.length) {
+                .map(h => this.normalizeColumnName(h).toLowerCase());
+            const nonEmpty = rowCells.filter(h => h.length > 0);
+            if (!nonEmpty.length) {
                 continue;
             }
 
-            const matches = refNorm.filter(ref =>
-                rowCells.some(cell => cell === ref || cell.includes(ref) || ref.includes(cell))
-            ).length;
+            let score = 0;
+            for (const cell of nonEmpty) {
+                score += matchesHeaderKey(cell);
+            }
 
-            if (matches >= Math.min(3, refNorm.length)) {
-                return i + 1;
+            if (score > bestMatchCount) {
+                bestMatchCount = score;
+                bestHeaderIndex = i;
+                bestRowCells = rowCells;
+            }
+            if (bestMatchCount >= refNorm.length * 2) {
+                break;
             }
         }
 
-        return 0;
+        if (bestHeaderIndex >= 0 && bestMatchCount > 0) {
+            const columnToHeader: (string | null)[] = [];
+            for (let c = 0; c < bestRowCells.length; c++) {
+                const cell = bestRowCells[c];
+                if (!cell) {
+                    columnToHeader.push(null);
+                    continue;
+                }
+                const matchIndex = headerKeyNorm.findIndex((h, i) =>
+                    h.length > 0 && (h === cell || h.includes(cell) || cell.includes(h))
+                );
+                columnToHeader.push(matchIndex >= 0 ? headers[matchIndex] : null);
+            }
+
+            const mappedCount = columnToHeader.filter(Boolean).length;
+            if (mappedCount >= minMatches) {
+                const colMap = columnToHeader
+                    .map((h, i) => `${i}=${(h && h.toString()) || '∅'}`)
+                    .join('|');
+                console.error(
+                    `[DIAG-FEUILLE] MAPPAGE continuer: cols=${mappedCount}/${columnToHeader.length} ` +
+                    `(index=${bestHeaderIndex + 1}, score=${bestMatchCount}), ` +
+                    `cols=${colMap}, rows0=${this.diagGridSample(grid)}`
+                );
+                return {
+                    dataStartIndex: bestHeaderIndex + 1,
+                    columnToHeader
+                };
+            }
+        }
+
+        // Stratégie 2 : repli positionnel — colonnes alignées EXACTEMENT comme la feuille 1.
+        // Utiliser la MÊME mappe de colonnes de la feuille 1 pour garantir la cohérence.
+        // maxGridCols est calculé sur un échantillon (en-tête + premières lignes de données),
+        // sans parcourir les 65K lignes de la feuille.
+        const sampleWindow = Math.min(60, grid.length);
+        let maxGridCols = 0;
+        for (let s = 0; s < sampleWindow; s++) {
+            const r = grid[s];
+            if (r && Array.isArray(r) && r.length > maxGridCols) {
+                maxGridCols = r.length;
+            }
+        }
+        let startGuess = bestHeaderIndex >= 0 ? bestHeaderIndex + 1 : 0;
+        
+        // Construire la mappe EXACTE à partir des en-têtes de la feuille 1
+        // Si la grille a plus de colonnes que les en-têtes, les colonnes supplémentaires sont ignorées
+        // Si la grille a moins de colonnes, on tronque aux colonnes disponibles
+        const columnToHeader: (string | null)[] = [];
+        for (let c = 0; c < maxGridCols; c++) {
+            if (c < headers.length && headers[c] && headers[c].length > 0) {
+                columnToHeader.push(headers[c]);
+            } else {
+                columnToHeader.push(null);
+            }
+        }
+        
+        // Ajuster le départ : chercher la première ligne qui ressemble vraiment à une donnée
+        // (évite de repartir depuis le titre / les métadonnées en haut de la feuille).
+        const firstProbeWindow = Math.min(40, grid.length);
+        for (let k = startGuess; k < firstProbeWindow; k++) {
+            const raw = grid[k] as any[] | undefined;
+            if (!Array.isArray(raw) || raw.length === 0) {
+                continue;
+            }
+            let significant = 0;
+            for (let c = 0; c < columnToHeader.length && c < raw.length; c++) {
+                const v = raw[c];
+                const s = String(v ?? '').trim();
+                if (s && s !== columnToHeader[c]) {
+                    significant++;
+                }
+            }
+            if (significant >= 2) {
+                startGuess = k;
+                break;
+            }
+        }
+        
+        const mappedCols = columnToHeader.filter(Boolean).length;
+        console.error(
+            `[DIAG-FEUILLE] MAPPAGE continuer: AUCUN en-tête fiable (score=${bestMatchCount}, refs=${refNorm.length}, cols=${maxGridCols}) → mapping positionnel FEUILLE_1 ` +
+            `(headers=${headers.length}, mapped=${mappedCols}/${columnToHeader.length}, dataStart=${startGuess}), ` +
+            `cols=${columnToHeader.map((h, i) => `${i}=${h || '∅'}`).join('|')}, ` +
+            `rows0=${this.diagGridSample(grid)}`
+        );
+        return {
+            dataStartIndex: startGuess,
+            columnToHeader
+        };
+    }
+
+    /** Échantillon compact des premières lignes utiles d'une grille pour le diagnostic. */
+    private diagGridSample(grid: any[][], rows: number = 2, maxCells: number = 12): string {
+        const sample = grid
+            .slice(0, Math.min(rows * 2, grid.length))
+            .filter(r => r && Array.isArray(r) && r.some(c => c !== null && c !== undefined && String(c).trim()))
+            .slice(0, rows)
+            .map(r => this.extractAssistedGridRowStrings(r).slice(0, maxCells).join('|'));
+        return sample.join(' · ');
     }
 
     /**
@@ -2528,54 +2906,46 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     /** Filtre les lignes vides, répétitions d'en-tête, totaux et lignes trop pauvres. */
     private isUsefulAssistedTreatmentRow(row: Record<string, string>, headers: string[]): boolean {
-        const values = headers
-            .map(h => (row[h] ?? '').toString().trim())
-            .filter(v => v !== '');
+        // Un seul passage : compte les valeurs non vides, détecte les répétitions d'en-tête
+        // et construit la chaîne jointe pour les motifs de métadonnées/pied de page.
+        let nonEmpty = 0;
+        let headerMatches = 0;
+        const joinedParts: string[] = [];
+        const headerMatchThreshold = Math.min(3, headers.length);
 
-        if (values.length === 0) {
+        for (let i = 0; i < headers.length; i++) {
+            const h = headers[i];
+            const cell = (row[h] ?? '').toString().trim();
+            if (cell) {
+                nonEmpty++;
+                joinedParts.push(cell.toLowerCase());
+                if (cell.toLowerCase() === h.toLowerCase()) {
+                    headerMatches++;
+                }
+            }
+        }
+
+        if (nonEmpty === 0) {
+            return false;
+        }
+        if (headerMatches >= headerMatchThreshold) {
+            return false;
+        }
+        if (headers.length >= 4 && nonEmpty < 2) {
             return false;
         }
 
-        const headerMatches = headers.filter(h => {
-            const cell = (row[h] ?? '').toString().trim().toLowerCase();
-            const header = h.toLowerCase();
-            return cell !== '' && cell === header;
-        }).length;
-        if (headerMatches >= Math.min(3, headers.length)) {
+        const joined = joinedParts.join(' ');
+        if (/user_transaction_report|user transaction report/.test(joined)) {
             return false;
         }
-
-        const joined = values.join(' ').toLowerCase();
-        const metadataPatterns = [
-            /user_transaction_report/,
-            /user transaction report/,
-            /^selection criteria/,
-            /^from date\s*:/,
-            /^to date\s*:/
-        ];
-        if (metadataPatterns.some(pattern => pattern.test(joined))) {
+        if (/^(selection criteria|from date\s*:|to date\s*:)/.test(joined)) {
             return false;
         }
-
-        const footerPatterns = [
-            /^total\b/,
-            /^totaux\b/,
-            /^sous[- ]?total/,
-            /^grand total/,
-            /^nombre de lignes/,
-            /^nb de lignes/,
-            /^report generated/,
-            /^généré le/,
-            /^genere le/,
-            /^page \d+\s*\/\s*\d+$/,
-            /^fin du rapport/,
-            /^---+$/
-        ];
-        if (footerPatterns.some(pattern => pattern.test(joined))) {
+        if (/^(total\b|totaux\b|sous[- ]?total|grand total|nombre de lignes|nb de lignes)/.test(joined)) {
             return false;
         }
-
-        if (headers.length >= 4 && values.length < 2) {
+        if (/^(report generated|généré le|genere le|page \d+\s*\/\s*\d+$|fin du rapport|^---+$)/.test(joined)) {
             return false;
         }
 
@@ -2741,6 +3111,27 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         if (!options?.skipYield) {
             await this.yieldToMainThread(true);
         }
+
+        // Publier la progression dans le service de fond pour survie à la navigation
+        this.traitementBackgroundService.updateProgress(message);
+    }
+
+    /** DetectChanges sans risque « ViewDestroyed » quand le composant a été quitté. */
+    private safeTraitementDetectChanges(): void {
+        if (!this.traitementViewDestroyed) {
+            this.ngZone.run(() => this.cd.detectChanges());
+        }
+    }
+
+    /**
+     * Met à jour la progression et publie dans le service de fond SANS déclencher
+     * le change-detection Angular (utilisé pendant la lecture de fichiers, en boucle
+     * locale, quand la vue peut être détruite).
+     */
+    private setTraitementProgressNoUi(message: string): void {
+        this.traitementProgressMessage = message;
+        this.traitementBackgroundService.updateProgress(message);
+        this.safeTraitementDetectChanges();
     }
 
     private buildColumnValueCounts(
@@ -3289,9 +3680,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 this.normalizeColumnName(header || `Col${index + 1}`),
             onProgress: (processed, total) => {
                 if (processed % 2500 === 0) {
-                    this.traitementProgressMessage =
-                        `Lecture CSV : ${processed.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
-                    this.cd.detectChanges();
+                    this.setTraitementProgressNoUi(
+                        `Lecture CSV : ${processed.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`
+                    );
                 }
             },
             yieldFn: () => this.yieldToMainThread(true)
@@ -3307,20 +3698,22 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         removedLines: number;
     }> {
         const fileSizeMB = file.size / (1024 * 1024);
-        this.traitementProgressMessage = fileSizeMB > 5
-            ? `Lecture Excel (${fileSizeMB.toFixed(0)} Mo) : ${file.name}...`
-            : `Lecture Excel : ${file.name}...`;
-        this.cd.detectChanges();
+        this.setTraitementProgressNoUi(
+            fileSizeMB > 5
+                ? `Lecture Excel (${fileSizeMB.toFixed(0)} Mo) : ${file.name}...`
+                : `Lecture Excel : ${file.name}...`
+        );
 
         try {
             const arrayBuffer = await this.readFileAsArrayBuffer(file);
             await this.yieldToMainThread();
 
             const data = new Uint8Array(arrayBuffer);
-            this.traitementProgressMessage = fileSizeMB > 5
-                ? `Analyse Excel (${fileSizeMB.toFixed(0)} Mo) — veuillez patienter...`
-                : `Analyse Excel : ${file.name}...`;
-            this.cd.detectChanges();
+            this.setTraitementProgressNoUi(
+                fileSizeMB > 5
+                    ? `Analyse Excel (${fileSizeMB.toFixed(0)} Mo) — veuillez patienter...`
+                    : `Analyse Excel : ${file.name}...`
+            );
             await this.yieldToMainThread();
 
             const xlsxStart = performance.now();
@@ -3739,18 +4132,57 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return this.convertDebitCreditToNumberInPlace(records);
     }
 
+    /**
+     * Repère les clés réelles du Débit / Crédit quel que soit l'accent ou l'encodage.
+     * Les relevés Orange Money utilisent « Débit » / « Crédit » (accentués) alors que
+     * d'autres sources utilisent « debit » / « credit » (sans accent ou éventuellement mal encodés).
+     */
+    private findDebitCreditColumns(record: Record<string, any>): { debitKey?: string; creditKey?: string } {
+        let debitKey: string | undefined;
+        let creditKey: string | undefined;
+        for (const key of Object.keys(record)) {
+            const keyNorm = this.normalizeColumnName(key).toLowerCase().replace(/[\s\u00A0]/g, '').replace(/\uFFFD/g, '');
+            if (!debitKey && (keyNorm === 'debit' || keyNorm === 'débit')) debitKey = key;
+            if (!creditKey && (keyNorm === 'credit' || keyNorm === 'crédit')) creditKey = key;
+            if (debitKey && creditKey) break;
+        }
+        return { debitKey, creditKey };
+    }
+
+    /**
+     * Convertit une valeur monétaire en nombre : supprime les séparateurs de milliers,
+     * traduit la virgule décimale puis parse en float. Les montants Orange Money sont
+     * formatés « 164 238,68 ».
+     */
+    private convertDebitCreditValue(value: any): any {
+        if (value == null || value === '') return value;
+        const cleaned = String(value)
+            .replace(/[\s\u00A0\u202F]/g, '')
+            .replace(',', '.');
+        if (cleaned === '') return value;
+        const num = parseFloat(cleaned);
+        return isNaN(num) ? value : num;
+    }
+
     /** Conversion in-place (évite de cloner 80k+ lignes avec spread). */
     private convertDebitCreditToNumberInPlace(records: Record<string, any>[]): Record<string, any>[] {
+        if (!records.length) return records;
+        const firstRecord = records.find(r => r && typeof r === 'object');
+        const shared = firstRecord
+            ? this.findDebitCreditColumns(firstRecord)
+            : { debitKey: undefined, creditKey: undefined };
+        const hasSharedResolution = shared.debitKey !== undefined || shared.creditKey !== undefined;
         for (let i = 0; i < records.length; i++) {
             const record = records[i];
-            const debit = record['debit'];
-            if (debit != null && debit !== '') {
-                record['debit'] = parseFloat(String(debit).replace(',', '.'));
+            if (!record || typeof record !== 'object') continue;
+            let { debitKey, creditKey } = shared;
+            if (!hasSharedResolution) {
+                const found = this.findDebitCreditColumns(record);
+                debitKey = found.debitKey;
+                creditKey = found.creditKey;
             }
-            const credit = record['credit'];
-            if (credit != null && credit !== '') {
-                record['credit'] = parseFloat(String(credit).replace(',', '.'));
-            }
+            if (debitKey && record[debitKey] !== undefined) record[debitKey] = this.convertDebitCreditValue(record[debitKey]);
+            if (creditKey && record[creditKey] !== undefined) record[creditKey] = this.convertDebitCreditValue(record[creditKey]);
         }
         return records;
     }
@@ -3763,18 +4195,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return this.convertDebitCreditToNumberInPlace(records);
         }
         const batchSize = records.length > 100000 ? 20000 : 10000;
+        const firstRecord = records.find(r => r && typeof r === 'object');
+        const shared = firstRecord
+            ? this.findDebitCreditColumns(firstRecord)
+            : { debitKey: undefined, creditKey: undefined };
+        const hasSharedResolution = shared.debitKey !== undefined || shared.creditKey !== undefined;
         for (let start = 0; start < records.length; start += batchSize) {
             const end = Math.min(start + batchSize, records.length);
             for (let i = start; i < end; i++) {
                 const record = records[i];
-                const debit = record['debit'];
-                if (debit != null && debit !== '') {
-                    record['debit'] = parseFloat(String(debit).replace(',', '.'));
+                if (!record || typeof record !== 'object') continue;
+                let { debitKey, creditKey } = shared;
+                if (!hasSharedResolution) {
+                    const found = this.findDebitCreditColumns(record);
+                    debitKey = found.debitKey;
+                    creditKey = found.creditKey;
                 }
-                const credit = record['credit'];
-                if (credit != null && credit !== '') {
-                    record['credit'] = parseFloat(String(credit).replace(',', '.'));
-                }
+                if (debitKey && record[debitKey] !== undefined) record[debitKey] = this.convertDebitCreditValue(record[debitKey]);
+                if (creditKey && record[creditKey] !== undefined) record[creditKey] = this.convertDebitCreditValue(record[creditKey]);
             }
             onProgress?.(end, records.length);
             await this.yieldToMainThread(true);
@@ -4023,8 +4461,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             for (const h of headers) {
                 const hLower = lower(h);
                 if (target === 'Référence' && (hLower.includes('référence') || hLower.includes('reference'))) return h;
-                if (target === 'Débit' && hLower.includes('débit')) return h;
-                if (target === 'Crédit' && hLower.includes('crédit')) return h;
+                if (target === 'Débit' && (hLower.includes('débit') || hLower.includes('debit'))) return h;
+                if (target === 'Crédit' && (hLower.includes('crédit') || hLower.includes('credit'))) return h;
                 if (target === 'N° de Compte' && ((hLower.includes('n°') || hLower.includes('no') || hLower.includes('nº')) && hLower.includes('compte'))) return h;
                 if (target === 'Date' && hLower.includes('date')) return h;
                 if (target === 'Service' && hLower.includes('service')) return h;
@@ -4141,64 +4579,108 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 const semicolonCount = (firstLine.match(/;/g) || []).length;
                 const delimiter = semicolonCount > commaCount ? ';' : ',';
                 
-                
-                Papa.parse(text, {
-                    header: true,
-                    delimiter: delimiter,
-                    skipEmptyLines: true,
-                    transformHeader: (header: string) => {
-                        // Normaliser les noms de colonnes pour assurer la cohérence avec les fichiers XLSX
-                        return this.normalizeColumnName(header);
-                    },
-                    complete: (results) => {
-                        if (isBo) {
-                            this.boData = results.data as Record<string, string>[];
-                            
-                            // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services (pour le mode manuel)
-                            setTimeout(() => {
-                                if (this.boData && this.boData.length > 0) {
-                                    if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
-                                        if (this.availableAgencies.length > 0) {
-                                            this.showAgencySelectionStep();
-                                        } else {
-                                            this.showManualServiceSelectionStep();
-                                        }
+                // Traitement commun une fois le fichier analysé (identique pour flux continu
+                // et parsing classique).
+                const onComplete = (rows: Record<string, string>[]) => {
+                    if (isBo) {
+                        this.boData = rows;
+                        
+                        // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services (pour le mode manuel)
+                        setTimeout(() => {
+                            if (this.boData && this.boData.length > 0) {
+                                if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
+                                    if (this.availableAgencies.length > 0) {
+                                        this.showAgencySelectionStep();
+                                    } else {
+                                        this.showManualServiceSelectionStep();
                                     }
                                 }
-                            }, 100);
-                        } else {
-                            this.partnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
-                            
-                            // Vérifier si le fichier partenaire a des colonnes service/type/statut et déclencher la sélection (pour le mode manuel)
-                            if (this.reconciliationMode === 'manual') {
-                                // Utiliser setTimeout pour laisser Angular terminer le cycle de détection en cours
-                                setTimeout(() => {
-                                    if (this.partnerData && this.partnerData.length > 0) {
-                                        const detected = this.detectPartnerServiceTypeAndStatusForManual(this.partnerData);
-                                        if (detected === 'agency') {
-                                            requestAnimationFrame(() => this.showPartnerAgencySelectionStep());
-                                        } else if (detected === 'services') {
-                                            requestAnimationFrame(() => this.showManualPartnerServiceSelectionStep());
-                                        } else {
-                                        }
+                            }
+                        }, 100);
+                    } else {
+                        this.partnerData = this.convertDebitCreditToNumber(rows);
+                        
+                        // Vérifier si le fichier partenaire a des colonnes service/type/statut et déclencher la sélection (pour le mode manuel)
+                        if (this.reconciliationMode === 'manual') {
+                            // Utiliser setTimeout pour laisser Angular terminer le cycle de détection en cours
+                            setTimeout(() => {
+                                if (this.partnerData && this.partnerData.length > 0) {
+                                    const detected = this.detectPartnerServiceTypeAndStatusForManual(this.partnerData);
+                                    if (detected === 'agency') {
+                                        requestAnimationFrame(() => this.showPartnerAgencySelectionStep());
+                                    } else if (detected === 'services') {
+                                        requestAnimationFrame(() => this.showManualPartnerServiceSelectionStep());
                                     } else {
                                     }
-                                }, 100);
-                            }
+                                } else {
+                                }
+                            }, 100);
                         }
-                        
-                        // Mettre à jour l'estimation si les deux fichiers sont chargés
-                        if (this.boFile && this.partnerFile) {
-                            this.updateEstimatedTime();
-                        }
-                        
-                        // Forcer la détection des changements pour mettre à jour la vue
-                        this.cd.detectChanges();
-                    },
-                    error: (error: any) => {
-                        this.cd.detectChanges();
                     }
-                });
+                    
+                    // Mettre à jour l'estimation si les deux fichiers sont chargés
+                    if (this.boFile && this.partnerFile) {
+                        this.updateEstimatedTime();
+                    }
+                    
+                    // Forcer la détection des changements pour mettre à jour la vue
+                    this.cd.detectChanges();
+                };
+                
+                // Fichiers volumineux : parsing en flux continu pour ne pas geler l'interface
+                // (Papa.parse synchrone sur de gros CSV figeait le thread UI).
+                if (file.size > 3 * 1024 * 1024) {
+                    // Papa.parse ne gère pas header:true avec step : on reconstruit les lignes
+                    // nous-mêmes, avec exactement les mêmes valeurs que header:true (cellule
+                    // manquante = undefined, colonnes en trop ignorées).
+                    let headers: string[] | null = null;
+                    const accumulated: Record<string, string>[] = [];
+                    Papa.parse(text, {
+                        header: false,
+                        delimiter: delimiter,
+                        skipEmptyLines: true,
+                        step: (results: Papa.ParseStepResult<string[]>, parser: Papa.Parser) => {
+                            const cells = results.data as string[];
+                            if (!headers) {
+                                headers = cells.map(header => this.normalizeColumnName(header));
+                                return;
+                            }
+                            const row: Record<string, string> = {};
+                            headers.forEach((header, index) => {
+                                row[header] = cells[index];
+                            });
+                            accumulated.push(row);
+                            
+                            // Laisser le navigateur respirer toutes les 2 500 lignes
+                            if (accumulated.length % 2500 === 0) {
+                                parser.pause();
+                                this.yieldToMainThread().then(() => parser.resume()).catch(() => parser.resume());
+                            }
+                        },
+                        complete: () => {
+                            onComplete(accumulated);
+                        },
+                        error: (error: any) => {
+                            this.cd.detectChanges();
+                        }
+                    });
+                } else {
+                    Papa.parse(text, {
+                        header: true,
+                        delimiter: delimiter,
+                        skipEmptyLines: true,
+                        transformHeader: (header: string) => {
+                            // Normaliser les noms de colonnes pour assurer la cohérence avec les fichiers XLSX
+                            return this.normalizeColumnName(header);
+                        },
+                        complete: (results) => {
+                            onComplete(results.data as Record<string, string>[]);
+                        },
+                        error: (error: any) => {
+                            this.cd.detectChanges();
+                        }
+                    });
+                }
             }
         };
         reader.onerror = (e) => {
@@ -8622,6 +9104,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     ngOnDestroy(): void {
+        this.traitementViewDestroyed = true;
         // Nettoyer l'abonnement à la progression
         if (this.reconciliationProgressSubscription) {
             this.reconciliationProgressSubscription.unsubscribe();

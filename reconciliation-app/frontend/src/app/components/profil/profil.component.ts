@@ -89,6 +89,10 @@ export class ProfilComponent implements OnInit {
   // Nombre de permissions à afficher par défaut dans la liste
   defaultPermissionsDisplayCount = 10;
   
+  // Modules en cours d'association/désassociation (état optimiste pour éviter
+  // que la case à cocher ne se décoche visuellement pendant l'appel asynchrone)
+  togglingModuleIds = new Set<number>();
+
   // Propriétés pour la gestion des pays et drapeaux
   flagLoadError: { [key: string]: boolean } = {};
   
@@ -829,17 +833,53 @@ export class ProfilComponent implements OnInit {
     if (!this.selectedProfil?.id || !module.id || this.isModuleAssociated(module)) {
       return;
     }
-    const marker = this.permissions.find(p =>
+    let marker = this.permissions.find(p =>
       p.nom === 'module_associé' || p.nom === 'aucune' || p.nom === 'module_associe'
     );
     if (!marker?.id) {
+      // La permission marqueur n'existe pas encore : on la crée (comme dans la vue legacy)
+      this.profilService.createPermission({ nom: 'module_associé' }).subscribe({
+        next: (newPermission) => {
+          if (!newPermission.id) {
+            console.error(`❌ Permission module_associé créée sans ID`);
+            return;
+          }
+          marker = newPermission;
+          this.withRetry(
+            this.profilService.addPermissionToProfil(this.selectedProfil.id, module.id, marker.id)
+          ).subscribe({
+            next: (pp) => {
+              if (!this.profilPermissions.some(existing => 
+                existing.id === pp.id || 
+                (existing.module && existing.module.id === pp.module?.id && 
+                 existing.permission && existing.permission.id === pp.permission?.id &&
+                 existing.profil && existing.profil.id === pp.profil?.id)
+              )) {
+                this.profilPermissions.push(pp);
+              }
+              console.log(`✅ Module ${module.nom} associé (permission module_associé créée)`);
+              this.cd.detectChanges();
+            },
+            error: (error) => console.error('Association navigation sous-menu:', error)
+          });
+        },
+        error: (error) => {
+          console.error(`❌ Erreur création permission module_associé:`, error);
+          this.cd.detectChanges();
+        }
+      });
       return;
     }
     this.withRetry(
       this.profilService.addPermissionToProfil(this.selectedProfil.id, module.id, marker.id)
     ).subscribe({
       next: (pp) => {
-        if (!this.profilPermissions.some(existing => existing.id === pp.id)) {
+        if (!this.profilPermissions.some(existing => 
+          existing.id === pp.id || 
+          (existing.module && existing.module.id === pp.module?.id && 
+           existing.permission && existing.permission.id === pp.permission?.id &&
+           existing.profil && existing.profil.id === pp.profil?.id)
+        )) {
           this.profilPermissions.push(pp);
         }
         this.cd.detectChanges();
@@ -1638,6 +1678,11 @@ export class ProfilComponent implements OnInit {
   isModuleAssociated(module: Module | undefined): boolean {
     if (!module || !this.selectedProfil || !module.id) return false;
     
+    // État optimiste : le module est en cours d'association
+    if (this.togglingModuleIds.has(module.id)) {
+      return true;
+    }
+    
     // Vérifier si le module a des permissions associées dans ce profil
     const hasPermissions = this.profilPermissions.some(pp => 
       pp.module && pp.module.id && pp.profil && pp.profil.id &&
@@ -1920,9 +1965,13 @@ export class ProfilComponent implements OnInit {
       // Associer le module avec toutes les permissions existantes
       console.log(`➕ Association du module ${module.nom} au profil ${this.selectedProfil.nom}`);
       
+      // Marquer comme en cours pour l'état optimiste de la case à cocher
+      this.togglingModuleIds.add(module.id!);
+      
       // Vérifier si le module n'est pas déjà associé
       if (this.isModuleAssociated(module)) {
         console.log(`⚠️ Module ${module.nom} déjà associé`);
+        this.togglingModuleIds.delete(module.id!);
         return;
       }
       
@@ -1951,10 +2000,12 @@ export class ProfilComponent implements OnInit {
                 this.profilPermissions.push(pp);
               }
               console.log(`✅ Module ${module.nom} associé sans permissions actives`);
+              this.togglingModuleIds.delete(module.id!);
               this.cd.detectChanges();
             },
             error: (error) => {
               console.error(`❌ Erreur lors de l'association du module sans permissions:`, error);
+              this.togglingModuleIds.delete(module.id!);
               this.cd.detectChanges();
             }
           });
@@ -1978,23 +2029,29 @@ export class ProfilComponent implements OnInit {
                     // Recharger les permissions pour inclure la nouvelle
                     this.loadPermissions();
                     console.log(`✅ Module ${module.nom} associé sans permissions actives`);
+                    this.togglingModuleIds.delete(module.id!);
                     this.cd.detectChanges();
                   },
                   error: (error) => {
                     console.error(`❌ Erreur lors de l'association du module:`, error);
+                    this.togglingModuleIds.delete(module.id!);
                     this.cd.detectChanges();
                   }
                 });
+              } else {
+                this.togglingModuleIds.delete(module.id!);
               }
             },
             error: (error) => {
               console.error(`❌ Erreur lors de la création de la permission spéciale:`, error);
+              this.togglingModuleIds.delete(module.id!);
               // En cas d'erreur, recharger quand même pour mettre à jour l'UI
               this.reloadProfilData();
               this.cd.detectChanges();
             }
           });
         }
+        this.togglingModuleIds.delete(module.id!);
         return;
       }
       
@@ -2020,6 +2077,7 @@ export class ProfilComponent implements OnInit {
               }
             });
             console.log(`✅ ${profilPermissions.length} permissions ajoutées pour le module ${module.nom}`);
+            this.togglingModuleIds.delete(module.id!);
             setTimeout(() => {
               this.loadAllProfilPermissions();
               if (this.selectedProfil && this.selectedProfil.id) {
@@ -2045,6 +2103,7 @@ export class ProfilComponent implements OnInit {
           },
           error: (error) => {
             console.error(`❌ Erreur lors de l'ajout des permissions pour le module ${module.nom}:`, error);
+            this.togglingModuleIds.delete(module.id!);
             if (this.selectedProfil && this.selectedProfil.id) {
               this.withRetry(
                 this.profilService.getProfilPermissions(this.selectedProfil.id)
@@ -2062,17 +2121,21 @@ export class ProfilComponent implements OnInit {
           }
         });
       }
+      this.togglingModuleIds.delete(module.id!);
       }); // fin getPermissionsForModule
     } else {
       // Désassocier le module en supprimant toutes ses permissions
       console.log(`➖ Désassociation du module ${module.nom} du profil ${this.selectedProfil.nom}`);
       
       if (!module.id) return;
+      this.togglingModuleIds.add(module.id!);
+      
       const modulePermissions = this.profilPermissions.filter(pp => pp.module && pp.module.id === module.id);
       console.log(`🗑️ Suppression de ${modulePermissions.length} permissions pour le module ${module.nom}`);
       
       if (modulePermissions.length === 0) {
         console.log(`⚠️ Aucune permission à supprimer pour le module ${module.nom}`);
+        this.togglingModuleIds.delete(module.id!);
         // Même sans permissions à supprimer, recharger pour s'assurer de la cohérence
         this.reloadProfilData();
         return;
@@ -2092,6 +2155,7 @@ export class ProfilComponent implements OnInit {
               // Si c'est la dernière permission supprimée, recharger les données
               if (removedCount === totalToRemove) {
                 console.log(`✅ Toutes les permissions supprimées pour le module ${module.nom}`);
+                this.togglingModuleIds.delete(module.id!);
                 // Recharger toutes les permissions pour mettre à jour les décomptes dans le tableau
                 this.loadAllProfilPermissions();
                 this.reloadProfilData();
@@ -2102,6 +2166,7 @@ export class ProfilComponent implements OnInit {
               removedCount++;
               // Continuer même en cas d'erreur
               if (removedCount === totalToRemove) {
+                this.togglingModuleIds.delete(module.id!);
                 this.reloadProfilData();
               }
             }
@@ -2111,6 +2176,7 @@ export class ProfilComponent implements OnInit {
           this.profilPermissions = this.profilPermissions.filter(p => p.id !== pp.id);
           removedCount++;
           if (removedCount === totalToRemove) {
+            this.togglingModuleIds.delete(module.id!);
             this.reloadProfilData();
           }
         }

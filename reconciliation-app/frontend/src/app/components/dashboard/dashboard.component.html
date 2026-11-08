@@ -115,36 +115,6 @@
                             </select>
                         </div>
                     </div>
-                    <div class="reco-legend">
-                        <div
-                            class="legend-item"
-                            [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'RECONCILIE' }"
-                            (click)="setReconciliationStatusFilter('RECONCILIE')"
-                        >
-                            <span class="legend-dot legend-ok"></span>{{ recoValidatedStatusLabel }}
-                        </div>
-                        <div
-                            class="legend-item"
-                            [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'EN_COURS_VALIDATION' }"
-                            (click)="setReconciliationStatusFilter('EN_COURS_VALIDATION')"
-                        >
-                            <span class="legend-dot legend-pending-cdo"></span>En cours de validation
-                        </div>
-                        <div
-                            class="legend-item"
-                            [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'EN_COURS_CLOTURE' }"
-                            (click)="setReconciliationStatusFilter('EN_COURS_CLOTURE')"
-                        >
-                            <span class="legend-dot legend-pending-group"></span>En cours de clôture
-                        </div>
-                        <div
-                            class="legend-item"
-                            [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'NON_RECONCILIE' }"
-                            (click)="setReconciliationStatusFilter('NON_RECONCILIE')"
-                        >
-                            <span class="legend-dot legend-failed"></span>Non réconcilié
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -227,19 +197,15 @@
                     <span class="reco-stat-value total">{{ recoStats.total }}</span>
                 </div>
                 <div class="reco-stat-item">
-                    <span class="reco-stat-label">{{ recoValidatedStatusLabelPlural }}</span>
                     <span class="reco-stat-value ok">{{ recoCoverageCount }}</span>
                 </div>
                 <div class="reco-stat-item">
-                    <span class="reco-stat-label">En cours de validation</span>
                     <span class="reco-stat-value pending-cdo">{{ recoStats.enCoursCdo }}</span>
                 </div>
                 <div class="reco-stat-item">
-                    <span class="reco-stat-label">En cours de clôture</span>
                     <span class="reco-stat-value pending-group">{{ recoStats.enCoursGroup }}</span>
                 </div>
                 <div class="reco-stat-item">
-                    <span class="reco-stat-label">Non réconciliés</span>
                     <span class="reco-stat-value failed">{{ recoStats.nonReco }}</span>
                 </div>
                 <div class="reco-stat-item">
@@ -332,25 +298,12 @@
             <!-- Graphiques état des réconciliations (donut + évolution par jour) -->
             <div *ngIf="(!reconciliationSummaryLoading || reconciliationSummaryRows.length) && !reconciliationSummaryError && reconciliationSummaryRows.length && recoStats.total > 0" class="reco-charts-row">
                 <div class="reco-chart-block reco-chart-donut">
-                    <div class="reco-chart-legend-top">
-                        <span class="reco-legend-dot ok"></span> {{ recoValidatedStatusLabel }}
-                        <span class="reco-legend-dot pending-cdo"></span> En cours de validation
-                        <span class="reco-legend-dot pending-group"></span> En cours de clôture
-                        <span class="reco-legend-dot failed"></span> Non réconcilié
-                    </div>
                     <div class="reco-chart-canvas-wrap">
                         <canvas baseChart
                             type="doughnut"
                             [data]="recoDonutChartData"
                             [options]="recoDonutChartOptions">
                         </canvas>
-                    </div>
-                    <div class="reco-chart-legend-detail">
-                        <div><span class="reco-legend-dot ok"></span> {{ recoValidatedStatusLabel }} : {{ recoCoverageCount }} ({{ recoCoverageRatePercent | number:'1.0-0' }} %)</div>
-                        <div><span class="reco-legend-dot pending-support"></span> En cours de traitement : {{ recoStats.enCoursSupport }} ({{ (recoStats.total > 0 ? (recoStats.enCoursSupport / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
-                        <div><span class="reco-legend-dot pending-cdo"></span> En cours de validation : {{ recoStats.enCoursCdo }} ({{ (recoStats.total > 0 ? (recoStats.enCoursCdo / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
-                        <div><span class="reco-legend-dot pending-group"></span> En cours de clôture : {{ recoStats.enCoursGroup }} ({{ (recoStats.total > 0 ? (recoStats.enCoursGroup / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
-                        <div><span class="reco-legend-dot failed"></span> Non réconcilié : {{ recoStats.nonReco }} ({{ (recoStats.total > 0 ? (recoStats.nonReco / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
                     </div>
                 </div>
                 <div class="reco-chart-block reco-chart-evolution">
@@ -361,6 +314,13 @@
                             [options]="recoEvolutionChartOptions">
                         </canvas>
                     </div>
+                </div>
+                <div class="reco-chart-legend-detail">
+                    <div><span class="reco-legend-dot ok"></span> {{ recoValidatedStatusLabel }} : {{ recoCoverageCount }} ({{ recoCoverageRatePercent | number:'1.0-0' }} %)</div>
+                    <div><span class="reco-legend-dot pending-support"></span> En cours de traitement : {{ recoStats.enCoursSupport }} ({{ (recoStats.total > 0 ? (recoStats.enCoursSupport / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
+                    <div><span class="reco-legend-dot pending-cdo"></span> En cours de validation : {{ recoStats.enCoursCdo }} ({{ (recoStats.total > 0 ? (recoStats.enCoursCdo / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
+                    <div><span class="reco-legend-dot pending-group"></span> En cours de clôture : {{ recoStats.enCoursGroup }} ({{ (recoStats.total > 0 ? (recoStats.enCoursGroup / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
+                    <div><span class="reco-legend-dot failed"></span> Non réconcilié : {{ recoStats.nonReco }} ({{ (recoStats.total > 0 ? (recoStats.nonReco / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
                 </div>
             </div>
             </div>
@@ -1182,19 +1142,15 @@
                         <span class="reco-stat-value total">{{ recoViewStats.total }}</span>
                     </div>
                     <div class="reco-stat-item">
-                        <span class="reco-stat-label">{{ recoValidatedStatusLabelPlural }}</span>
                         <span class="reco-stat-value ok">{{ getRecoViewCoverageCount() }}</span>
                     </div>
                     <div class="reco-stat-item">
-                        <span class="reco-stat-label">En cours de validation</span>
                         <span class="reco-stat-value pending-cdo">{{ recoViewStats.enCoursCdo }}</span>
                     </div>
                     <div class="reco-stat-item">
-                        <span class="reco-stat-label">En cours de clôture</span>
                         <span class="reco-stat-value pending-group">{{ recoViewStats.enCoursGroup }}</span>
                     </div>
                     <div class="reco-stat-item">
-                        <span class="reco-stat-label">Non réconciliés</span>
                         <span class="reco-stat-value failed">{{ recoViewStats.nonReco }}</span>
                     </div>
                     <div class="reco-stat-item">

@@ -1,0 +1,48 @@
+<div class="modern-popup-overlay" *ngIf="show" (click)="closePopup()">
+  <div class="modern-popup detail-popup" (click)="$event.stopPropagation()">
+    <div class="popup-header">
+      <h2><i class="fas fa-share"></i> Destination du fichier traité</h2>
+      <button class="close-btn" (click)="closePopup()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <div class="popup-content">
+      <div class="destination-intro">
+        <p>Le fichier a été traité avec succès. Choisissez la destination des données :</p>
+      </div>
+
+      <div class="destination-options">
+        <button
+          type="button"
+          class="destination-btn destination-operation"
+          (click)="select('operation')"
+        >
+          <i class="fas fa-database"></i>
+          <div class="destination-info">
+            <strong>Opérations bancaires</strong>
+            <span>Envoyer vers la table des opérations bancaires</span>
+          </div>
+          <i class="fas fa-arrow-right"></i>
+        </button>
+
+        <button
+          type="button"
+          class="destination-btn destination-releve"
+          (click)="select('releve')"
+        >
+          <i class="fas fa-file-invoice-dollar"></i>
+          <div class="destination-info">
+            <strong>Relevé bancaire</strong>
+            <span>Envoyer vers la table des relevés bancaires</span>
+          </div>
+          <i class="fas fa-arrow-right"></i>
+        </button>
+      </div>
+
+      <div class="destination-footer">
+        <button type="button" class="btn-secondary" (click)="closePopup()">Annuler</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -45,6 +45,25 @@ public class KeyDiscoveryService {
     }
 
     /**
+     * Découvre la meilleure colonne clé pour un seul côté (BO ou partenaire).
+     * Retourne la colonne BO si `side` vaut "bo", sinon la colonne partenaire,
+     * en utilisant le meilleur candidat détecté entre les deux datasets.
+     */
+    public String discoverBestKey(
+        List<Map<String, String>> boData,
+        List<Map<String, String>> partnerData,
+        String side
+    ) {
+        KeyDiscoveryResult result = discoverKeys(boData, partnerData);
+        if (result.candidates == null || result.candidates.isEmpty()) {
+            return null;
+        }
+        KeyCandidate top = result.candidates.get(0);
+        boolean isBo = "bo".equalsIgnoreCase(side) || "boOnly".equalsIgnoreCase(side);
+        return isBo ? top.boColumn : top.partnerColumn;
+    }
+
+    /**
      * Analyse les correspondances potentielles avec analyse de contenu
      */
     private List<ColumnMatch> analyzeColumnMatchesWithContent(List<Map<String, String>> boData, List<Map<String, String>> partnerData) {

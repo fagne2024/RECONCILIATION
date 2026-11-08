@@ -107,6 +107,10 @@
       {{ loading ? 'Connexion...' : 'Se connecter' }}
     </button>
     
+    <div class="login-version">
+      <span>Version {{ appVersion }}</span>
+    </div>
+    
     <div *ngIf="error" class="login-error">
       <mat-icon>error</mat-icon>
       {{ error }}

@@ -24,17 +24,22 @@ import { extractRecordAmount } from '../../utils/record-amount.util';
 import {
     partitionEcartRecords,
     recordMatchesMagicPartition,
+    recordMatchesAnyMagicService,
+    filterMatchBoDataByMagicPartitionMulti,
+    filterRecordsByMagicPartitionMulti,
     hasMagicPartitionTags,
     resolveMagicPartitionContext,
     MagicPartitionContext
 } from '../../utils/magic-partition.util';
 import { MagicServiceSummary } from '../../services/magic-reconciliation.service';
+import { countryNameFromCode } from '../../utils/country-codes.util';
 import {
     formatSpreadsheetDateValue,
     isDateColumnName,
     normalizeRecordDateFields,
     normalizeRecordsDateFields
 } from '../../utils/date-format.util';
+import { SharedModule } from '../../shared/shared.module';
 
 interface ApiError {
     error?: {
@@ -46,6 +51,8 @@ interface ApiError {
 
 @Component({
     selector: 'app-reconciliation-results',
+    standalone: true,
+    imports: [SharedModule],
     changeDetection: ChangeDetectionStrategy.OnPush,
     template: `
         <div class="results-page">
@@ -118,6 +125,18 @@ interface ApiError {
                     </div>
                 </div>
 
+                <div class="magic-report-group-bar" *ngIf="visibleMagicSummaries.length">
+                    <span class="magic-report-group-label">Rapport groupé</span>
+                    <label class="magic-report-group-check">
+                        <input type="checkbox" (change)="toggleAllMagicReportSelection($event)"
+                               [checked]="allMagicServicesReportSelected()">
+                        <span>Toutes les réconciliations</span>
+                    </label>
+                    <span class="magic-report-group-count">
+                        {{ reportSelectedServices.length }} / {{ visibleMagicSummaries.length }} sélectionnée(s) pour le rapport
+                    </span>
+                </div>
+
                 <div class="magic-partners-row" *ngIf="magicPartnerFileNames.length > 1">
                     <span class="magic-partners-label">Fichier partenaire</span>
                     <div class="magic-partners-tabs">
@@ -138,10 +157,21 @@ interface ApiError {
                             class="magic-service-tab"
                             *ngFor="let summary of visibleMagicSummaries; let i = index"
                             [class.active]="selectedMagicService === summary.service"
+                            [class.report-selected]="isMagicServiceReportSelected(summary.service)"
                             [attr.aria-selected]="selectedMagicService === summary.service"
                             [title]="summary.service"
                             (click)="selectMagicService(summary.service)">
                         <span class="tab-rail">
+                            <span
+                                class="tab-report-check"
+                                role="checkbox"
+                                [attr.aria-checked]="isMagicServiceReportSelected(summary.service)"
+                                [title]="isMagicServiceReportSelected(summary.service) ? 'Retirer du rapport groupé' : 'Ajouter au rapport groupé'"
+                                (click)="$event.stopPropagation(); toggleMagicServiceReportSelection(summary.service)">
+                                <span class="tab-report-box">
+                                    <span *ngIf="isMagicServiceReportSelected(summary.service)" class="tab-report-tick">✓</span>
+                                </span>
+                            </span>
                             <span class="tab-index">{{ i + 1 }}</span>
                             <span class="tab-name">{{ summary.service }}</span>
                         </span>
@@ -310,7 +340,7 @@ interface ApiError {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr *ngFor="let summary of getPagedAgencySummary()">
+                                        <tr *ngFor="let summary of getPagedAgencySummary(); trackBy: trackByAgencyName">
                                             <td><input type="checkbox" [checked]="isAgencySelected(summary)" (change)="toggleAgencySelection(summary, $event)"></td>
                                             <td>{{summary.agency}}</td>
                                             <td>{{summary.service}}</td>
@@ -331,7 +361,7 @@ interface ApiError {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr *ngFor="let service of getServiceTotalsArray()">
+                                        <tr *ngFor="let service of getServiceTotalsArray(); trackBy: trackByServiceName">
                                             <td>{{service.name}}</td>
                                             <td>{{service.volume | number:'1.0-0'}}</td>
                                         </tr>
@@ -1077,6 +1107,50 @@ interface ApiError {
             text-align: center;
         }
 
+        .magic-report-group-bar {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin: -4px 0 14px;
+            padding: 8px 12px;
+            border: 1px solid var(--rd-border);
+            border-radius: var(--rd-r-sm);
+            background: var(--rd-bg2, #f8fafc);
+        }
+
+        .magic-report-group-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--rd-blue);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .magic-report-group-check {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 13px;
+            color: var(--rd-text1);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .magic-report-group-check input[type='checkbox'] {
+            accent-color: var(--rd-blue);
+            width: 15px;
+            height: 15px;
+            cursor: pointer;
+        }
+
+        .magic-report-group-count {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--rd-text2);
+            margin-left: auto;
+        }
+
         .magic-services-tabs {
             display: flex;
             gap: 12px;
@@ -1147,6 +1221,47 @@ interface ApiError {
         .magic-service-tab.active .tab-index {
             background: var(--rd-blue);
             color: #fff;
+        }
+
+        .magic-service-tab .tab-report-check {
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .magic-service-tab .tab-report-box {
+            width: 18px;
+            height: 18px;
+            border: 1.5px solid var(--rd-border2);
+            border-radius: 5px;
+            background: #fff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.15s, background 0.15s;
+        }
+
+        .magic-service-tab .tab-report-box:hover {
+            border-color: var(--rd-blue-m);
+        }
+
+        .magic-service-tab.report-selected .tab-report-box {
+            border-color: var(--rd-blue);
+            background: var(--rd-blue);
+        }
+
+        .magic-service-tab .tab-report-tick {
+            color: #fff;
+            font-size: 12px;
+            line-height: 1;
+            font-weight: 700;
+        }
+
+        .magic-service-tab.report-selected {
+            border-color: var(--rd-blue);
+            box-shadow: 0 0 0 1px var(--rd-blue-m);
         }
 
         .magic-service-tab .tab-name {
@@ -2895,6 +3010,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     magicPartnerFileNames: string[] = [];
     selectedMagicPartnerFile: string = '';
     selectedMagicService: string = '';
+    reportSelectedServices: string[] = [];
     selectedDate: string = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     
     // Cache pour optimiser les performances
@@ -2979,6 +3095,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     // Flag pour éviter les appels multiples de updateKeysCache
     private isUpdatingKeysCache: boolean = false;
     private keysCacheUpdatePromise: Promise<void> | null = null;
+
+    // Mémoïsation par référence d'enregistrement (WeakMap) : une même ligne n'est jamais modifiée
+    // en mémoire, on évite de refaire fixGarbledCharacters + filtrage de colonnes + extraction
+    // volume/date à chaque détection de changement. Les WeakMap sont nettoyés automatiquement
+    // quand les anciens enregistrements deviennent inaccessibles (nouvelle réconciliation).
+    private filteredKeysCache = new WeakMap<object, Partial<{ bo: string[]; partner: string[] }>>();
+    private originalKeyCache = new WeakMap<object, Map<string, string>>();
+    private partnerOnlyVolumeCache = new WeakMap<object, number>();
+    private partnerOnlyDateCache = new WeakMap<object, string>();
 
     // Ajout pour sélection Résumé par Agence
     selectedAgencySummaries: string[] = [];
@@ -4062,6 +4187,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     const initDataStartTime = performance.now();
                     
                     this.response = this.normalizeReconciliationResponseDates(response);
+                    // Conserver la réponse complète (toutes les services/cards) avant que le
+                    // lazy-load ne la remplace par la seule card active. Le rapport s'en sert
+                    // pour afficher le détail par agence de chaque card sélectionnée.
+                    if (!this.appStateService.getMagicFullResponse() && response) {
+                        this.appStateService.setMagicFullResponse(response);
+                    }
                     this.magicServiceSummaries = this.appStateService.getMagicServiceSummaries();
                     this.magicPartnerFileNames = this.appStateService.getMagicPartnerFileNames();
                     this.selectedMagicPartnerFile = this.appStateService.getSelectedMagicPartnerFile()
@@ -4135,7 +4266,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     // Utiliser requestAnimationFrame pour un rendu supplémentaire après le cycle actuel
                     requestAnimationFrame(() => {
                         this.cdr.markForCheck();
-                        this.cdr.detectChanges();
                         const detectChangesDuration = performance.now() - detectChangesStartTime;
                     });
                     
@@ -4282,10 +4412,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Démarrer le calcul asynchrone des volumes en arrière-plan
         this.calculateVolumesAsync();
         
-        // Utiliser requestAnimationFrame pour un rendu supplémentaire après le cycle actuel
+        // Marquer pour un rendu supplémentaire au prochain cycle (évite un second rendu
+        // synchrone redondant qui re-évalue tous les bindings du template).
         requestAnimationFrame(() => {
             this.cdr.markForCheck();
-            this.cdr.detectChanges();
             const forceRenderDuration = performance.now() - forceRenderStartTime;
         });
         
@@ -4644,10 +4774,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
         this.cdr.detectChanges(); // Forcer immédiatement le rendu
         
-        // Utiliser requestAnimationFrame pour un rendu supplémentaire après le cycle actuel
+        // Marquer pour un rendu supplémentaire au prochain cycle (évite un second rendu
+        // synchrone redondant qui re-évalue tous les bindings du template).
         requestAnimationFrame(() => {
             this.cdr.markForCheck();
-            this.cdr.detectChanges();
         });
     }
     
@@ -4803,6 +4933,14 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     
     trackByString(index: number, item: string): string {
         return item;
+    }
+    
+    trackByAgencyName(index: number, summary: any): string {
+        return `${summary.agency}|${summary.service}|${summary.country}`;
+    }
+    
+    trackByServiceName(index: number, service: any): string {
+        return service.name;
     }
 
     getTotalPages(type: 'matches' | 'boOnly' | 'partnerOnly') {
@@ -5642,15 +5780,45 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         });
     }
 
-    openReconciliationReport() {
-        this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
-        this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
-        this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
-        this.reconciliationTabsService.setFilteredMismatches(this.response?.mismatches || []);
+    async openReconciliationReport() {
+        // Cloisonnement magique : ne partager que les données de la (les) card(s) (service(s))
+        // sélectionnée(s) pour le rapport. Si un groupe est sélectionné, on agrège tous ses services.
+        const reportScoped = this.isMagicServiceView() && this.getReportScopeServices().length > 0;
+        if (this.isMagicServiceView()) {
+            this.syncMagicViewContextToTabsService();
+        }
+
+        if (reportScoped) {
+            await this.loadAndShareMultiServiceDataForReport();
+        } else {
+            const scopedMismatches = this.isMagicServiceView()
+                ? partitionEcartRecords(this.response?.mismatches || [], this.getEcartPartitionContext())
+                : (this.response?.mismatches || []);
+            this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+            this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+            this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+            this.reconciliationTabsService.setFilteredMismatches(scopedMismatches);
+        }
+
+        // DIAGNOSTIC temporaire : combien de services distincts la réponse results contient-elle ?
+        const svcTag = (r: Record<string, string>) => r?._magicService ?? r?.service ?? '';
+        const svcOfMatch = (m: any) => m?.boData?._magicService ?? m?.partnerData?._magicService ?? '';
+        const distinctSvc = (arr: any[], pick: (r: any) => string) => Array.from(new Set((arr || []).map(pick).filter(Boolean)));
+        console.warn('[DIAG-RESULTS] shouldPartitionEcarts=', this.shouldPartitionEcarts(),
+            'scopeServices=', this.getReportScopeServices(),
+            'response counts=', { m: this.response?.matches?.length, b: this.response?.boOnly?.length, p: this.response?.partnerOnly?.length },
+            'distinctSvc=', {
+                m: distinctSvc(this.response?.matches, svcOfMatch),
+                b: distinctSvc(this.response?.boOnly, svcTag),
+                p: distinctSvc(this.response?.partnerOnly, svcTag)
+            },
+            'magicSummaries=', this.appStateService.getMagicServiceSummaries()?.map(s => s.service));
 
         // Invalider un résumé cache incomplet (matches=0 alors que totalMatches>0),
         // sinon le rapport affiche Transactions/Correspondances faussees.
-        const expectedMatches = this.response?.totalMatches ?? 0;
+        // En vue magique, comparer aux totaux de la card — pas aux totaux globaux (autres patterns).
+        const activeMagic = this.isMagicServiceView() ? this.findActiveMagicSummary() : undefined;
+        const expectedMatches = activeMagic?.totalMatches ?? this.response?.totalMatches ?? 0;
         const cachedMatches = (this.cachedAgencySummary || [])
             .reduce((sum, row) => sum + (Number(row.matches) || 0), 0);
         if (expectedMatches > 0 && cachedMatches === 0) {
@@ -5667,7 +5835,28 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             );
         }
 
-        this.router.navigate(['/reconciliation-report']);
+        // Vue magique : forcer un résumé cloisonné (recalculé sur les données de la card sélectionnée)
+        // AVANT la navigation pour éviter que le rapport n'affiche d'abord un autre service.
+        if (this.isMagicServiceView()) {
+            try {
+                this.getAgencySummary();
+            } catch {
+                // Le rapport reconstruira le résumé si besoin
+            }
+            this.ensureMagicAgencySummaryForReport(activeMagic);
+        }
+
+        const queryParams = this.isMagicServiceView()
+            ? {
+                mode: 'magic',
+                magicServices: this.reportSelectedServices.length > 0
+                    ? this.reportSelectedServices.join(',')
+                    : undefined,
+                magicService: this.selectedMagicService || undefined,
+                magicPartnerFile: this.selectedMagicPartnerFile || undefined
+            }
+            : undefined;
+        this.router.navigate(['/reconciliation-report'], queryParams ? { queryParams } : undefined);
 
         if (this.response && (
             this.filteredMatches.length > 0 ||
@@ -5687,6 +5876,61 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 });
             }
         }
+    }
+
+    /**
+     * Charge les données de chaque service sélectionné depuis le serveur (via leur jobId)
+     * et les partage dans les onglets pour que le rapport groupe puisse afficher le détail
+     * par agence de chaque card. Chaque ligne reçoit `_magicService` pour le partitionnement.
+     */
+    private async loadAndShareMultiServiceDataForReport(): Promise<void> {
+        const scopeServices = this.getReportScopeServices();
+        const summaries = this.appStateService.getMagicServiceSummaries();
+
+        // Associer chaque service sélectionné à son jobId
+        const serviceJobs = scopeServices
+            .map(svc => summaries.find(s => s.service === svc && s.jobId))
+            .filter((s): s is MagicServiceSummary & { jobId: string } => !!s?.jobId);
+
+        if (!serviceJobs.length) {
+            // Pas de jobId → fallback sur les données déjà chargées
+            this.reconciliationTabsService.setFilteredMatches(this.getReportScopedMatches());
+            this.reconciliationTabsService.setFilteredBoOnly(this.getReportScopedBoOnly());
+            this.reconciliationTabsService.setFilteredPartnerOnly(this.getReportScopedPartnerOnly());
+            this.reconciliationTabsService.setFilteredMismatches(this.getReportScopedMismatches());
+            return;
+        }
+
+        // Charger chaque service en parallèle depuis le serveur
+        const loads = serviceJobs.map(async ({ service, jobId }) => {
+            try {
+                const [ecarts, partnerOnly] = await Promise.all([
+                    this.reconciliationService.loadBoEcartsFromSession(jobId),
+                    this.reconciliationService.loadPartnerOnlyFromSession(jobId)
+                ]);
+                return {
+                    service,
+                    boOnly: ecarts.boOnly.map(row => ({ ...row, _magicService: service })),
+                    mismatches: ecarts.mismatches.map(row => ({ ...row, _magicService: service })),
+                    partnerOnly: partnerOnly.map(row => ({ ...row, _magicService: service }))
+                };
+            } catch (error) {
+                console.warn(`[report] Échec chargement données pour ${service}:`, error);
+                return { service, boOnly: [] as Record<string, string>[], mismatches: [] as Record<string, string>[], partnerOnly: [] as Record<string, string>[] };
+            }
+        });
+
+        const results = await Promise.all(loads);
+
+        // Fusionner toutes les données dans les onglets
+        const allBoOnly = results.flatMap(r => r.boOnly);
+        const allMismatches = results.flatMap(r => r.mismatches);
+        const allPartnerOnly = results.flatMap(r => r.partnerOnly);
+
+        this.reconciliationTabsService.setFilteredBoOnly(allBoOnly);
+        this.reconciliationTabsService.setFilteredMismatches(allMismatches);
+        this.reconciliationTabsService.setFilteredPartnerOnly(allPartnerOnly);
+        this.reconciliationTabsService.setFilteredMatches([]);
     }
 
     nextPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
@@ -5831,6 +6075,18 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      * Corrige également les noms de colonnes mal encodés
      */
     getFilteredKeys(record: Record<string, string>, dataType: 'bo' | 'partner'): string[] {
+        const cached = this.filteredKeysCache.get(record as object)?.[dataType];
+        if (cached) {
+            return cached;
+        }
+        const result = this.computeFilteredKeys(record, dataType);
+        const entry = this.filteredKeysCache.get(record as object) || {};
+        entry[dataType] = result;
+        this.filteredKeysCache.set(record as object, entry);
+        return result;
+    }
+
+    private computeFilteredKeys(record: Record<string, string>, dataType: 'bo' | 'partner'): string[] {
         const keys = Object.keys(record);
         
         // Corriger les noms de colonnes mal encodés
@@ -5955,9 +6211,20 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      * Obtient la clé originale à partir d'une clé corrigée pour accéder aux données
      */
     private getOriginalKey(record: Record<string, string>, correctedKey: string): string {
+        let keyMap = this.originalKeyCache.get(record as object);
+        if (!keyMap) {
+            keyMap = new Map<string, string>();
+            this.originalKeyCache.set(record as object, keyMap);
+        }
+        const hit = keyMap.get(correctedKey);
+        if (hit !== undefined) {
+            return hit;
+        }
         // Chercher la clé originale qui correspond à la clé corrigée
         const originalKey = Object.keys(record).find(key => fixGarbledCharacters(key) === correctedKey);
-        return originalKey || correctedKey;
+        const resolved = originalKey || correctedKey;
+        keyMap.set(correctedKey, resolved);
+        return resolved;
     }
 
     getBoOnlyKeys(record: Record<string, string>): string[] {
@@ -6231,7 +6498,16 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             return;
         }
 
-        // Première étape : Génération des fichiers
+        const format = /\.csv$/i.test(fileName) ? 'csv' : 'xlsx';
+        const { rows, columns } = await this.prepareDataForExport();
+
+        if (format === 'csv') {
+            this.exportOptimizationService.exportQuick(rows, columns, fileName, 'csv');
+            this.popupService.showSuccess('Export réussi !');
+            return;
+        }
+
+        // Première étape : Génération des fichiers Excel
         const workbooks = await this.generateExcelFile();
 
         // Deuxième étape : Téléchargement
@@ -6250,34 +6526,40 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
 private async promptFileName(): Promise<string | null> {
     const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-    let defaultFileName = 'export.xlsx';
+    let defaultFileName = 'export.csv';
     
     switch (this.activeTab) {
         case 'matches':
-            defaultFileName = `correspondances_${timestamp}.xlsx`;
+            defaultFileName = `correspondances_${timestamp}.csv`;
             break;
         case 'boOnly':
-            defaultFileName = `ecart_bo_${timestamp}.xlsx`;
+            defaultFileName = `ecart_bo_${timestamp}.csv`;
             break;
         case 'partnerOnly':
-            defaultFileName = `ecart_partenaire_${timestamp}.xlsx`;
+            defaultFileName = `ecart_partenaire_${timestamp}.csv`;
             break;
         case 'agencySummary':
-            defaultFileName = `resume_par_agence_${timestamp}.xlsx`;
+            defaultFileName = `resume_par_agence_${timestamp}.csv`;
             break;
     }
     
-    const fileName = prompt(`Entrez le nom du fichier (sans l'extension .xlsx):`, defaultFileName.replace('.xlsx', ''));
+    // Par défaut l'export est en CSV ; l'utilisateur peut choisir .xlsx/.xls en le précisant dans le nom.
+    const fileName = prompt(`Entrez le nom du fichier (défaut : ${defaultFileName}) :`, defaultFileName);
     
     if (fileName === null) {
         return null; // Utilisateur a annulé
     }
     
-    if (fileName.trim() === '') {
+    const trimmed = fileName.trim();
+    if (trimmed === '') {
         return defaultFileName;
     }
     
-    return fileName.trim() + '.xlsx';
+    // Respecter l'extension saisie (.csv / .xlsx / .xls), sinon compléter en .csv par défaut.
+    if (/\.(csv|xlsx|xls)$/i.test(trimmed)) {
+        return trimmed;
+    }
+    return trimmed + '.csv';
 }
 
 private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
@@ -7368,7 +7650,13 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     getPartnerOnlyVolume(record: Record<string, string>): number {
-        return extractRecordAmount(record);
+        const cached = this.partnerOnlyVolumeCache.get(record as object);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const value = extractRecordAmount(record);
+        this.partnerOnlyVolumeCache.set(record as object, value);
+        return value;
     }
 
     // Cache pour getBoAgencyAndService par match key (évite les recalculs dans le template)
@@ -7655,8 +7943,14 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     getPartnerOnlyDate(record: Record<string, string>): string {
+        const cached = this.partnerOnlyDateCache.get(record as object);
+        if (cached !== undefined) {
+            return cached;
+        }
         const dateColumn = this.findDateColumn(record);
-        return dateColumn ? record[dateColumn] || 'Non spécifié' : 'Non spécifié';
+        const value = dateColumn ? record[dateColumn] || 'Non spécifié' : 'Non spécifié';
+        this.partnerOnlyDateCache.set(record as object, value);
+        return value;
     }
 
     private findDateColumn(data: Record<string, string>): string | null {
@@ -7752,9 +8046,15 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     private getResponseHash(): string {
         if (!this.response) return '';
+        // Intégrer le contexte magique (service / fichier partenaire) dans la clé de cache :
+        // sans lui, le résumé par agence d'un service précédent resterait en cache quand on
+        // en sélectionne un autre (mêmes compteurs bruts) → le rapport affiche le mauvais service.
+        const ctx = this.getEcartPartitionContext();
         return JSON.stringify({
             matchesCount: this.response.matches?.length || 0,
-            boOnlyCount: this.response.boOnly?.length || 0
+            boOnlyCount: this.response.boOnly?.length || 0,
+            magicService: ctx.service || '',
+            magicPartnerFile: ctx.partnerFile || ''
         });
     }
 
@@ -7774,6 +8074,10 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const { summary, meta } = this.calculateAgencySummary();
         this.cachedAgencySummary = summary;
         this.lastResponseHash = currentHash;
+        // Version + JSON sérialisé : évite de re-faire JSON.stringify(summary) à chaque
+        // détection de changement (getAgencySummaryHash / getTotalVolume / getTotalRecords).
+        this.agencySummaryVersion++;
+        this.cachedAgencySummarySerialized = JSON.stringify(summary);
         this.reconciliationSummaryService.setAgencySummary(summary, meta);
         return summary;
     }
@@ -7871,7 +8175,13 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             addBo(boInfo.agency, boInfo.service, boInfo.country, boInfo.date, boInfo.volume, 'boOnly');
         });
 
-        (this.response?.mismatches || []).forEach(record => {
+        // Cloisonnement magique : les incohérences (mismatches) doivent être filtrées par service
+        // pour que le résumé ne mélange pas les services entre eux.
+        const scopedMismatches = partitionEcartRecords(
+            this.response?.mismatches || [],
+            this.getEcartPartitionContext()
+        );
+        scopedMismatches.forEach(record => {
             const info = this.getBoOnlyAgencyAndService(record);
             addBo(info.agency, info.service, info.country, info.date, info.volume || 0, 'mismatches');
         });
@@ -7912,10 +8222,19 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     private cachedTotalRecords: number | null = null;
     private lastAgencyPage: number = 1;
     private lastAgencySummaryHash: string = '';
+    // Sérialisation du résumé calculée une seule fois par reconstruction (évite le
+    // JSON.stringify de toute la table à chaque détection de changement).
+    private cachedAgencySummarySerialized: string | null = null;
+    private agencySummaryVersion: number = 0;
+    private volumeSummaryVersion: number = -1;
+    private recordsSummaryVersion: number = -1;
+    private cachedServiceTotals: Array<{ name: string; volume: number }> | null = null;
+    private serviceTotalsVersion: number = -1;
 
     private getAgencySummaryHash(): string {
-        const summary = this.getAgencySummary();
-        return JSON.stringify(summary) + '_' + this.agencyPage + '_' + this.agencyPageSize;
+        this.getAgencySummary();
+        const serialized = this.cachedAgencySummarySerialized ?? '';
+        return serialized + '_' + this.agencyPage + '_' + this.agencyPageSize;
     }
 
     private getPagedAgencySummaryCallCount = 0;
@@ -7947,25 +8266,25 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     getTotalVolume(): number {
         const summary = this.getAgencySummary();
-        const summaryHash = JSON.stringify(summary);
         
-        if (this.cachedTotalVolume !== null && this.lastAgencySummaryHash.includes(summaryHash)) {
+        if (this.cachedTotalVolume !== null && this.volumeSummaryVersion === this.agencySummaryVersion) {
             return this.cachedTotalVolume;
         }
         
         this.cachedTotalVolume = summary.reduce((total, summary) => total + summary.totalVolume, 0);
+        this.volumeSummaryVersion = this.agencySummaryVersion;
         return this.cachedTotalVolume;
     }
 
     getTotalRecords(): number {
         const summary = this.getAgencySummary();
-        const summaryHash = JSON.stringify(summary);
         
-        if (this.cachedTotalRecords !== null && this.lastAgencySummaryHash.includes(summaryHash)) {
+        if (this.cachedTotalRecords !== null && this.recordsSummaryVersion === this.agencySummaryVersion) {
             return this.cachedTotalRecords;
         }
         
         this.cachedTotalRecords = summary.reduce((total, summary) => total + summary.recordCount, 0);
+        this.recordsSummaryVersion = this.agencySummaryVersion;
         return this.cachedTotalRecords;
     }
 
@@ -8075,7 +8394,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     nextAgencyPage() {
         if (this.agencyPage < this.getTotalAgencyPages()) {
             this.agencyPage++;
-            this.invalidateCache();
+            this.invalidateAgencyPageCache();
             this.cdr.detectChanges();
         }
     }
@@ -8083,9 +8402,19 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     prevAgencyPage() {
         if (this.agencyPage > 1) {
             this.agencyPage--;
-            this.invalidateCache();
+            this.invalidateAgencyPageCache();
             this.cdr.detectChanges();
         }
+    }
+
+    /**
+     * Invalide uniquement la tranche paginée : le résumé complet (getAgencySummary / volumes /
+     * totaux par service) ne dépend pas de la page et reste en cache (plus de reconstruction
+     * du résumé + JSON.stringify à chaque clic Précédent/Suivant).
+     */
+    private invalidateAgencyPageCache(): void {
+        this.cachedPagedAgencySummary = null;
+        this.lastAgencySummaryHash = '';
     }
 
     getAgencyTotalsArray(): Array<{name: string, volume: number}> {
@@ -8099,11 +8428,20 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     getServiceTotalsArray(): Array<{name: string, volume: number}> {
         const summary = this.getAgencySummary();
+
+        // Resultat stable tant que le résumé n'est pas reconstruit : évite de refaire
+        // le Map + le tableau à chaque détection de changement (et casse la re-render du *ngFor).
+        if (this.cachedServiceTotals && this.serviceTotalsVersion === this.agencySummaryVersion) {
+            return this.cachedServiceTotals;
+        }
+
         const serviceTotals = new Map<string, number>();
         summary.forEach(item => {
             serviceTotals.set(item.service, (serviceTotals.get(item.service) || 0) + item.totalVolume);
         });
-        return Array.from(serviceTotals.entries()).map(([name, volume]) => ({name, volume}));
+        this.cachedServiceTotals = Array.from(serviceTotals.entries()).map(([name, volume]) => ({name, volume}));
+        this.serviceTotalsVersion = this.agencySummaryVersion;
+        return this.cachedServiceTotals;
     }
 
     private getFilteredMatches(): Match[] {
@@ -8138,11 +8476,71 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         return partitionEcartRecords(partnerOnly, this.getEcartPartitionContext());
     }
 
+    /** Services à inclure dans le rapport groupé (sinon le service actif unique). */
+    private getReportScopeServices(): string[] {
+        if (this.reportSelectedServices?.length) {
+            return this.reportSelectedServices;
+        }
+        return this.selectedMagicService ? [this.selectedMagicService] : [];
+    }
+
+    /**
+     * Fichier partenaire à appliquer au cloisonnement du rapport.
+     * En mode mono-card, on clois tonne sur le fichier actif.
+     * En mode groupe (plusieurs cards), chaque card garde son propre fichier partenaire :
+     * on NE restreint PAS globalement par un seul fichier (sinon on perd les autres cards).
+     */
+    private getReportScopePartnerFile(): string {
+        if (this.reportSelectedServices?.length > 1) {
+            return '';
+        }
+        return this.selectedMagicPartnerFile || '';
+    }
+
+    private getReportScopedMatches(): Match[] {
+        const matches = this.response?.matches || [];
+        if (!this.shouldPartitionEcarts()) {
+            return matches;
+        }
+        const services = this.getReportScopeServices();
+        const partnerFile = this.getReportScopePartnerFile();
+        if (services.length === 0) {
+            return matches;
+        }
+        return filterMatchBoDataByMagicPartitionMulti(matches, services, partnerFile);
+    }
+
+    private getReportScopedBoOnly(): Record<string, string>[] {
+        const boOnly = this.response?.boOnly || [];
+        if (!this.shouldPartitionEcarts()) {
+            return boOnly;
+        }
+        return filterRecordsByMagicPartitionMulti(boOnly, this.getReportScopeServices(), this.getReportScopePartnerFile());
+    }
+
+    private getReportScopedPartnerOnly(): Record<string, string>[] {
+        const partnerOnly = this.response?.partnerOnly || [];
+        if (!this.shouldPartitionEcarts()) {
+            return partnerOnly;
+        }
+        return filterRecordsByMagicPartitionMulti(partnerOnly, this.getReportScopeServices(), this.getReportScopePartnerFile());
+    }
+
+    private getReportScopedMismatches(): Record<string, string>[] {
+        const mismatches = this.response?.mismatches || [];
+        if (!this.shouldPartitionEcarts()) {
+            return mismatches;
+        }
+        return filterRecordsByMagicPartitionMulti(mismatches, this.getReportScopeServices(), this.getReportScopePartnerFile());
+    }
+
     private invalidateCache() {
         this.cachedPagedAgencySummary = null;
         this.cachedTotalVolume = null;
         this.cachedTotalRecords = null;
         this.lastAgencySummaryHash = '';
+        this.cachedAgencySummary = null;
+        this.lastResponseHash = '';
         this.clearFilterDataCaches();
     }
 
@@ -8307,6 +8705,13 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         // Cela garantit un comportement cohérent et une navigation immédiate
         this.setActiveTab('matches');
         const setActiveTabDuration = performance.now() - setActiveTabStartTime;
+
+        // Cloisonnement magique : partager le contexte et les correspondances filtrées par service
+        // pour que l'écran /matches n'affiche que les données de la card sélectionnée.
+        if (this.isMagicServiceView() || this.shouldApplyServicePartition()) {
+            this.syncMagicViewContextToTabsService();
+            this.reconciliationTabsService.setFilteredMatches(this.getFilteredMatches());
+        }
         
         const navigateStartTime = performance.now();
         // Navigation immédiate - les données se chargeront en arrière-plan si nécessaire
@@ -8693,6 +9098,17 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         if (visible.length > 0) {
             this.selectedMagicService = visible[0].service;
             this.selectedService = this.selectedMagicService;
+            // Par défaut, sélectionner toutes les cards visibles pour le rapport groupé,
+            // afin que le rapport affiche chaque service disponible.
+            if (!this.reportSelectedServices?.length) {
+                this.reportSelectedServices = visible.map(s => s.service);
+            }
+            // Propager la sélection par défaut au contexte partagé (appState + onglets) pour que
+            // le rapport réconciliation soit cloisonné par service dès la navigation, sans
+            // qu'il soit nécessaire de re-cliquer sur l'onglet du service.
+            this.appStateService.setSelectedMagicService(this.selectedMagicService);
+            this.appStateService.setSelectedMagicPartnerFile(this.selectedMagicPartnerFile || '');
+            this.reconciliationTabsService.setMagicViewContext(this.selectedMagicService, this.selectedMagicPartnerFile || '');
         }
     }
 
@@ -8716,6 +9132,54 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             s => s.service === this.selectedMagicService &&
                 (!this.selectedMagicPartnerFile || s.partnerFileName === this.selectedMagicPartnerFile)
         );
+    }
+
+    /**
+     * Si les datasets filtrés sont vides (lazy / pagination), le résumé par agence
+     * ne reflète pas la card magique sélectionnée. On injecte alors les totaux de la card.
+     */
+    private ensureMagicAgencySummaryForReport(magic?: MagicServiceSummary): void {
+        if (!magic) {
+            return;
+        }
+        const current = this.cachedAgencySummary || this.reconciliationSummaryService.getAgencySummary() || [];
+        const currentBo = current.reduce(
+            (sum, row) => sum + (Number(row.matches) || 0) + (Number(row.boOnly) || 0),
+            0
+        );
+        const expectedBo = (magic.totalMatches || 0) + (magic.totalBoOnly || 0);
+        const looksComplete = current.length > 0 && (expectedBo <= 0 || currentBo >= expectedBo * 0.8);
+        if (looksComplete) {
+            return;
+        }
+        const country = this.inferCountryFromMagicPattern(magic.service, magic.partnerFileName);
+        const seeded: AgencySummaryData[] = [{
+            agency: magic.service,
+            service: magic.service,
+            country,
+            date: new Date().toISOString().split('T')[0],
+            totalVolume: 0,
+            recordCount: magic.totalBoRecords || expectedBo,
+            matches: magic.totalMatches || 0,
+            boOnly: magic.totalBoOnly || 0,
+            partnerOnly: magic.totalPartnerOnly || 0,
+            mismatches: 0
+        }];
+        this.cachedAgencySummary = seeded;
+        this.lastResponseHash = this.getResponseHash();
+        this.lastAgencySummaryMeta = {
+            totalPartnerOnly: magic.totalPartnerOnly || 0,
+            hasPartnerOnlyWithAgencyService: false
+        };
+        this.reconciliationSummaryService.setAgencySummary(seeded, this.lastAgencySummaryMeta);
+    }
+
+    private inferCountryFromMagicPattern(service: string, partnerFile?: string): string {
+        const sources = `${service || ''} ${partnerFile || ''}`.toUpperCase();
+        const match = sources.match(/\b(CM|CI|SN|BF|ML|BJ|NE|TD|TG|GA|GN|KE|NG)\b/)
+            || sources.match(/^(CM|CI|SN|BF|ML|BJ|NE|TD|TG|GA|GN)_/);
+        const code = match?.[1] || '';
+        return countryNameFromCode(code) || code || '';
     }
 
     private getActiveServiceFilter(): string {
@@ -8770,6 +9234,33 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.initializeFilteredData();
         this.clearFilterDataCaches();
         this.invalidateCache();
+        this.cdr.markForCheck();
+    }
+
+    isMagicServiceReportSelected(service: string): boolean {
+        return this.reportSelectedServices.includes(service);
+    }
+
+    toggleMagicServiceReportSelection(service: string): void {
+        const idx = this.reportSelectedServices.indexOf(service);
+        if (idx >= 0) {
+            this.reportSelectedServices = this.reportSelectedServices.filter(s => s !== service);
+        } else {
+            this.reportSelectedServices = [...this.reportSelectedServices, service];
+        }
+        this.cdr.markForCheck();
+    }
+
+    allMagicServicesReportSelected(): boolean {
+        return this.visibleMagicSummaries.length > 0 &&
+            this.visibleMagicSummaries.every(s => this.reportSelectedServices.includes(s.service));
+    }
+
+    toggleAllMagicReportSelection(event: Event): void {
+        const checked = (event.target as HTMLInputElement)?.checked;
+        this.reportSelectedServices = checked
+            ? this.visibleMagicSummaries.map(s => s.service)
+            : [];
         this.cdr.markForCheck();
     }
 

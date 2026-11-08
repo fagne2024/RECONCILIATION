@@ -19,9 +19,12 @@ import { EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
 import { buildEcartBoPendingLinesFromRecords } from '../../utils/ecart-bo-pending-lines.util';
 import { extractRecordAmount } from '../../utils/record-amount.util';
 import { partitionEcartRecords, resolveMagicPartitionContext } from '../../utils/magic-partition.util';
+import { SharedModule } from '../../shared/shared.module';
 
 @Component({
   selector: 'app-ecart-bo-table',
+  standalone: true,
+  imports: [SharedModule],
   templateUrl: './ecart-bo-table.component.html',
   styleUrls: ['./ecart-bo-table.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush

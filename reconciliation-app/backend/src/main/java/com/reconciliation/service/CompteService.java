@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -21,6 +23,35 @@ import java.util.stream.Collectors;
 public class CompteService {
     
     private static final Logger logger = LoggerFactory.getLogger(CompteService.class);
+    private static final Map<String, String> COUNTRY_CODE_TO_NAME = Map.ofEntries(
+            Map.entry("CM", "Cameroun"),
+            Map.entry("CI", "Côte d'Ivoire"),
+            Map.entry("SN", "Sénégal"),
+            Map.entry("BF", "Burkina Faso"),
+            Map.entry("ML", "Mali"),
+            Map.entry("BJ", "Bénin"),
+            Map.entry("NE", "Niger"),
+            Map.entry("TD", "Tchad"),
+            Map.entry("TG", "Togo"),
+            Map.entry("GA", "Gabon"),
+            Map.entry("GN", "Guinée"),
+            Map.entry("KE", "Kenya"),
+            Map.entry("MZ", "Mozambique"),
+            Map.entry("NG", "Nigeria"),
+            Map.entry("CF", "Centrafrique"),
+            Map.entry("CG", "Congo"),
+            Map.entry("CD", "RD Congo"),
+            Map.entry("GQ", "Guinée équatoriale"),
+            Map.entry("ST", "São Tomé-et-Príncipe"),
+            Map.entry("AO", "Angola"),
+            Map.entry("GW", "Guinée-Bissau"),
+            Map.entry("SL", "Sierra Leone"),
+            Map.entry("LR", "Liberia"),
+            Map.entry("GH", "Ghana"),
+            Map.entry("MR", "Mauritanie"),
+            Map.entry("GM", "Gambie"),
+            Map.entry("CV", "Cap-Vert")
+    );
     
     @Autowired
     private CompteRepository compteRepository;
@@ -388,8 +419,10 @@ public class CompteService {
                 } else if (allowedPays.isEmpty()) {
                     return new ArrayList<>();
                 } else {
-                    // Filtrer par pays autorisés
-                    entities = compteRepository.findByPaysIn(allowedPays);
+                    // Filtrer par pays autorisés (code ou libellé pays selon les données historiques)
+                    entities = compteRepository.findAll().stream()
+                            .filter(entity -> countryMatchesAny(entity.getPays(), allowedPays))
+                            .collect(Collectors.toList());
                 }
             } else {
                 entities = compteRepository.findAll();
@@ -398,7 +431,7 @@ public class CompteService {
             System.out.println("Service: Total entités trouvées après filtrage pays = " + entities.size());
             
             List<Compte> result = entities.stream()
-                    .filter(entity -> pays == null || pays.isEmpty() || pays.contains(entity.getPays()))
+                    .filter(entity -> pays == null || pays.isEmpty() || countryMatchesAny(entity.getPays(), pays))
                     .filter(entity -> soldeMin == null || entity.getSolde() >= soldeMin)
                     .filter(entity -> codeProprietaire == null || codeProprietaire.isEmpty() || codeProprietaire.contains(entity.getCodeProprietaire()))
                     .filter(entity -> categorie == null || categorie.isEmpty() || categorie.contains(entity.getCategorie()))
@@ -424,6 +457,44 @@ public class CompteService {
             logger.error("Erreur dans filterComptes pour username: {}", username, e);
             return new ArrayList<>();
         }
+    }
+
+    private boolean countryMatchesAny(String rowCountry, List<String> selectedCountries) {
+        if (selectedCountries == null || selectedCountries.isEmpty()) {
+            return true;
+        }
+        return selectedCountries.stream().anyMatch(selected -> countriesMatch(rowCountry, selected));
+    }
+
+    private boolean countriesMatch(String left, String right) {
+        String leftKey = countryMatchKey(left);
+        String rightKey = countryMatchKey(right);
+        if (leftKey.isEmpty() || rightKey.isEmpty()) {
+            return leftKey.equals(rightKey);
+        }
+        return leftKey.equals(rightKey);
+    }
+
+    private String countryMatchKey(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "";
+        }
+        String trimmed = value.trim();
+        String upper = trimmed.toUpperCase(Locale.ROOT);
+        if ("CITCH".equals(upper) || upper.startsWith("CITCH")) {
+            return normalizeCountryName(COUNTRY_CODE_TO_NAME.get("CI"));
+        }
+        String nameFromCode = COUNTRY_CODE_TO_NAME.get(upper);
+        if (nameFromCode != null) {
+            return normalizeCountryName(nameFromCode);
+        }
+        return normalizeCountryName(trimmed);
+    }
+
+    private String normalizeCountryName(String value) {
+        return java.text.Normalizer.normalize(value.trim(), java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(Locale.ROOT);
     }
     
     /**

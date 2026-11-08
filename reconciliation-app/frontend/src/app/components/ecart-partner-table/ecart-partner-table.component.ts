@@ -16,9 +16,12 @@ import { ReconciliationTabsService } from '../../services/reconciliation-tabs.se
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { extractRecordAmount } from '../../utils/record-amount.util';
 import { partitionEcartRecords, resolveMagicPartitionContext } from '../../utils/magic-partition.util';
+import { SharedModule } from '../../shared/shared.module';
 
 @Component({
   selector: 'app-ecart-partner-table',
+  standalone: true,
+  imports: [SharedModule],
   templateUrl: './ecart-partner-table.component.html',
   styleUrls: ['./ecart-partner-table.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush

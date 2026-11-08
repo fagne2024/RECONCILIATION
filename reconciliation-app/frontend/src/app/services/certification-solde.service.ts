@@ -42,16 +42,46 @@ export interface CertificationSoldeContext {
   dateAu?: string;
 }
 
+export interface OppartOperationTypeVolume {
+  type: string;
+  volume: number;
+}
+
+export interface OppartOperationBreakdown {
+  hasData: boolean;
+  volume: number;
+  frais: number;
+  otherTypes: OppartOperationTypeVolume[];
+}
+
+export interface TrxboServiceRow {
+  service: string;
+  count: number;
+  volume: number;
+}
+
+export interface TrxboServiceBreakdown {
+  hasData: boolean;
+  rows: TrxboServiceRow[];
+  totalCount: number;
+  totalVolume: number;
+}
+
 export interface CertificationSoldeComputed {
   soldeOuvertureOppart: number | null;
   soldeClotureOppart: number | null;
   mouvementNetOppart: number;
+  fraisAttendu: number | null;
+  totalDebit: number;
+  totalCredit: number;
   volumeMatches: number;
   volumeEcartBo: number;
   volumeEcartPartner: number;
   totalRegularisation: number;
   aggregates: EcartAggregateRow[];
   regularisationDetails: EcartDetailLine[];
+  oppartOperationBreakdown: OppartOperationBreakdown;
+  trxboServiceBreakdown: TrxboServiceBreakdown;
   totals: {
     matches: number;
     boOnly: number;
@@ -64,6 +94,17 @@ export interface CertificationSoldeComputed {
 
 @Injectable({ providedIn: 'root' })
 export class CertificationSoldeService {
+  private static readonly OPPART_TYPE_KEYS = [
+    'Type',
+    'type',
+    'Type Opération',
+    'Type Operation',
+    'Type operation',
+    'typeOperation',
+    'Type_Operation',
+    'type_operation'
+  ];
+
   private readonly compteSoldeBoUrl = '/api/compte-solde-bo';
   private readonly compteSoldeClotureUrl = '/api/compte-solde-cloture';
 
@@ -79,17 +120,29 @@ export class CertificationSoldeService {
 
     const mouvementNetOppart = this.extractOppartMouvementNet(partnerData);
     const soldesPeriode = this.extractOppartSoldesPeriode(partnerData, dateDe, dateAu);
+    const oppartOperationBreakdown = this.extractOppartOperationBreakdown(partnerData);
+    const trxboServiceBreakdown = this.extractTrxboServiceBreakdown(boData);
+    const debitCredit = this.extractDebitCredit(partnerData);
+
+    const fraisAttendu = trxboServiceBreakdown.hasData
+      ? trxboServiceBreakdown.rows.reduce((sum, r) => sum + this.calculateFrais(fraisConfigs, r.service, '', r.volume), 0)
+      : null;
 
     return {
       soldeOuvertureOppart: soldesPeriode.ouverture,
       soldeClotureOppart: soldesPeriode.cloture,
       mouvementNetOppart,
+      fraisAttendu,
+      totalDebit: debitCredit.debit,
+      totalCredit: debitCredit.credit,
       volumeMatches,
       volumeEcartBo,
       volumeEcartPartner,
       totalRegularisation,
       aggregates,
       regularisationDetails,
+      oppartOperationBreakdown,
+      trxboServiceBreakdown,
       totals: {
         matches: response.totalMatches ?? response.matches?.length ?? 0,
         boOnly: response.totalBoOnly ?? response.boOnly?.length ?? 0,
@@ -191,10 +244,11 @@ export class CertificationSoldeService {
     const boByTransGu = this.buildBoIndex(response, boData);
     const trxsfGuKeysFromBo = new Set<string>();
 
-    const upsertSimple = (code: string, label: string, amount: number) => {
+    const upsertSimple = (code: string, label: string, amount: number, frais = 0) => {
       const row = map.get(code) ?? this.emptyAggregate(code, label);
       row.count += 1;
       row.volume += amount;
+      row.frais += frais;
       map.set(code, row);
     };
 
@@ -242,7 +296,8 @@ export class CertificationSoldeService {
     };
 
     for (const match of response.matches ?? []) {
-      upsertSimple('MATCHES', 'Correspondances (TRXBO ↔ OPPART)', this.parseAmount(match.boData));
+      const { volume, frais } = this.extractMatchVolumeAndFrais(match.partnerData);
+      upsertSimple('MATCHES', 'Correspondances (TRXBO ↔ OPPART)', volume, frais);
     }
 
     for (const record of response.boOnly ?? []) {
@@ -269,7 +324,9 @@ export class CertificationSoldeService {
 
     for (const record of response.partnerOnly ?? []) {
       const comment = this.normalizeComment(record);
-      const typeOp = (record['Type Opération'] || record['Type Operation'] || record['typeOperation'] || '').toUpperCase();
+      const typeOp = (
+        this.getTypeValue(record)
+      ).toUpperCase();
 
       if (comment === 'TRXSF') {
         const guKey = this.normalizeTransGuKey(this.extractNumeroTransGu(record));
@@ -520,7 +577,62 @@ export class CertificationSoldeService {
   }
 
   private sumMatchVolumes(response: ReconciliationResponse): number {
-    return (response.matches ?? []).reduce((sum, m) => sum + this.parseAmount(m.boData), 0);
+    return (response.matches ?? []).reduce((sum, m) => sum + this.extractMatchVolumeAndFrais(m.partnerData).volume, 0);
+  }
+
+  /** Classe une ligne OPPART appariée : IMPACT_COMPTE_GENERAL → volume, FRAIS_TRANSACTION → frais (sommes signées, aucune valeur absolue). */
+  private extractMatchVolumeAndFrais(record: Record<string, string> | undefined): { volume: number; frais: number } {
+    if (!record) {
+      return { volume: 0, frais: 0 };
+    }
+
+    let volume = 0;
+    let frais = 0;
+    let found = false;
+
+    for (const sub of this.splitPartnerData(record)) {
+      const montantKey = this.findColumn(sub, ['Montant', 'montant', 'Montant Transaction', 'montantTransaction']);
+      if (!montantKey) {
+        continue;
+      }
+      const montant = this.parseNumeric(sub[montantKey]) ?? 0;
+      const typeKey = this.findColumn(sub, CertificationSoldeService.OPPART_TYPE_KEYS);
+      const type = typeKey ? String(sub[typeKey] ?? '').trim().toUpperCase().replace(/[\s_\-]/g, '') : '';
+      found = true;
+      if (type === 'FRAISTRANSACTION') {
+        frais += montant;
+      } else {
+        volume += montant;
+      }
+    }
+
+    if (!found) {
+      return { volume: this.parseAmount(record), frais: 0 };
+    }
+    return { volume, frais };
+  }
+
+  /** Splitte un partnerData fusionné (clés `Type_PARTNER_1`, `Montant_PARTNER_1`, ...) en sous-enregistrements OPPART distincts. */
+  private splitPartnerData(record: Record<string, string>): Record<string, string>[] {
+    const groups = new Map<string, Record<string, string>>();
+    const suffixRegex = /_PARTNER_(\d+)$/i;
+
+    for (const [key, value] of Object.entries(record)) {
+      const match = key.match(suffixRegex);
+      if (match) {
+        const index = match[1];
+        const baseKey = key.slice(0, key.length - match[0].length);
+        const group = groups.get(index) ?? {};
+        group[baseKey] = value;
+        groups.set(index, group);
+      } else {
+        const group = groups.get('__raw__') ?? {};
+        group[key] = value;
+        groups.set('__raw__', group);
+      }
+    }
+
+    return Array.from(groups.values());
   }
 
   private extractOppartMouvementNet(partnerData: Record<string, string>[]): number {
@@ -534,6 +646,91 @@ export class CertificationSoldeService {
     }
 
     return partnerData.reduce((sum, row) => sum + (this.parseNumeric(row[montantKey]) ?? 0), 0);
+  }
+
+  private extractDebitCredit(partnerData: Record<string, string>[]): { debit: number; credit: number } {
+    if (!partnerData?.length) {
+      return { debit: 0, credit: 0 };
+    }
+
+    const montantKey = this.findColumn(partnerData[0], ['Montant', 'montant']);
+    if (!montantKey) {
+      return { debit: 0, credit: 0 };
+    }
+
+    let debit = 0;
+    let credit = 0;
+    for (const row of partnerData) {
+      const montant = this.parseNumeric(row[montantKey]) ?? 0;
+      if (montant < 0) {
+        debit += montant;
+      } else {
+        credit += montant;
+      }
+    }
+    return { debit, credit };
+  }
+
+  private extractOppartOperationBreakdown(partnerData: Record<string, string>[]): OppartOperationBreakdown {
+    if (!partnerData?.length) {
+      return { hasData: false, volume: 0, frais: 0, otherTypes: [] };
+    }
+
+    const typeKey = this.findColumn(partnerData[0], CertificationSoldeService.OPPART_TYPE_KEYS);
+    const montantKey = this.findColumn(partnerData[0], ['Montant', 'montant']);
+    if (!typeKey || !montantKey) {
+      return { hasData: false, volume: 0, frais: 0, otherTypes: [] };
+    }
+
+    const grouped = new Map<string, number>();
+    for (const row of partnerData) {
+      const type = String(row[typeKey] ?? '').trim() || '(Non renseigné)';
+      const montant = this.parseNumeric(row[montantKey]) ?? 0;
+      grouped.set(type, (grouped.get(type) ?? 0) + montant);
+    }
+
+    const normalizeType = (type: string): string =>
+      (type || '').toUpperCase().replace(/[\s_\-]/g, '');
+
+    const entries = Array.from(grouped.entries())
+      .map(([type, volume]) => ({ type, volume }));
+
+    const volume = entries
+      .filter(e => normalizeType(e.type) === 'IMPACTCOMPTEGENERAL')
+      .reduce((sum, e) => sum + e.volume, 0);
+    const frais = entries
+      .filter(e => normalizeType(e.type) === 'FRAISTRANSACTION')
+      .reduce((sum, e) => sum + e.volume, 0);
+
+    const otherTypes = entries
+      .filter(e => normalizeType(e.type) !== 'IMPACTCOMPTEGENERAL' && normalizeType(e.type) !== 'FRAISTRANSACTION')
+      .sort((a, b) => b.volume - a.volume);
+
+    return { hasData: true, volume, frais, otherTypes };
+  }
+
+  private extractTrxboServiceBreakdown(boData: Record<string, string>[]): TrxboServiceBreakdown {
+    if (!boData?.length) {
+      return { hasData: false, rows: [], totalCount: 0, totalVolume: 0 };
+    }
+
+    const grouped = new Map<string, { count: number; volume: number }>();
+    for (const row of boData) {
+      const service = this.extractField(row, ['Service', 'service']) || '(Non renseigné)';
+      const current = grouped.get(service) ?? { count: 0, volume: 0 };
+      current.count += 1;
+      current.volume += this.parseAmount(row);
+      grouped.set(service, current);
+    }
+
+    const rows = Array.from(grouped.entries())
+      .map(([service, { count, volume }]) => ({ service, count, volume }))
+      .sort((a, b) => b.volume - a.volume);
+
+    const totalCount = rows.reduce((sum, r) => sum + r.count, 0);
+    const totalVolume = rows.reduce((sum, r) => sum + r.volume, 0);
+
+    return { hasData: rows.length > 0, rows, totalCount, totalVolume };
   }
 
   private extractOppartSoldesPeriode(
@@ -646,6 +843,11 @@ export class CertificationSoldeService {
 
   private normalizeComment(record: Record<string, string>): string {
     return String(record['Commentaire'] || record['commentaire'] || '').trim().toUpperCase();
+  }
+
+  private getTypeValue(record: Record<string, string>): string {
+    const typeKey = this.findColumn(record, CertificationSoldeService.OPPART_TYPE_KEYS);
+    return typeKey ? String(record[typeKey] ?? '').trim() : '';
   }
 
   private parseAmount(record: Record<string, string> | undefined): number {

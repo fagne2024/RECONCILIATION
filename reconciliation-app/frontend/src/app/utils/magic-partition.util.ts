@@ -74,6 +74,57 @@ export function filterRecordsByMagicPartition(
     );
 }
 
+/**
+ * Cloisonne des enregistrements sur plusieurs services magiques (ensemble).
+ * L'enregistrement est conservé s'il correspond (via _magicService / colonne service)
+ * à l'UN des services demandés, et respecte le fichier partenaire s'il est fourni.
+ */
+export function recordMatchesAnyMagicService(
+    record: Record<string, string>,
+    services: string[],
+    partnerFile: string
+): boolean {
+    const partnerFileFilter = (partnerFile || '').trim();
+    if (partnerFileFilter) {
+        const partnerTag = getMagicPartitionPartnerFileTag(record);
+        if (partnerTag && !servicesMatchPartition(partnerTag, partnerFileFilter)) {
+            return false;
+        }
+    }
+    const cleanServices = services.map(s => (s || '').trim()).filter(Boolean);
+    if (cleanServices.length === 0 && !partnerFileFilter) {
+        return true;
+    }
+    if (cleanServices.length === 0) {
+        return true;
+    }
+    const magicServiceTag = getMagicPartitionServiceTag(record);
+    if (magicServiceTag) {
+        return cleanServices.some(svc => servicesMatchPartition(magicServiceTag, svc));
+    }
+    if (hasMagicPartitionTags([record])) {
+        return false;
+    }
+    const fallback = String(
+        record['Service'] ||
+        record['service'] ||
+        record['SERV'] ||
+        ''
+    ).trim();
+    return cleanServices.some(svc => servicesMatchPartition(fallback, svc));
+}
+
+export function filterRecordsByMagicPartitionMulti(
+    records: Record<string, string>[],
+    services: string[],
+    partnerFile: string
+): Record<string, string>[] {
+    if (services.length === 0 && !partnerFile) {
+        return records;
+    }
+    return records.filter(record => recordMatchesAnyMagicService(record, services, partnerFile));
+}
+
 /** Contexte de cloisonnement partagé entre /results, /ecart-bo et /ecart-partner. */
 export interface MagicPartitionContext {
     service: string;
@@ -106,4 +157,41 @@ export function partitionEcartRecords(
         return records;
     }
     return filterRecordsByMagicPartition(records, context.service, context.partnerFile);
+}
+
+/**
+ * Filtre les correspondances (Match) selon le contexte magique.
+ * Le cloisonnement se fait sur le boData de chaque Match via le tag _magicService.
+ */
+export function filterMatchBoDataByMagicPartition<T extends { boData?: Record<string, string> | null }>(
+    matches: T[],
+    service: string,
+    partnerFile: string
+): T[] {
+    if (!service && !partnerFile) {
+        return matches;
+    }
+    const boDataList = matches
+        .map(m => m.boData)
+        .filter((record): record is Record<string, string> => !!record);
+    const magicTaggedDataset = hasMagicPartitionTags(boDataList);
+    return matches.filter(m =>
+        !!m.boData &&
+        recordMatchesMagicPartition(m.boData, service, partnerFile, magicTaggedDataset)
+    );
+}
+
+/** Filtre les correspondances selon plusieurs services magiques (le Match est conservé s'il correspond à l'un d'eux). */
+export function filterMatchBoDataByMagicPartitionMulti<T extends { boData?: Record<string, string> | null }>(
+    matches: T[],
+    services: string[],
+    partnerFile: string
+): T[] {
+    if (services.length === 0 && !partnerFile) {
+        return matches;
+    }
+    return matches.filter(m =>
+        !!m.boData &&
+        recordMatchesAnyMagicService(m.boData, services, partnerFile)
+    );
 }

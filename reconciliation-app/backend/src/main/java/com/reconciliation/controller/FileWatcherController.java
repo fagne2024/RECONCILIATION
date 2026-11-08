@@ -15,6 +15,7 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @RestController
@@ -24,6 +25,11 @@ public class FileWatcherController {
 
     private static final String WATCH_FOLDER = "../watch-folder";
     private static final String PROCESSED_FOLDER = "../watch-folder/processed";
+
+    // OPTIMISATION: cache des métadonnées de chaque fichier (colonnes, échantillon,
+    // nombre de lignes) invalidé par lastModified/length. Évite de relire chaque
+    // fichier (lecture CSV entière + POI) à chaque appel à /available-files.
+    private static final ConcurrentHashMap<String, Map<String, Object>> FILE_METADATA_CACHE = new ConcurrentHashMap<>();
 
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getStatus() {
@@ -89,22 +95,10 @@ public class FileWatcherController {
                 
                 if (fileList != null) {
                     for (File file : fileList) {
-                        // Lire les vraies colonnes
-                        List<String> columns = getFileColumns(file);
-                        
-                        // Lire les vraies données d'exemple
-                        List<Map<String, Object>> sampleData = getSampleData(file);
-                        
-                        Map<String, Object> fileInfo = Map.of(
-                            "fileName", file.getName(),
-                            "filePath", file.getAbsolutePath(),
-                            "columns", columns,
-                            "sampleData", sampleData,
-                            "fileType", getFileType(file.getName()),
-                            "recordCount", getRecordCount(file)
-                        );
+                        // Métadonnées mises en cache (helper) : évite de relire le fichier
+                        Map<String, Object> fileInfo = getCachedFileMetadata(file);
                         files.add(fileInfo);
-                        
+
                         // Fichier traité avec succès
                     }
                 }
@@ -158,26 +152,8 @@ public class FileWatcherController {
                 ));
             }
             
-            // Analyser les colonnes
-            List<String> columns = getFileColumns(file);
-            
-            // Analyser les données d'exemple
-            List<Map<String, Object>> sampleData = getSampleData(file);
-            
-            // Obtenir le type de fichier
-            String fileType = getFileType(file.getName());
-            
-            // Obtenir le nombre d'enregistrements
-            int recordCount = getRecordCount(file);
-            
-            Map<String, Object> analysis = Map.of(
-                "fileName", file.getName(),
-                "filePath", file.getAbsolutePath(),
-                "columns", columns,
-                "sampleData", sampleData,
-                "fileType", fileType,
-                "recordCount", recordCount
-            );
+            // Analyser les colonnes et données d'exemple (via le cache de métadonnées)
+            Map<String, Object> analysis = getCachedFileMetadata(file);
             
             // Analyse terminée
             return ResponseEntity.ok(analysis);
@@ -230,6 +206,37 @@ public class FileWatcherController {
     }
 
     // Méthodes utilitaires améliorées
+    /**
+     * Récupère (avec cache) les métadonnées d'un fichier : colonnes, données d'exemple,
+     * type et nombre d'enregistrements. Le cache est invalidé par lastModified/length.
+     */
+    private Map<String, Object> getCachedFileMetadata(File file) {
+        String cacheKey = file.getAbsolutePath() + "|" + file.lastModified() + "|" + file.length();
+        Map<String, Object> cached = FILE_METADATA_CACHE.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        List<String> columns = getFileColumns(file);
+        List<Map<String, Object>> sampleData = getSampleData(file);
+
+        Map<String, Object> fileInfo = Map.of(
+            "fileName", file.getName(),
+            "filePath", file.getAbsolutePath(),
+            "columns", columns,
+            "sampleData", sampleData,
+            "fileType", getFileType(file.getName()),
+            "recordCount", getRecordCount(file)
+        );
+
+        // Garder la taille du cache bornée : on repart de zéro si trop d'entrées.
+        if (FILE_METADATA_CACHE.size() > 400) {
+            FILE_METADATA_CACHE.clear();
+        }
+        FILE_METADATA_CACHE.put(cacheKey, fileInfo);
+        return fileInfo;
+    }
+
     private List<String> getFileColumns(File file) {
         try {
             List<String> columns;

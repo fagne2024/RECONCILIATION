@@ -497,7 +497,8 @@ End Sub`;
           } else if (fileName.endsWith('.xls') || fileName.endsWith('.xlsx')) {
             // Pour les très gros fichiers Excel, utiliser une méthode alternative
             const fileSizeMB = file.size / (1024 * 1024);
-            const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+            // Détection Orange Money désactivée au niveau traitement
+            const isOrangeMoneyFile = false;
             
             if (fileSizeMB > 100) {
               if (isOrangeMoneyFile) {
@@ -952,7 +953,8 @@ End Sub`;
               
               // Vérifier si c'est un fichier Orange Money et appliquer le filtre automatique
               const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
-              const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+              // Détection Orange Money désactivée au niveau traitement
+              const isOrangeMoneyFile = false;
               
               if (isOrangeMoneyFile) {
                 // Appliquer le filtre automatique après un délai pour s'assurer que les données sont bien chargées
@@ -1029,7 +1031,8 @@ End Sub`;
       
       // Vérifier si c'est un fichier Orange Money et appliquer le filtre automatique
       const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
-      const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+      // Détection Orange Money désactivée au niveau traitement
+      const isOrangeMoneyFile = false;
       
       if (isOrangeMoneyFile) {
         // Appliquer le filtre automatique après un délai pour s'assurer que les données sont bien chargées
@@ -1273,7 +1276,8 @@ End Sub`;
       
       // Vérifier si c'est un fichier Orange Money et appliquer le filtre automatique
       const fileName = file.name;
-      const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+      // Détection Orange Money désactivée au niveau traitement
+      const isOrangeMoneyFile = false;
       
       if (isOrangeMoneyFile) {
         setTimeout(() => {
@@ -1601,8 +1605,9 @@ End Sub`;
   // Méthode pour prévisualiser les données CSV
   async previewCsvData(csvContent: string, delimiter: string): Promise<{ columns: string[], data: any[], hasHeader: boolean }> {
     return new Promise((resolve, reject) => {
-      // Détecter si c'est un fichier Orange Money AVANT le parsing
-      const orangeMoneyDetection = this.detectOrangeMoneyFile(csvContent, delimiter);
+      // Détection si c'est un fichier Orange Money AVANT le parsing
+      // Détection Orange Money désactivée au niveau traitement
+      const orangeMoneyDetection = { isOrangeMoney: false, headerRowIndex: -1, headerRow: [] };
       this.isOrangeMoneyFile = orangeMoneyDetection.isOrangeMoney;
       this.orangeMoneyHeaderRowIndex = orangeMoneyDetection.headerRowIndex;
       
@@ -1711,7 +1716,8 @@ End Sub`;
           this.detectedDelimiter = this.detectCsvDelimiter(csv);
           
           // Détecter si c'est un fichier Orange Money AVANT la prévisualisation
-          const orangeMoneyDetection = this.detectOrangeMoneyFile(csv, this.detectedDelimiter);
+          // Détection Orange Money désactivée au niveau traitement
+          const orangeMoneyDetection = { isOrangeMoney: false, headerRowIndex: -1, headerRow: [] };
           this.isOrangeMoneyFile = orangeMoneyDetection.isOrangeMoney;
           this.orangeMoneyHeaderRowIndex = orangeMoneyDetection.headerRowIndex;
           

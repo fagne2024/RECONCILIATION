@@ -11,6 +11,8 @@ import { ReleveBancaireRow } from '../../models/releve-bancaire.model';
 import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { PopupService } from '../../services/popup.service';
 import { countryDisplayLabel, countriesMatch, normalizeCountryFilterOptions } from '../../utils/country-codes.util';
+import { FileUploadComponent } from '../../components/file-upload/file-upload.component';
+import { DestinationPopupComponent, DestinationChoice } from './destination-popup.component';
 
 // Interface locale pour les opérations bancaires avec Date
 interface OperationBancaireDisplay extends Omit<OperationBancaire, 'dateOperation'> {
@@ -39,7 +41,8 @@ interface ReconFilters {
 @Component({
   selector: 'app-banque',
   templateUrl: './banque.component.html',
-  styleUrls: ['./banque.component.scss']
+  styleUrls: ['./banque.component.scss'],
+  imports: [FileUploadComponent, DestinationPopupComponent]
 })
 export class BanqueComponent implements OnInit {
   // État d'affichage
@@ -51,6 +54,13 @@ export class BanqueComponent implements OnInit {
   
   // Contrôle de visibilité de la colonne commentaire
   showCommentColumn = false;
+  
+  // Contrôle de visibilité du panneau de traitement automatique
+  showTraitementPanel = false;
+  
+  // Popup de destination après traitement automatique
+  showDestinationPopup = false;
+  pendingTreatmentResult: { rows: Record<string, string>[]; outputName: string; lineCount: number; modelName: string } | null = null;
 
   // Création d'opération bancaire
   showCreateOperationPopup = false;
@@ -164,7 +174,7 @@ export class BanqueComponent implements OnInit {
     numeroCompte: '', nomCompte: '', banque: '',
     dateComptable: '', dateValeur: '', libelle: '',
     debit: null as number | null, credit: null as number | null, montant: null as number | null,
-    numeroCheque: '', devise: '', commentaire: '', numeroSerie: ''
+    banqueCorrigee: '', devise: '', commentaire: ''
   };
 
   // Réconciliation banque
@@ -871,21 +881,17 @@ export class BanqueComponent implements OnInit {
 
   // Formulaire d'édition
   editForm: any = {
-    pays: '',
-    codePays: '',
-    mois: '',
     dateOperation: '',
     agence: '',
     typeOperation: '',
-    nomBeneficiaire: '',
-    compteADebiter: '',
     montant: 0,
-    modePaiement: '',
     reference: '',
     idGlpi: '',
     bo: '',
     statut: '',
-    traitement: ''
+    traitement: '',
+    demandeur: '',
+    valideur: ''
   };
 
   constructor(
@@ -1603,6 +1609,11 @@ export class BanqueComponent implements OnInit {
     this.showCommentColumn = !this.showCommentColumn;
   }
 
+  // Contrôle de visibilité du panneau de traitement automatique
+  toggleTraitementPanel() {
+    this.showTraitementPanel = !this.showTraitementPanel;
+  }
+
   // Création d'opération bancaire
   openCreateOperation() {
     this.showCreateOperationPopup = true;
@@ -2029,6 +2040,105 @@ export class BanqueComponent implements OnInit {
     });
   }
 
+  // ============================================================================
+  // Traitement automatique des relevés bancaires (via FileUploadComponent)
+  // ============================================================================
+  onReleveTraitementResult(result: { rows: Record<string, string>[]; outputName: string; lineCount: number; modelName: string }) {
+    if (!result.rows?.length) return;
+    this.pendingTreatmentResult = result;
+    this.showDestinationPopup = true;
+  }
+
+  /**
+   * Convertit un tableau de lignes (Record<string,string>[]) en fichier CSV (Blob/File)
+   * pour réutiliser les services d'upload existants qui attendent un File.
+   */
+  private rowsToCsvFile(rows: Record<string, string>[], baseName: string): File {
+    if (!rows.length) throw new Error('Aucune ligne à exporter');
+    const headers = Object.keys(rows[0]);
+    const lines: string[] = [];
+    lines.push(headers.join(','));
+    for (const row of rows) {
+      const values = headers.map(h => {
+        const v = (row[h] ?? '').toString();
+        // Échapper les virgules, guillemets et sauts de ligne
+        if (v.includes(',') || v.includes('"') || v.includes('\n') || v.includes('\r')) {
+          return '"' + v.replace(/"/g, '""') + '"';
+        }
+        return v;
+      });
+      lines.push(values.join(','));
+    }
+    const csvContent = lines.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    return new File([blob], `${baseName}.csv`, { type: 'text/csv;charset=utf-8;' });
+  }
+
+  // ============================================================================
+  // Choix de destination après traitement automatique
+  // ============================================================================
+  onDestinationChoice(choice: DestinationChoice) {
+    this.showDestinationPopup = false;
+    const result = this.pendingTreatmentResult;
+    if (!result || !result.rows?.length) {
+      this.pendingTreatmentResult = null;
+      return;
+    }
+
+    const file = this.rowsToCsvFile(result.rows, result.outputName || 'traite');
+
+    if (choice === 'operation') {
+      this.opbUploading = true;
+      this.opbMessageKind = 'info';
+      this.opbMessage = `Traitement automatique des opérations (${result.lineCount} lignes)...`;
+      this.operationBancaireService.upload(file).subscribe({
+        next: (res) => {
+          this.opbUploading = false;
+          const errs = (res && Array.isArray(res.errors)) ? res.errors.length : 0;
+          this.opbMessageKind = 'success';
+          this.opbMessage = `Traitement opérations terminé. Lues: ${res.totalRead || 0}, enregistrées: ${res.saved || 0}${errs ? `, erreurs: ${errs}` : ''}`;
+          this.loadOperations();
+        },
+        error: () => {
+          this.opbUploading = false;
+          this.opbMessageKind = 'error';
+          this.opbMessage = 'Échec du traitement automatique des opérations bancaires';
+        }
+      });
+    } else if (choice === 'releve') {
+      this.releveUploading = true;
+      this.releveBatchId = null;
+      this.releveRows = [];
+      this.releveMessageKind = 'info';
+      this.releveMessage = `Traitement automatique du relevé (${result.lineCount} lignes)...`;
+
+      this.releveService.upload(file).subscribe({
+        next: (res) => {
+          this.releveBatchId = res.batchId;
+          this.releveRows = (res.rows || []).map(r => ({
+            ...r,
+            dateComptable: r.dateComptable ? new Date(r.dateComptable as any) : undefined,
+            dateValeur: r.dateValeur ? new Date(r.dateValeur as any) : undefined
+          }));
+          this.releveUploading = false;
+          this.releveMessageKind = 'success';
+          const baseMsg = `Fichier importé avec succès (${res.count} lignes).`;
+          const dupMsg = res.duplicatesIgnored ? ` ${res.duplicatesIgnored} doublon(s) ignoré(s).` : '';
+          this.releveMessage = `${baseMsg}${dupMsg} Batch: ${this.releveBatchId}`;
+          this.totalReleveLignes = this.releveRows.length;
+        },
+        error: () => {
+          this.releveUploading = false;
+          this.releveMessageKind = 'error';
+          this.releveMessage = 'Traitement automatique du relevé bancaire échoué';
+          this.totalReleveLignes = 0;
+        }
+      });
+    }
+
+    this.pendingTreatmentResult = null;
+  }
+
   downloadReleveTemplate() {
     this.releveService.downloadTemplate().subscribe({
       next: (blob) => {
@@ -2217,16 +2327,15 @@ export class BanqueComponent implements OnInit {
       numeroCompte: row.numeroCompte || '',
       nomCompte: row.nomCompte || '',
       banque: row.banque || '',
+      banqueCorrigee: row.banqueCorrigee || '',
       dateComptable: toInput(row.dateComptable as any),
       dateValeur: toInput(row.dateValeur as any),
       libelle: row.libelle || '',
       debit: row.debit ?? null,
       credit: row.credit ?? null,
       montant: row.montant ?? null,
-      numeroCheque: row.numeroCheque || '',
       devise: row.devise || '',
-      commentaire: row.commentaire || '',
-      numeroSerie: row.numeroSerie || ''
+      commentaire: row.commentaire || ''
     };
     this.showReleveEditPopup = true;
   }
@@ -2242,16 +2351,15 @@ export class BanqueComponent implements OnInit {
       numeroCompte: this.releveEditForm.numeroCompte || null,
       nomCompte: this.releveEditForm.nomCompte || null,
       banque: this.releveEditForm.banque || null,
+      banqueCorrigee: this.releveEditForm.banqueCorrigee || null,
       dateComptable: this.releveEditForm.dateComptable || null,
       dateValeur: this.releveEditForm.dateValeur || null,
       libelle: this.releveEditForm.libelle || null,
       debit: this.releveEditForm.debit,
       credit: this.releveEditForm.credit,
       montant: this.releveEditForm.montant,
-      numeroCheque: this.releveEditForm.numeroCheque || null,
       devise: this.releveEditForm.devise || null,
-      commentaire: this.releveEditForm.commentaire || null,
-      numeroSerie: this.releveEditForm.numeroSerie || null
+      commentaire: this.releveEditForm.commentaire || null
     };
     
     console.log('💾 Sauvegarde relevé avec commentaire:', {
@@ -2420,6 +2528,15 @@ export class BanqueComponent implements OnInit {
         this.opbMessage = 'Échec de l\'import des opérations bancaires';
       }
     });
+  }
+
+  // ============================================================================
+  // Traitement automatique des opérations bancaires (via FileUploadComponent)
+  // ============================================================================
+  onOpbTraitementResult(result: { rows: Record<string, string>[]; outputName: string; lineCount: number; modelName: string }) {
+    if (!result.rows?.length) return;
+    this.pendingTreatmentResult = result;
+    this.showDestinationPopup = true;
   }
 
   downloadOpbTemplate() {
@@ -3522,21 +3639,17 @@ export class BanqueComponent implements OnInit {
     this.selectedOperation = operation;
     // Pré-remplir le formulaire
     this.editForm = {
-      pays: operation.pays || '',
-      codePays: operation.codePays || '',
-      mois: operation.mois || '',
       dateOperation: this.formatDateForInput(operation.dateOperation),
       agence: operation.agence || '',
       typeOperation: operation.typeOperation || '',
-      nomBeneficiaire: operation.nomBeneficiaire || '',
-      compteADebiter: operation.compteADebiter || '',
       montant: operation.montant || 0,
-      modePaiement: operation.modePaiement || '',
       reference: operation.reference || '',
       idGlpi: operation.idGlpi || '',
       bo: operation.bo || '',
       statut: operation.statut || 'En attente',
-      traitement: operation.traitement || ''
+      traitement: operation.traitement || '',
+      demandeur: operation.demandeur || '',
+      valideur: operation.valideur || ''
     };
     this.showEditPopup = true;
   }
@@ -3550,21 +3663,17 @@ export class BanqueComponent implements OnInit {
     if (!this.selectedOperation || !this.selectedOperation.id) return;
 
     const updateData = {
-      pays: this.editForm.pays,
-      codePays: this.editForm.codePays,
-      mois: this.editForm.mois,
       dateOperation: this.editForm.dateOperation,
       agence: this.editForm.agence,
       typeOperation: this.editForm.typeOperation,
-      nomBeneficiaire: this.editForm.nomBeneficiaire,
-      compteADebiter: this.editForm.compteADebiter,
       montant: this.editForm.montant,
-      modePaiement: this.editForm.modePaiement,
       reference: this.editForm.reference,
       idGlpi: this.editForm.idGlpi,
       bo: this.editForm.bo,
       statut: this.editForm.statut,
-      traitement: this.editForm.traitement
+      traitement: this.editForm.traitement,
+      demandeur: this.editForm.demandeur,
+      valideur: this.editForm.valideur
     };
 
     this.operationBancaireService.updateOperationBancaire(this.selectedOperation.id, updateData).subscribe({
@@ -3624,14 +3733,14 @@ export class BanqueComponent implements OnInit {
         dateOperation: operation.dateOperation,
         agence: operation.agence,
         typeOperation: operation.typeOperation,
-        nomBeneficiaire: operation.nomBeneficiaire,
-        compteADebiter: operation.compteADebiter,
         montant: operation.montant,
-        modePaiement: operation.modePaiement,
         reference: operation.reference,
         idGlpi: operation.idGlpi,
         bo: operation.bo,
-        statut: 'Validée' // Changer le statut à "Validée"
+        statut: 'Validée',
+        traitement: operation.traitement,
+        demandeur: operation.demandeur,
+        valideur: operation.valideur
       };
 
       // Mettre à jour l'opération avec le nouveau statut

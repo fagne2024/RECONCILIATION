@@ -91,7 +91,9 @@ export class BoPartenaireAggregationService {
     const serviceList = Array.from(services).sort((a, b) => a.localeCompare(b, 'fr'));
 
     for (const monthYyyyMm of monthList) {
-      const { start, end } = this.monthBounds(monthYyyyMm);
+      const { start: monthStart, end: monthEnd } = this.monthBounds(monthYyyyMm);
+      const start = monthStart > startDate ? monthStart : startDate;
+      const end = monthEnd < endDate ? monthEnd : endDate;
       const monthFiltered = filtered.filter((r) =>
         this.isYmdInRangeInclusive(this.formatDateForSearch(r.date), start, end)
       );
